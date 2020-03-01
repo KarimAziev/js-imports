@@ -42,7 +42,8 @@
 (defgroup js-import nil
   "Minor mode providing JavaScript import."
   :link '(url-link :tag "Repository" "https://github.com/KarimAziev/js-import")
-  :group 'tools)
+  :prefix 'js-import
+  :group 'languages)
 
 (defcustom js-import-quote "'"
   "Quote type."
@@ -88,8 +89,9 @@ Each car is a regexp match pattern of the imenu type string."
 (define-minor-mode js-import-mode
   "js-import-mode is a minor mode for importing.
 \\{js-import-mode-map}"
-  :lighter "js-import"
+  :lighter " js-import"
   :group 'js-import
+  :global nil
   :keymap js-import-command-map)
 
 ;;;###autoload

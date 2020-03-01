@@ -147,7 +147,7 @@
         (gethash path dependencies-hash)
       nil)))
 
-;;;###autoload
+
 (defun js-import-path-to-real(path)
   (message "path %s isDEPENDENC %s" path (js-import-is-dependency? path))
   (let ((result (cond

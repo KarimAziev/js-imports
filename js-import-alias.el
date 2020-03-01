@@ -39,7 +39,6 @@
          (files (--filter (f-ancestor-of-p alias-path (f-join project-dir it)) (js-import-get-project-files)))
          (slashed-alias (js-import-maybe-slash-alias alias)))
 
-    (message "alias\n %s" alias)
     (helm-build-sync-source (format "Alias import %s" alias)
       :candidates (--map (js-import-real-path-to-alias (f-join project-dir it) alias) files)
       :nomark t
@@ -51,7 +50,6 @@
                   (js-import-from-path real-path alias-path))))))
 
 (defun js-import-alias-make-sources()
-  (message "js-import-alias-map\n %s" js-import-alias-map)
   (let ((pl js-import-alias-map)
         (vals  ()))
     (while pl
