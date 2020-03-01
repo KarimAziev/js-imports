@@ -67,11 +67,11 @@ module.exports = {
 };
 ```
 
-In this case you need to add then also in your `.dir-locals.el` in that way:
+In this case you need to add them also in your `.dir-locals.el`:
 
 ```cl
 ((nil . (
-         (eval . (setq js-import-alias-map '("@" "src")))
+         (eval . (setq js-import-alias-map '("@" "src" "UI" "src/components/UI")))
          )))
 ```
 
