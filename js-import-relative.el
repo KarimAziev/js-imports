@@ -24,8 +24,6 @@
 
 ;;; Code:
 
-
-
 (require 'helm)
 (require 'f)
 (require 'json)
@@ -34,7 +32,6 @@
 (require 'js-import-path)
 (require 'js-import-utils)
 (require 'js-import-from-path)
-
 
 (defun js-import-sort-relative(candidates)
   (-sort (lambda (path1 path2)
@@ -49,8 +46,7 @@
 
 (defun js-import-helm-relative-ff-transformer(candidates)
   (with-current-buffer helm-current-buffer
-    (let* ((buffer-dir (f-short (f-dirname buffer-file-name)))
-           (src-path (concat (projectile-project-root) js-import-base-url)))
+    (let* ((buffer-dir (f-short (f-dirname buffer-file-name))))
       (-map (lambda (it)
               (let* ((path (f-short (js-import-expand-path (format "%s" it))))
                      (relative-path (f-relative path buffer-dir)))

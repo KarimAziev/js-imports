@@ -119,7 +119,6 @@
         (replace-match ""))
       (widen))))
 
-
 (defun js-import-stringify (x)
   "Convert any object to string effeciently.
 This is faster than `prin1-to-string' in many cases."
@@ -254,7 +253,6 @@ ITEM is not string."
           matches)
     export-list))
 
-
 (defun js-propose-import-name (path cell &optional default-name)
   (let* ((current-name (car cell))
          (export-type (cdr cell))
@@ -276,7 +274,6 @@ ITEM is not string."
                  (4 (format "%s as %s" current-name symbols))
                  (16 (format "%s as %s" current-name symbols)))))
     name))
-
 
 (provide 'js-import-utils)
 ;;; js-import-utils.el ends here

@@ -30,7 +30,6 @@
 (require 'js-import-path)
 (require 'js-import-utils)
 
-
 (defun js-import-from-path(path normalized-path)
   (interactive)
   (let* ((import-alist (js-import-find-current-imports normalized-path))
@@ -56,7 +55,8 @@
                                                                   :display-path normalized-path))
 
                           :action '(("Import" . js-import-action--import-candidate)
-                                    ("Import as " . js-import-action--import-as)))))
+                                    ("Import as " . js-import-action--import-as)
+                                    ("Go" . js-import-action--goto-export)))))
     (helm :sources (list export-source import-source))))
 
 (defun js-import-build-imported-source(candidates display-path &optional real-path)
@@ -86,7 +86,6 @@
                              (4 (concat "export[\t\s\n]+.*+" real-name-regexp))
                              (16 "export[\t\s\n]")))
         (helm-highlight-current-line)))))
-
 
 (defun js-import-action--delete-import(cand)
   (mapc
@@ -139,7 +138,6 @@
                 (4 (js-import-insert-exports nil name normalized-path))
                 (16 (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))))))
         (helm-marked-candidates)))
-
 
 (defun js-import-action--import-as(candidate)
   (mapc (lambda(c) (let* ((type (js-import-get-prop c 'type))

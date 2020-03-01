@@ -33,13 +33,13 @@
 (require 'js-import-insert)
 (require 'js-import-from-path)
 
-(defun js-import-alias-make-alias-source(cell)
-  (let* ((alias (s-trim (car cell)))
-         (project-dir (projectile-project-root))
+(defun js-import-alias-make-alias-source(alias)
+  (let* ((project-dir (projectile-project-root))
          (alias-path (js-import-get-alias-path alias))
          (files (--filter (f-ancestor-of-p alias-path (f-join project-dir it)) (js-import-get-project-files)))
          (slashed-alias (js-import-maybe-slash-alias alias)))
 
+    (message "alias\n %s" alias)
     (helm-build-sync-source (format "Alias import %s" alias)
       :candidates (--map (js-import-real-path-to-alias (f-join project-dir it) alias) files)
       :nomark t
@@ -51,7 +51,13 @@
                   (js-import-from-path real-path alias-path))))))
 
 (defun js-import-alias-make-sources()
-  (mapcar 'js-import-alias-make-alias-source js-import-alias-map))
+  (message "js-import-alias-map\n %s" js-import-alias-map)
+  (let ((pl js-import-alias-map)
+        (vals  ()))
+    (while pl
+      (push (js-import-alias-make-alias-source (car pl)) vals)
+      (setq pl (cddr pl)))
+    (nreverse vals)))
 
 (defun js-import-alias-candidates (&optional buffer)
   (with-current-buffer (or buffer helm-current-buffer)

@@ -30,20 +30,19 @@
 (require 's)
 (require 'projectile)
 
-(defcustom js-project-alias ""
-  "Alias used."
+(defcustom js-import-alias-map '("" "src")
+  "List of pairs (alias and path)"
   :group 'js-import
-  :type 'string)
+  :type '(repeat string))
 
-(defcustom js-import-base-url "src"
-  "Src path used."
-  :group 'js-import
-  :type 'string)
-
-(defcustom js-import-alias-map '(("" "src"))
-  "Each element is a list of the form (ALIAS PATH)"
-  :group 'js-import
-  :type '(alist :value-type (group string) ))
+(defun js-import-get-aliases ()
+  "Get list of aliases"
+  (let ((pl js-import-alias-map)
+        (vals  ()))
+    (while pl
+      (push (car pl) vals)
+      (setq pl  (cddr pl)))
+    (nreverse vals)))
 
 (defun js-import-normalize-path(path)
   (funcall (-compose
@@ -61,7 +60,7 @@
     (replace-regexp-in-string (concat "^" alias-path) slashed-alias real-path)))
 
 (defun js-import-get-alias-path(alias)
-  (f-slash (f-join (projectile-project-root) (car (last (assoc alias js-import-alias-map))))))
+  (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
 
 (defun js-import-normalize-relative-path (path)
   (funcall (-compose (lambda (str)
@@ -106,9 +105,6 @@
   "Return the path to package.json."
   (f-join (projectile-project-root) "package.json"))
 
-(defun js-import-get-project-src-path()
-  (projectile-project-root))
-
 (defun js-import-find-node-module-index-path(module)
   (let ((path (js-import-expand-node-modules module)))
     (cond ((f-exists? (f-join path "es" "index.js"))
@@ -130,7 +126,6 @@
           ((f-exists? (f-join path "index.d.ts"))
            (setq path (f-join path "index.d.ts")))
           (t (setq path (f-join path "index.js"))))))
-
 
 (defun js-import-dependencies-hash (&optional $package-json-path $section)
   "Return a dependency hash fetched from package-json-path in section.  If file not found, return nil."
@@ -158,8 +153,7 @@
   (let ((result (cond
                  ((js-import-is-dependency? path)
                   (js-import-find-node-module-index-path path))
-                 ((s-matches? (concat "^" js-project-alias) path)
-                  (js-import-expand-path (concat (replace-regexp-in-string (concat "^" js-project-alias "/") "" path) ".js")))
+
                  ((s-matches? "^\\." path)
                   (let ((filepath (f-short (f-expand path))))
                     (cond
