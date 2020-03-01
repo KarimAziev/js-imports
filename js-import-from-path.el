@@ -31,7 +31,6 @@
 (require 'js-import-utils)
 
 (defun js-import-from-path(path normalized-path)
-  (interactive)
   (let* ((import-alist (js-import-find-current-imports normalized-path))
          (all-exports-alist (js-import-find-exports (f-read path)))
          (import-reals (--map (funcall (-compose 's-trim 'car 'split-string 'car) it)

@@ -72,7 +72,6 @@
   )
 
 (defun js-import-get-import-positions(path)
-  (interactive)
   (save-excursion
     (let ((pos1 (point-min))
           (pos2 (goto-last-import)))
@@ -87,7 +86,6 @@
   )
 
 (defun js-import-narrow-to-import(path)
-  (interactive)
   (let* ((bounds (js-import-get-import-positions path))
          (pos1 (car bounds))
          (pos2 (cdr bounds)))
@@ -146,7 +144,6 @@ ITEM is not string."
       (get-text-property 0 property item)))
 
 (defun js-import-find-exports (&optional content)
-  (interactive)
   (let* ((regexp "export[ \s\t\n]+\\(default\\|const\\|let\\|var\\|function[*]?\\|class\\)[\t\s\n]+\\([a-zZ-A0-9_,]+\\)?\\|export[ \s\t\n]+\\({[^}]+\\)")
          (all-matches (s-match-strings-all regexp (or content (buffer-string))))
          (match (s-match regexp content))
@@ -154,7 +151,6 @@ ITEM is not string."
     result))
 
 (defun js-import-find-current-imports(display-path)
-  (interactive)
   (let* ((regexp-imports (concat "import[ \t\\n]+\\([a-zZ-A0-9_]+\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']" display-path "['\"']") )
          (matches (s-match regexp-imports (buffer-string)))
          (default-import-name (nth 1 matches))
