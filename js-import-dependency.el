@@ -25,11 +25,6 @@
 ;;; Code:
 
 (require 'helm)
-(require 'f)
-(require 'json)
-(require 'subr-x)
-(require 'projectile)
-(require 'js-import-path)
 (require 'js-import-utils)
 (require 'js-import-from-path)
 
@@ -43,7 +38,7 @@
 (defun js-import-dependency-candidates (&optional $package-json-path $section)
   "Return a list of strings with dependencies fetched from PACKAGE-JSON-PATH in SECTION.  If file not found, return nil."
   (interactive)
-  (let ((dependencies-hash (js-import-dependencies-hash)))
+  (let ((dependencies-hash (js-import-dependencies-hash $package-json-path $section)))
     (when dependencies-hash
       (hash-table-keys dependencies-hash))))
 

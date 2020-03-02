@@ -25,15 +25,7 @@
 ;;; Code:
 
 (require 'helm)
-(require 'f)
-(require 'json)
-(require 'subr-x)
 (require 'projectile)
-
-(require 'js-import-regexp)
-(require 'js-import-utils)
-(require 'js-import-path)
-(require 'js-import-insert)
 (require 'js-import-from-path)
 (require 'js-import-relative)
 (require 'js-import-alias)
@@ -44,28 +36,6 @@
   :link '(url-link :tag "Repository" "https://github.com/KarimAziev/js-import")
   :prefix 'js-import
   :group 'languages)
-
-(defcustom js-import-quote "'"
-  "Quote type."
-  :group 'js-import
-  :type '(choice (const :tag "Double" "\"")
-                 (const :tag "Single" "\\'")))
-
-(defcustom js-import-type-faces
-  '(("^\\(as\\)$" . font-lock-type-face)
-    ("^\\(*\\)$" . font-lock-type-face)
-    ("^\\(default\\)$" . font-lock-variable-name-face)
-    ("^\\(Function\\|Functions\\|Defuns\\)$" . font-lock-function-name-face)
-    ("^\\(Types\\|Provides\\|Requires\\|Classes\\|Class\\|Includes\\|Imports\\|Misc\\)$" . font-lock-type-face))
-  "Faces for showing type in helm-js-import-menu.
-This is a list of cons cells.  The cdr of each cell is a face to be used,
-and it can also just be like \\='(:foreground \"yellow\").
-Each car is a regexp match pattern of the imenu type string."
-  :group 'js-import
-  :type '(repeat
-          (cons
-           (regexp :tag "Js import type regexp pattern")
-           (sexp :tag "Face"))))
 
 (defvar js-import-command-map
   (let ((map (make-sparse-keymap)))

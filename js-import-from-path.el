@@ -27,7 +27,6 @@
 (require 'f)
 (require 'json)
 (require 'subr-x)
-(require 'js-import-path)
 (require 'js-import-utils)
 
 (defun js-import-from-path(path normalized-path)
@@ -45,7 +44,7 @@
                                                      (4 (not (-contains? import-reals (car it))))
                                                      (16 (not (rassoc 16 import-alist))))))
                                                all-exports-alist)
-                          :candidate-transformer 'helm-js-imports-transformer
+                          :candidate-transformer 'js-import-imports-transformer
                           :persistent-action 'js-import-action--goto-export
                           :display-to-real (lambda(candidate)
                                              (js-import-make-item candidate
@@ -65,7 +64,7 @@
                                             :cell (assoc candidate candidates)
                                             :real-path real-path
                                             :display-path display-path))
-    :candidate-transformer 'helm-js-imports-transformer
+    :candidate-transformer 'js-import-imports-transformer
     :candidates candidates
     :persistent-action 'js-import-action--goto-export
     :action '(("Go" . js-import-action--goto-export)

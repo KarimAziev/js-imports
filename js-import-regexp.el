@@ -56,5 +56,23 @@
   (list "\\_<\\(?:var\\|let\\|const\\)\\_>")
   "Case-sensitive regexps for detecting JS variables in JavaScript buffers. ")
 
+(defvar js-import-export-regexp
+  "export[ \s\t\n]+\\(default\\|const\\|let\\|var\\|function[*]?\\|class\\)[\t\s\n]+\\([a-zZ-A0-9_,]+\\)?\\|export[ \s\t\n]+\\({[^}]+\\)"
+  "Regexp for searching export declarations")
+
+(defvar js-import-import-regexp
+  "import[ \t\\n]+\\([a-zZ-A0-9_]+\\|*[\t\n\s]+as[\t\n\s][a-zZ-A_$]\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']\\([^['\"]*\\)"
+  "Regexp for searching import declarations")
+
+(defvar js-import-import-regexp-exclude
+  "^import[ \t\n]\\|[ \t\n]from[ \t\n]+.*\\|,[ \s\t\n]*{"
+  "Regexp for excluding meta-words from import matches")
+
+(defun js-import-make-import-regexp-from-path(path)
+  "Build regexp of import statement with given path"
+  (concat "import[ \t\\n]+\\([a-zZ-A0-9_]+\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']" display-path "['\"']"))
+
+
+
 (provide 'js-import-regexp)
 ;;; js-import-regexp.el ends here

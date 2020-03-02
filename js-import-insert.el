@@ -24,22 +24,24 @@
 
 ;;; Code:
 
-(require 'helm)
-(require 'f)
-(require 'json)
 (require 'subr-x)
 (require 'js-import-regexp)
-(require 'js-import-path)
 (require 'js-import-utils)
+
+(defcustom js-import-quote "'"
+  "Quote type."
+  :group 'js-import
+  :type '(choice (const :tag "Double" "\"")
+                 (const :tag "Single" "\\'")))
 
 (defun js-import-insert-exports(default-name named-list path)
   (let ((names (if (stringp named-list)
                    named-list
                  (js-import-join-names named-list))))
     (save-excursion
-      (goto-last-import)
+      (js-import-goto-last-import)
       (cond
-       ((import-backward-exist path)
+       ((js-import-import-backward-exist? path)
         (js-import-add-to-current-imports default-name names))
 
        (t (insert "import " (js-import-join-imports-names default-name names)

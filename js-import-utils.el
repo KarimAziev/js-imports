@@ -24,10 +24,35 @@
 
 ;;; Code:
 
+
+(require 'helm)
+(require 'projectile)
 (require 'f)
 (require 'json)
 (require 'subr-x)
-(require 'js-import-path)
+(require 's)
+(require 'js-import-regexp)
+
+(defcustom js-import-alias-map '("" "src")
+  "List of pairs (alias and path)"
+  :group 'js-import
+  :type '(repeat string))
+
+(defcustom js-import-type-faces
+  '(("^\\(as\\)$" . font-lock-type-face)
+    ("^\\(*\\)$" . font-lock-type-face)
+    ("^\\(default\\)$" . font-lock-variable-name-face)
+    ("^\\(Function\\|Functions\\|Defuns\\)$" . font-lock-function-name-face)
+    ("^\\(Types\\|Provides\\|Requires\\|Classes\\|Class\\|Includes\\|Imports\\|Misc\\)$" . font-lock-type-face))
+  "Faces for showing type in helm-js-import-menu.
+This is a list of cons cells.  The cdr of each cell is a face to be used,
+and it can also just be like \\='(:foreground \"yellow\").
+Each car is a regexp match pattern of the imenu type string."
+  :group 'js-import
+  :type '(repeat
+          (cons
+           (regexp :tag "Js import type regexp pattern")
+           (sexp :tag "Face"))))
 
 (defun js-import-cut-names(str &optional regexp)
   (let ((reg (or regexp "export[ \t\n\s]\\(const[ \t\n\s]\\)?+\\({[^}]+\\([a-zA-Z0-9]*\\)\\}\\)\\|\\(export[ \t\n\s]+\\(default[ \t\s\n]\\)?\\(const\\|let\\|var\\|function[*]?\\|class\\)?+\\)")))
@@ -41,15 +66,7 @@
         (kill-region (car bounds) (cdr bounds))
       (error "No %s at point" thing))))
 
-(defun js-import-delete-import-at-point (&optional $thing)
-  "Kill the `thing-at-point' for the specified kind of THING."
-  (let* ((thing (or $thing 'sexp))
-         (bounds (bounds-of-thing-at-point 'sexp)))
-    (if bounds
-        (kill-region (car bounds) (cdr bounds))
-      (error "No %s at point" thing))))
-
-(defun import-backward-exist(path)
+(defun js-import-import-backward-exist?(path)
   (re-search-backward (concat "from +['\"]" path "['\"]") nil t))
 
 (defun js-import-join-names(symbols)
@@ -59,37 +76,33 @@
 (defun js-import-join-imports-names(default-name names)
   (let (parts '())
     (when (stringp names) (push (concat "{ " names" }") parts))
-    (when (stringp default-name) (push default-name parts)
-          (message "parts %s" parts))
+    (when (stringp default-name) (push default-name parts))
     (s-join ", " (-non-nil parts))))
 
-(defun goto-last-import()
+(defun js-import-goto-last-import()
   (goto-char (point-min))
   (while (re-search-forward "\\(^\\| +\\)import[ \t\n]+" nil t)
     (re-search-forward "['\"]" nil t 2)
     (forward-line 1))
-  (point)
-  )
+  (point))
 
 (defun js-import-get-import-positions(path)
   (save-excursion
     (let ((pos1 (point-min))
-          (pos2 (goto-last-import)))
-      (when (import-backward-exist path)
+          (pos2 (js-import-goto-last-import)))
+      (when (js-import-import-backward-exist? path)
         (re-search-forward "['\"]+;?" nil t 2)
 
         (setq pos2 (point))
         (re-search-backward "\\(^\\| +\\)import[ \t\n]+" nil t)
         (setq pos1 (point)))
-      (cons pos1 pos2)
-      ))
-  )
+      (cons pos1 pos2))))
 
 (defun js-import-narrow-to-import(path)
   (let* ((bounds (js-import-get-import-positions path))
          (pos1 (car bounds))
          (pos2 (cdr bounds)))
-    (when (import-backward-exist path)
+    (when (js-import-import-backward-exist? path)
       (re-search-forward "['\"]+;?" nil t 2)
 
       (setq pos2 (point))
@@ -144,15 +157,12 @@ ITEM is not string."
       (get-text-property 0 property item)))
 
 (defun js-import-find-exports (&optional content)
-  (let* ((regexp "export[ \s\t\n]+\\(default\\|const\\|let\\|var\\|function[*]?\\|class\\)[\t\s\n]+\\([a-zZ-A0-9_,]+\\)?\\|export[ \s\t\n]+\\({[^}]+\\)")
-         (all-matches (s-match-strings-all regexp (or content (buffer-string))))
-         (match (s-match regexp content))
-         (result (js-import-map-matches all-matches)))
-    result))
+  (let ((all-matches (s-match-strings-all js-import-export-regexp (or content (buffer-string))))
+        (match (s-match js-import-export-regexp content)))
+    (js-import-map-matches all-matches js-import-import-regexp-exclude)))
 
 (defun js-import-find-current-imports(display-path)
-  (let* ((regexp-imports (concat "import[ \t\\n]+\\([a-zZ-A0-9_]+\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']" display-path "['\"']") )
-         (matches (s-match regexp-imports (buffer-string)))
+  (let* ((matches (s-match (js-import-make-import-regexp-from-path display-path) (buffer-string)))
          (default-import-name (nth 1 matches))
          (named-exports (js-import-cut-names (nth 2 matches) ",\\|}\\|{"))
          (alist '()))
@@ -165,14 +175,13 @@ ITEM is not string."
 
 (defun js-import-find-all-buffer-imports()
   (with-current-buffer (buffer-name)
-    (let* ((content (buffer-substring-no-properties (point-min) (goto-last-import)))
+    (let* ((content (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))
            (buffer (buffer-name))
-           (regexp "import[ \t\\n]+\\([a-zZ-A0-9_]+\\|*[\t\n\s]+as[\t\n\s][a-zZ-A_$]\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']\\([^['\"]*\\)")
-           (all-matches (s-match-strings-all regexp content))
+           (all-matches (s-match-strings-all js-import-import-regexp content))
            (result (mapcar (lambda (sublist)
                              (let* ((reversed-list (reverse sublist))
                                     (path (car (last sublist)))
-                                    (imports (js-import-cut-names (car sublist) "^import[ \t\n]\\|[ \t\n]from[ \t\n]+.*\\|,[ \s\t\n]*{" ))
+                                    (imports (js-import-cut-names (car sublist) js-import-import-regexp-exclude))
                                     (imports-list (mapcar (lambda(str)
                                                             (cond
                                                              ((s-contains? "}" str) (--map (cons (s-trim it) 4) (split-string str ",\\|}\\|{" t)))
@@ -214,9 +223,16 @@ ITEM is not string."
        (not (s-matches? js-import-test-file-regexp filename))))
 
 (defun js-import-get-project-files()
+  "Get js and ts files from current project"
   (-filter 'js-import-filter-pred (projectile-current-project-files)))
 
-(defun helm-js-imports-transformer (candidates)
+(defun js-import-get-alias-files(alias)
+  "Get filtered by alias path js and ts files from current project"
+  (let ((project-dir (projectile-project-root))
+        (alias-path (js-import-get-alias-path alias)))
+    (--filter (and (js-import-filter-pred it) (f-ancestor-of-p alias-path (f-join project-dir it))) (js-import-get-project-files))))
+
+(defun js-import-imports-transformer (candidates)
   (cl-loop for (k . v) in candidates
            for parts = (split-string k)
            for disp = (mapconcat (lambda (x)
@@ -256,7 +272,7 @@ ITEM is not string."
          (prompt (format
                   (pcase export-type
                     (1 "Import default as (default: %s): ")
-                    (4 "Symbols to import (default: %s): ")
+                    (4 "Import { (default: %s) }: ")
                     (16 "Import all exports as (default: %s): "))
                   proposed-symbol))
          (read-symbols
@@ -270,6 +286,134 @@ ITEM is not string."
                  (4 (format "%s as %s" current-name symbols))
                  (16 (format "%s as %s" current-name symbols)))))
     name))
+
+(defun js-import-get-aliases ()
+  "Get list of aliases"
+  (let ((pl js-import-alias-map)
+        (vals  ()))
+    (while pl
+      (push (car pl) vals)
+      (setq pl  (cddr pl)))
+    (nreverse vals)))
+
+(defun js-import-normalize-path(path)
+  (funcall (-compose
+            'js-import-remove-path-index
+            'f-no-ext
+            'js-import-remove-double-slashes)
+           path))
+
+(defun js-import-maybe-slash-alias(alias)
+  (if (or (s-blank? alias) (s-matches? ".*\\/$" alias)) alias (concat alias "/")))
+
+(defun js-import-real-path-to-alias(real-path alias)
+  (let ((alias-path (js-import-get-alias-path alias))
+        (slashed-alias (js-import-maybe-slash-alias alias)))
+    (replace-regexp-in-string (concat "^" alias-path) slashed-alias real-path)))
+
+(defun js-import-get-alias-path(alias)
+  (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
+
+(defun js-import-normalize-relative-path (path)
+  (funcall (-compose (lambda (str)
+                       (cond ((s-blank? str) "./index")
+                             ((not (s-matches? "\\.+/" str))
+                              (concat "./" str))
+                             (t str)))
+                     'js-import-normalize-path)
+           path))
+
+(defun js-import-remove-path-index (path)
+  (let ((cutted-path (replace-regexp-in-string "[/]*index\\(.jsx?$\\|.tsx?$\\)" "" path)))
+    (if (s-blank? cutted-path)
+        path
+      cutted-path)))
+
+(defun js-import-remove-double-slashes (path)
+  (replace-regexp-in-string "//"  "/" path))
+
+(defun js-import-expand-path(candidate)
+  (f-short (f-expand candidate (projectile-project-root))))
+
+(defun js-import-get-node-modules-path ()
+  "Return the path to node-modules."
+  (f-join (projectile-project-root) "node_modules"))
+
+(defun js-import-expand-node-modules(module)
+  (let ((node-modules-path (f-join (js-import-get-node-modules-path) module)))
+    node-modules-path))
+
+(defun js-import-js-file? (filename)
+  "Check if FILENAME ends with either .js or .jsx."
+  (or (string-suffix-p ".js" filename t)
+      (string-suffix-p ".jsx" filename t)
+      (string-suffix-p ".ts" filename t)
+      (string-suffix-p ".tsx" filename t)))
+
+(defun js-import-get-package-json-path ()
+  "Return the path to package.json."
+  (f-join (projectile-project-root) "package.json"))
+
+(defun js-import-find-node-module-index-path(module)
+  (let ((path (js-import-expand-node-modules module)))
+    (cond ((f-exists? (f-join path "es" "index.js"))
+           (setq path (f-join path "es/index.js")))
+          ((f-exists? (f-join path "src/index.js"))
+           (setq path (f-join path "src/index.js")))
+          ((f-exists? (f-join path "lib/index.js"))
+           (setq path (f-join path "lib/index.js")))
+          ((f-exists? (f-join path "es" "index.ts"))
+           (setq path (f-join path "es/index.ts")))
+          ((f-exists? (f-join path "src/index.ts"))
+           (setq path (f-join path "src/index.ts")))
+          ((f-exists? (f-join path "lib/index.d.ts"))
+           (setq path (f-join path "lib/index.d.ts")))
+          ((f-exists? (f-join path "lib/index.d.ts"))
+           (setq path (f-join path "lib/index.d.ts")))
+          ((f-exists? (f-join path "index.ts"))
+           (setq path (f-join path "index.ts")))
+          ((f-exists? (f-join path "index.d.ts"))
+           (setq path (f-join path "index.d.ts")))
+          (t (setq path (f-join path "index.js"))))))
+
+(defun js-import-dependencies-hash (&optional $package-json-path $section)
+  "Return a dependency hash fetched from package-json-path in section.  If file not found, return nil."
+  (let ((package-json-path (or $package-json-path (js-import-get-package-json-path)))
+        (section (or $section "dependencies"))
+        (json-object-type 'hash-table))
+    (when-let ((package-json-content (condition-case nil
+                                         (f-read-text package-json-path 'utf-8) (error nil)))
+               (dependencies-hash (condition-case nil
+                                      (gethash section (json-read-from-string package-json-content)) (error nil))))
+      dependencies-hash)))
+
+(defun js-import-is-dependency? (display-path)
+  "Check if path is dependency"
+  (let ((dependencies-hash (js-import-dependencies-hash))
+        (path (car (split-string display-path "/"))))
+    (if dependencies-hash
+        (gethash path dependencies-hash)
+      nil)))
+
+
+(defun js-import-path-to-real(path)
+  (let ((result (cond
+                 ((js-import-is-dependency? path)
+                  (js-import-find-node-module-index-path path))
+
+                 ((s-matches? "^\\." path)
+                  (let ((filepath (f-short (f-expand path))))
+                    (cond
+                     ((f-exists? (concat filepath ".js"))
+                      (setq filepath (concat filepath ".js"))
+                      filepath)
+                     ((f-exists? (concat filepath "/index.js"))
+                      (setq filepath (concat filepath "/index.js")))
+                     (t filepath))
+                    filepath)
+                  ))))
+    result))
+
 
 (provide 'js-import-utils)
 ;;; js-import-utils.el ends here

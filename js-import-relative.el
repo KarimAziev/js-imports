@@ -29,7 +29,6 @@
 (require 'json)
 (require 'subr-x)
 (require 'projectile)
-(require 'js-import-path)
 (require 'js-import-utils)
 (require 'js-import-from-path)
 

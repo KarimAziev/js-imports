@@ -27,7 +27,6 @@
 (require 'f)
 (require 'js-import-regexp)
 (require 'js-import-utils)
-(require 'js-import-path)
 (require 'js-import-insert)
 (require 'js-import-from-path)
 
