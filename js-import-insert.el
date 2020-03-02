@@ -80,10 +80,7 @@
       (skip-chars-forward " \t\n")))
 
   (when names
-    (let ((brackets-exist (string="{" (string (char-after))))
-          (bounds (bounds-of-thing-at-point 'word))
-          (charBefore))
-
+    (let ((brackets-exist (string="{" (string (char-after)))))
       (if brackets-exist
           (js-import-add-to-brackets names)
         (insert "{" names "}")))))

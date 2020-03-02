@@ -70,7 +70,7 @@
 
 (defun js-import-make-import-regexp-from-path(path)
   "Build regexp of import statement with given path"
-  (concat "import[ \t\\n]+\\([a-zZ-A0-9_]+\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']" display-path "['\"']"))
+  (concat "import[ \t\\n]+\\([a-zZ-A0-9_]+\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']" path "['\"']"))
 
 
 
