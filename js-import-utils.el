@@ -395,23 +395,46 @@ ITEM is not string."
       nil)))
 
 
-(defun js-import-path-to-real(path)
-  (let ((result (cond
-                 ((js-import-is-dependency? path)
-                  (js-import-find-node-module-index-path path))
 
-                 ((s-matches? "^\\." path)
-                  (let ((filepath (f-short (f-expand path))))
-                    (cond
-                     ((f-exists? (concat filepath ".js"))
-                      (setq filepath (concat filepath ".js"))
-                      filepath)
-                     ((f-exists? (concat filepath "/index.js"))
-                      (setq filepath (concat filepath "/index.js")))
-                     (t filepath))
-                    filepath)
-                  ))))
-    result))
+
+(defun js-import-alias-path-to-real(path)
+  (let* ((aliases (js-import-get-aliases))
+         (project-dir (projectile-project-root))
+         (real-path nil))
+
+    (mapc (lambda(alias)
+            (let* ((alias-regexp (concat "^" alias "/"))
+                   (alias-path (js-import-get-alias-path alias))
+                   (joined-path (f-join alias-path (s-replace-regexp alias-regexp "" path))))
+
+              (when (s-matches? (js-import-remove-double-slashes (concat "^" alias "/")) path)
+                (cond
+                 ((and (f-ext? joined-path) (f-exists? joined-path))
+                  (setq real-path joined-path))
+                 ((f-exists? (f-swap-ext joined-path "js") )
+                  (setq real-path (f-swap-ext joined-path "js")))
+                 ((and (not (f-ext? joined-path)) (f-exists? (f-join joined-path "index.js")) )
+                  (setq real-path (f-join joined-path "index.js")))))))
+          aliases)
+    real-path))
+
+
+(defun js-import-path-to-real(path)
+  (cond ((js-import-is-dependency? path)
+         (js-import-find-node-module-index-path path))
+        ((s-matches? "^\\." path)
+         (let ((filepath (f-short (f-expand path))))
+           (cond
+            ((f-exists? (concat filepath ".js"))
+             (setq filepath (concat filepath ".js"))
+             filepath)
+            ((f-exists? (concat filepath "/index.js"))
+             (setq filepath (concat filepath "/index.js")))
+            (t filepath))
+           filepath)
+         )
+        ((when-let (alias-path (js-import-alias-path-to-real path))
+           alias-path))))
 
 
 (provide 'js-import-utils)
