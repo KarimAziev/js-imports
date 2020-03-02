@@ -158,7 +158,7 @@ ITEM is not string."
 
 (defun js-import-find-exports (&optional content)
   (let ((all-matches (s-match-strings-all js-import-export-regexp (or content (buffer-string)))))
-    (js-import-map-matches all-matches js-import-import-regexp-exclude)))
+    (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp)))
 
 (defun js-import-find-current-imports(display-path)
   (let* ((matches (s-match (js-import-make-import-regexp-from-path display-path) (buffer-string)))
