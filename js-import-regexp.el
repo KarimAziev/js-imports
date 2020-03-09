@@ -38,7 +38,7 @@
   "import[ \t\\n]+\\([a-zZ-A0-9_]+\\|*[\t\n\s]+as[\t\n\s][a-zZ-A_$]\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']\\([^['\"]*\\)")
 
 (defvar js-import-exclude-regexp
-  "export[ \t]\\([ \t]default[ \t]\\)?\\|[ \t]import[ \t]\\|const[ \t]\\|let[ \t]\\|var[ \t]\\|function[\\*]\\|class[ \t]?[ \t]\\|function*[ \t]\\|[ \t]class[ \t]\\|[ \t]let[ \t]\\||[ \t]var[ \t]\\|[,\f\t\n\r\v}{]\\|[ \t]from[ \t]")
+  "export[ \t]\\([ \t]default[ \t]\\)?\\|[ \t]import[ \t]\\|const[ \t]\\|let[ \t]\\|var[ \t]\\|type[ \t]\\|interface[ \t]\\|function[\\*]\\|class[ \t]?[ \t]\\|function*[ \t]\\|[ \t]class[ \t]\\|[ \t]let[ \t]\\||[ \t]var[ \t]\\|[ \t]type[ \t]\\|[ \t]interface[ \t]\\|[,\f\t\n\r\v}{]\\|[ \t]from[ \t]")
 
 (defvar js-import-regexp-export-as
   "[*a-zZ-A0-9_]*[ \\t]+as[ \\t]")
@@ -57,7 +57,7 @@
   "Case-sensitive regexps for detecting JS variables in JavaScript buffers. ")
 
 (defvar js-import-export-regexp
-  "export[ \s\t\n]+\\(default\\|const\\|let\\|var\\|function[*]?\\|class\\)[\t\s\n]+\\([a-zZ-A0-9_,]+\\)?\\|export[ \s\t\n]+\\({[^}]+\\)"
+  "export[ \s\t\n]+\\(default\\|const\\|let\\|var\\|type\\|interface\\|function[*]?\\|class\\)[\t\s\n]+\\([a-zZ-A0-9_,]+\\)?\\|export[ \s\t\n]+\\({[^}]+\\)"
   "Regexp for searching export declarations")
 
 (defvar js-import-import-regexp

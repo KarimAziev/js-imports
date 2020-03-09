@@ -54,9 +54,8 @@ Each car is a regexp match pattern of the imenu type string."
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
-(defun js-import-cut-names(str &optional regexp)
-  (let ((reg (or regexp "export[ \t\n\s]\\(const[ \t\n\s]\\)?+\\({[^}]+\\([a-zA-Z0-9]*\\)\\}\\)\\|\\(export[ \t\n\s]+\\(default[ \t\s\n]\\)?\\(const\\|let\\|var\\|function[*]?\\|class\\)?+\\)")))
-    (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t))))))
+(defun js-import-cut-names(str reg)
+  (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t)))))
 
 (defun js-import-kill-thing-at-point (&optional $thing)
   "Kill the `thing-at-point' for the specified kind of THING."
