@@ -54,6 +54,8 @@ Each car is a regexp match pattern of the imenu type string."
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
+(defvar js-import-dependencies-cache-plist '())
+
 (defun js-import-cut-names(str reg)
   (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t)))))
 
@@ -397,13 +399,9 @@ ITEM is not string."
 
 (defun js-import-is-dependency? (display-path)
   "Check if path is dependency"
-  (let ((dependencies-hash (js-import-dependencies-hash))
+  (let ((dependencies (or (plist-get js-import-dependencies-cache-plist (projectile-project-root)) (js-import-get-all-dependencies)))
         (path (car (split-string display-path "/"))))
-    (if dependencies-hash
-        (gethash path dependencies-hash)
-      nil)))
-
-
+    (member path dependencies)))
 
 
 (defun js-import-alias-path-to-real(path)

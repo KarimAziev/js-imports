@@ -73,13 +73,12 @@
 (defun js-import-helm ()
   "Init imports from your current project"
   (interactive)
-  (with-current-buffer (buffer-name)
-    (helm :sources (append (js-import-alias-make-sources) (list
+  (helm :sources (append (js-import-alias-make-sources) (list
                                                            (helm-make-source "node modules" 'js-import-dependency-source)
                                                            (helm-make-source (format "relative exports for %s" (buffer-name)) 'js-import-relative-source)))
-          :allow-nest t
+          :allow-nest nil
           :prompt "Select path:"
-          :buffer "js imports")))
+          :buffer "js imports"))
 
 (provide 'js-import)
 ;;; js-import.el ends here

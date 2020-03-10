@@ -29,19 +29,30 @@
 (require 'js-import-from-path)
 
 (defclass js-import-dependency-source (helm-source-sync)
-  ((candidates :initform 'js-import-get-all-dependencies)
+  ((candidates :initform 'js-import-init-dependencies-sources)
    (nomark :initform t)
-   (candidate-number-limit  :initform 15)
+   (candidate-number-limit  :initform 25)
    (action :initform 'js-import-dependency)
    (group :initform 'js-import)))
+
+
+(defun js-import-init-dependencies-sources()
+  (let* ((project-name (projectile-project-root))
+         (cache (plist-get js-import-dependencies-cache-plist project-name)))
+    (unless cache
+      (setq js-import-dependencies-cache-plist (plist-put js-import-dependencies-cache-plist project-name (js-import-get-all-dependencies))))
+    (plist-get js-import-dependencies-cache-plist project-name)))
 
 ;;;###autoload
 (defun js-import-dependency (&optional dependency)
   "Import from node modules"
+
   (interactive)
-  (let* ((module (or dependency (completing-read "Select from node module: " (js-import-get-all-dependencies))))
-         (path (js-import-find-node-module-index-path module)))
-    (js-import-from-path path module)))
+  (when-let ((module (or dependency (helm
+                                 :sources (helm-make-source "node modules" 'js-import-dependency-source)
+                                 :buffer "js imports from dependencies"))))
+    (let ((path (js-import-find-node-module-index-path module)))
+               (js-import-from-path path module))))
 
 (provide 'js-import-dependency)
 ;;; js-import-dependency.el ends here
