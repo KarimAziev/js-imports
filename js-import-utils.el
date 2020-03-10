@@ -374,6 +374,16 @@ ITEM is not string."
            (setq path (f-join path "index.d.ts")))
           (t (setq path (f-join path "index.js"))))))
 
+(defun js-import-get-all-dependencies(&optional $package-json-path)
+  "Return dependencies, devDependencies and peerDependencies from package-json-path"
+  (let ((sections '("dependencies" "peerDependencies" "devDependencies")))
+    (--reduce-r-from (append acc (js-import-get-dependencies $package-json-path it)) '() sections)))
+
+(defun js-import-get-dependencies (&optional $package-json-path $section)
+  "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
+  (when-let ((dependencies-hash (js-import-dependencies-hash $package-json-path $section)))
+    (hash-table-keys dependencies-hash)))
+
 (defun js-import-dependencies-hash (&optional $package-json-path $section)
   "Return a dependency hash fetched from package-json-path in section.  If file not found, return nil."
   (let ((package-json-path (or $package-json-path (js-import-get-package-json-path)))

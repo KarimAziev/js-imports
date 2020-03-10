@@ -29,24 +29,17 @@
 (require 'js-import-from-path)
 
 (defclass js-import-dependency-source (helm-source-sync)
-  ((candidates :initform 'js-import-dependency-candidates)
+  ((candidates :initform 'js-import-get-all-dependencies)
    (nomark :initform t)
    (candidate-number-limit  :initform 15)
    (action :initform 'js-import-dependency)
    (group :initform 'js-import)))
 
-(defun js-import-dependency-candidates (&optional $package-json-path $section)
-  "Return a list of strings with dependencies fetched from PACKAGE-JSON-PATH in SECTION.  If file not found, return nil."
-  (interactive)
-  (let ((dependencies-hash (js-import-dependencies-hash $package-json-path $section)))
-    (when dependencies-hash
-      (hash-table-keys dependencies-hash))))
-
 ;;;###autoload
 (defun js-import-dependency (&optional dependency)
   "Import from node modules"
   (interactive)
-  (let* ((module (or dependency (completing-read "Select from node module: " (js-import-dependency-candidates))))
+  (let* ((module (or dependency (completing-read "Select from node module: " (js-import-get-all-dependencies))))
          (path (js-import-find-node-module-index-path module)))
     (js-import-from-path path module)))
 
