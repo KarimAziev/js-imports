@@ -174,7 +174,7 @@ ITEM is not string."
     alist))
 
 (defun js-import-find-all-buffer-imports()
-  (with-current-buffer (buffer-name)
+  (with-current-buffer (buffer-name)p
     (let* ((content (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))
            (buffer (buffer-name))
            (all-matches (s-match-strings-all js-import-import-regexp content))
@@ -386,6 +386,19 @@ ITEM is not string."
   (when-let ((dependencies-hash (js-import-dependencies-hash $package-json-path $section)))
     (hash-table-keys dependencies-hash)))
 
+(defun js-import-read-package-json-section (&optional $package-json-path $section)
+  "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
+  (let ((package-json-path (or $package-json-path (js-import-get-package-json-path)))
+        (section (or $section "dependencies"))
+        (json-object-type 'hash-table))
+    (when-let ((package-json-content (condition-case nil
+                                         (f-read-text package-json-path 'utf-8) (error nil)))
+               (dependencies-hash (condition-case nil
+                                      (gethash section (json-read-from-string package-json-content)) (error nil))))
+
+      (message "%s dependencies-hash\n %s" package-json-path dependencies-hash)
+      dependencies-hash)))
+
 (defun js-import-dependencies-hash (&optional $package-json-path $section)
   "Return a dependency hash fetched from package-json-path in section.  If file not found, return nil."
   (let ((package-json-path (or $package-json-path (js-import-get-package-json-path)))
@@ -400,8 +413,80 @@ ITEM is not string."
 (defun js-import-is-dependency? (display-path)
   "Check if path is dependency"
   (let ((dependencies (or (plist-get js-import-dependencies-cache-plist (projectile-project-root)) (js-import-get-all-dependencies)))
-        (path (car (split-string display-path "/"))))
-    (member path dependencies)))
+        (dirname (car (split-string display-path "/")))
+        (package-json-path nil)
+        (path nil))
+
+    (when (and (-contains? dependencies dirname)
+               (f-exists? (js-import-expand-node-modules dirname)))
+
+      (setq path (f-join (js-import-expand-node-modules display-path)))
+      (setq package-json-path (js-import-expand-node-modules (f-join path "package.json")))
+
+      (when-let ((module (js-import-read-package-json-section package-json-path "module")))
+        (message "module\n %s stringp %s"  module (f-relative module))
+        )
+      )
+    path
+    ))
+
+(defun js-import-get-dependency-dir(display-path)
+  (let ((parts (s-slice-at "/[^/]+$" display-path)))
+    (when-let (lastpath (nth 1 parts))
+      (setcdr parts (s-replace-regexp "^/" "" lastpath)))
+    parts
+    ))
+
+
+(defun js-import-find-index-file-in-path(path)
+  (let ((files (f-files path (lambda (file) (s-matches? "/index.js$\\|/index.ts$\\|package.json$" file)))))
+    (--sort (let ((name (f-filename it))
+                   (othername (f-filename other)))
+              (cond
+               ((equal name "index.ts")
+                name)
+               ((and (equal name "index.js") (not (equal othername "index.ts")))
+                name))) files)))
+
+;;(js-import-find-index-file-in-path "/home/user/sema4/s4-resulting-ui/node_modules/redux-saga/effects")
+
+(defun js-import-traverse-down(path)
+  (let ((filepath (if (f-ext path)
+        (pcase (f-ext path)
+      ("json"
+       (when-let ((dir (f-dirname path))
+                  (module (js-import-read-package-json-section path "module")))
+
+         (message "dir\n %s module\n %s"  dir module)
+         (f-expand module dir)))
+      ("js"
+       (find-file path))
+      )
+        (car (js-import-find-index-file-in-path path)))))
+
+    (message "filepath\n %s"  filepath)
+    (when filepath
+      (js-import-traverse-down filepath))))
+
+(js-import-traverse-down "/home/user/sema4/s4-resulting-ui/node_modules/redux-saga/effects")
+
+
+(defun js-import-maybe-expand-dependency(display-path)
+  (let* ((dependencies (or (plist-get js-import-dependencies-cache-plist (projectile-project-root)) (js-import-get-all-dependencies)))
+         (parts (js-import-get-dependency-dir display-path))
+         (libdir (js-import-expand-node-modules (car parts)))
+         (subdir (last parts))
+
+         )
+    (when (f-exists? libdir)
+
+
+        )
+
+    libdir
+
+
+    ))
 
 
 (defun js-import-alias-path-to-real(path)
@@ -425,6 +510,123 @@ ITEM is not string."
           aliases)
     real-path))
 
+;; (f-exists? "/home/user/sema4/s4-resulting-ui/src/components/UI/TooltipButton/")
+;; (f-dirname "@/components/UI/Button")
+;; ('redux-saga/effects')
+
+(defun js-import-open-file-at-point()
+  (interactive)
+  (let* (($inputStr (if (use-region-p)
+                        (buffer-substring-no-properties (region-beginning) (region-end))
+                      (let ($p0 $p1 $p2
+                                ;; chars that are likely to be delimiters of file path or url, e.g. whitespace, comma. The colon is a problem. cuz it's in url, but not in file name. Don't want to use just space as delimiter because path or url are often in brackets or quotes as in markdown or html
+                                ($pathStops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\"))
+                        (setq $p0 (point))
+                        (skip-chars-backward $pathStops)
+                        (setq $p1 (point))
+                        (goto-char $p0)
+                        (skip-chars-forward $pathStops)
+                        (setq $p2 (point))
+                        (goto-char $p0)
+                        (buffer-substring-no-properties $p1 $p2))))
+
+         ($path (js-import-maybe-expand-dependency $inputStr)))
+    (message "inputStr \n %s $path %s"  $inputStr $path)
+    ;; (if (string-match-p "\\`https?://" $path)
+    ;;     (if (fboundp 'xahsite-url-to-filepath)
+    ;;         (let (($x (xahsite-url-to-filepath $path)))
+    ;;           (if (string-match "^http" $x )
+    ;;               (browse-url $x)
+    ;;             (find-file $x)))
+    ;;       (progn (browse-url $path)))
+    ;;   (if ; not starting “http://”
+    ;;       (string-match "^\\`\\(.+?\\):\\([0-9]+\\)\\'" $path)
+    ;;       (let (
+    ;;             ($fpath (match-string 1 $path))
+    ;;             ($line-num (string-to-number (match-string 2 $path))))
+    ;;         (if (file-exists-p $fpath)
+    ;;             (progn
+    ;;               (find-file $fpath)
+    ;;               (goto-char 1)
+    ;;               (forward-line (1- $line-num)))
+    ;;           (when (y-or-n-p (format "file no exist: 「%s」. Create?" $fpath))
+    ;;             (find-file $fpath))))
+    ;;     (if (file-exists-p $path)
+    ;;         (progn ; open f.ts instead of f.js
+    ;;           (let (($ext (file-name-extension $path))
+    ;;                 ($fnamecore (file-name-sans-extension $path)))
+    ;;             (if (and (string-equal $ext "js")
+    ;;                      (file-exists-p (concat $fnamecore ".ts")))
+    ;;                 (find-file (concat $fnamecore ".ts"))
+    ;;               (find-file $path))))
+    ;;       (if (file-exists-p (concat $path ".el"))
+    ;;           (find-file (concat $path ".el"))
+    ;;         (when (y-or-n-p (format "file no exist: 「%s」. Create?" $path))
+    ;;           (find-file $path ))))))
+    )
+  )
+
+(defun xah-open-file-at-cursor ()
+  "Open the file path under cursor.
+If there is text selection, uses the text selection for path.
+If the path starts with “http://”, open the URL in browser.
+Input path can be {relative, full path, URL}.
+Path may have a trailing “:‹n›” that indicates line number. If so, jump to that line number.
+If path does not have a file extension, automatically try with “.el” for elisp files.
+This command is similar to `find-file-at-point' but without prompting for confirmation.
+
+URL `http://ergoemacs.org/emacs/emacs_open_file_path_fast.html'
+Version 2019-01-16"
+  (interactive)
+  (let* (($inputStr (if (use-region-p)
+                        (buffer-substring-no-properties (region-beginning) (region-end))
+                      (let ($p0 $p1 $p2
+                                ;; chars that are likely to be delimiters of file path or url, e.g. whitespace, comma. The colon is a problem. cuz it's in url, but not in file name. Don't want to use just space as delimiter because path or url are often in brackets or quotes as in markdown or html
+                                ($pathStops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\"))
+                        (setq $p0 (point))
+                        (skip-chars-backward $pathStops)
+                        (setq $p1 (point))
+                        (goto-char $p0)
+                        (skip-chars-forward $pathStops)
+                        (setq $p2 (point))
+                        (goto-char $p0)
+                        (buffer-substring-no-properties $p1 $p2))))
+         ($path
+          (replace-regexp-in-string
+           "^file:///" "/"
+           (replace-regexp-in-string
+            ":\\'" "" $inputStr))))
+    (if (string-match-p "\\`https?://" $path)
+        (if (fboundp 'xahsite-url-to-filepath)
+            (let (($x (xahsite-url-to-filepath $path)))
+              (if (string-match "^http" $x )
+                  (browse-url $x)
+                (find-file $x)))
+          (progn (browse-url $path)))
+      (if ; not starting “http://”
+          (string-match "^\\`\\(.+?\\):\\([0-9]+\\)\\'" $path)
+          (let (
+                ($fpath (match-string 1 $path))
+                ($line-num (string-to-number (match-string 2 $path))))
+            (if (file-exists-p $fpath)
+                (progn
+                  (find-file $fpath)
+                  (goto-char 1)
+                  (forward-line (1- $line-num)))
+              (when (y-or-n-p (format "file no exist: 「%s」. Create?" $fpath))
+                (find-file $fpath))))
+        (if (file-exists-p $path)
+            (progn ; open f.ts instead of f.js
+              (let (($ext (file-name-extension $path))
+                    ($fnamecore (file-name-sans-extension $path)))
+                (if (and (string-equal $ext "js")
+                         (file-exists-p (concat $fnamecore ".ts")))
+                    (find-file (concat $fnamecore ".ts"))
+                  (find-file $path))))
+          (if (file-exists-p (concat $path ".el"))
+              (find-file (concat $path ".el"))
+            (when (y-or-n-p (format "file no exist: 「%s」. Create?" $path))
+              (find-file $path ))))))))
 
 (defun js-import-path-to-real(path)
   (cond ((js-import-is-dependency? path)
