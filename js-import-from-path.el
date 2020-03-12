@@ -29,20 +29,23 @@
 (require 'subr-x)
 (require 'js-import-utils)
 
-(defun js-import-from-path(path normalized-path)
+(defun js-import-from-path(path &optional normalized-path)
   (let* ((import-alist (js-import-find-current-imports normalized-path))
-         (all-exports-alist (js-import-find-exports (f-read path)))
+         (all-exports-alist (js-import-find-all-exports normalized-path path))
          (import-reals (--map (funcall (-compose 's-trim 'car 'split-string 'car) it)
                               import-alist))
          (import-source (js-import-build-imported-source import-alist normalized-path))
          (export-source (helm-build-sync-source (format "Exports from %s" normalized-path)
                           :candidates (-filter (lambda(it)
+
+                                                 (message "it\n %s" it)
                                                  (let ((name (car it))
                                                        (type (cdr it)))
                                                    (pcase type
                                                      (1 (not (rassoc 1 import-alist)))
                                                      (4 (not (-contains? import-reals (car it))))
-                                                     (16 (not (rassoc 16 import-alist))))))
+                                                     (16 (not (rassoc 16 import-alist))))
+                                                   ))
                                                all-exports-alist)
                           :candidate-transformer 'js-import-imports-transformer
                           :persistent-action 'js-import-action--goto-export
@@ -55,9 +58,24 @@
                           :action '(("Import" . js-import-action--import-candidate)
                                     ("Import as " . js-import-action--import-as)
                                     ("Go" . js-import-action--goto-export)))))
+
     (helm :sources (list export-source import-source))))
 
 (defun js-import-build-imported-source(candidates display-path &optional real-path)
+  (helm-build-sync-source (format "imported from %s" display-path)
+    :display-to-real (lambda(candidate)
+                       (js-import-make-item candidate
+                                            :cell (assoc candidate candidates)
+                                            :real-path real-path
+                                            :display-path display-path))
+    :candidate-transformer 'js-import-imports-transformer
+    :candidates candidates
+    :persistent-action 'js-import-action--goto-export
+    :action '(("Go" . js-import-action--goto-export)
+              ("Rename" . js-import-action--rename-import)
+              ("Delete" . js-import-action--delete-import))))
+
+(defun js-import-build-exported-source(candidates display-path &optional real-path)
   (helm-build-sync-source (format "import from %s" display-path)
     :display-to-real (lambda(candidate)
                        (js-import-make-item candidate

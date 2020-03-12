@@ -43,7 +43,7 @@
 (defun js-import-helm-relative-sort-candidate-transformer (candidates)
   (js-import-sort-relative (js-import-helm-relative-ff-transformer candidates)))
 
-(defun js-import-helm-relative-ff-transformer(candidates)
+(defun js-import-helm-relative-ff-transformer(candidates &optional source)
   (with-current-buffer helm-current-buffer
     (let* ((buffer-dir (f-short (f-dirname buffer-file-name))))
       (-map (lambda (it)
@@ -60,7 +60,7 @@
 
 (defclass js-import-relative-source (helm-source-sync)
   ((candidates :initform 'js-import-relative-candidates)
-   (candidate-transformer :initform 'js-import-helm-relative-ff-transformer)
+   (filtered-candidate-transformer :initform 'js-import-helm-relative-ff-transformer)
    (nomark :initform t)
    (candidate-number-limit  :initform 15)
    (action :initform 'js-import-relative-file-action)

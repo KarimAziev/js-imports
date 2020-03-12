@@ -35,13 +35,13 @@
 (defun js-import-alias-make-alias-source(alias)
   (let ((project-dir (projectile-project-root))
         (alias-path (js-import-get-alias-path alias))
-        (files (js-import-get-alias-files alias))
         (slashed-alias (js-import-maybe-slash-alias alias)))
 
     (helm-build-sync-source (format "Alias import %s" alias)
-      :candidates (--map (js-import-real-path-to-alias (f-join project-dir it) alias) files)
+      :candidates (js-import-get-alias-files alias)
       :nomark t
-      :candidate-number-limit 25
+      :filter-one-by-one (lambda(it) (js-import-real-path-to-alias (f-join project-dir it) alias))
+      :candidate-number-limit 15
       :group 'js-import
       :action (lambda(candidate)
                 (let ((real-path (f-join alias-path (replace-regexp-in-string (concat "^" slashed-alias) "" candidate)))

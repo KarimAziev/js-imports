@@ -29,10 +29,11 @@
 (require 'js-import-from-path)
 
 (defclass js-import-dependency-source (helm-source-sync)
-  ((candidates :initform 'js-import-init-dependencies-sources)
+  ((candidates :initform js-import-init-dependencies-sources)
    (nomark :initform t)
    (candidate-number-limit  :initform 25)
    (action :initform 'js-import-dependency)
+   (persistent-action :initform 'js-import-dependency)
    (group :initform 'js-import)))
 
 
@@ -46,12 +47,11 @@
 ;;;###autoload
 (defun js-import-dependency (&optional dependency)
   "Import from node modules"
-
   (interactive)
   (when-let ((module (or dependency (helm
                                  :sources (helm-make-source "node modules" 'js-import-dependency-source)
                                  :buffer "js imports from dependencies"))))
-    (let ((path (js-import-find-node-module-index-path module)))
+    (let ((path (js-import-maybe-expand-dependency module)))
                (js-import-from-path path module))))
 
 (provide 'js-import-dependency)
