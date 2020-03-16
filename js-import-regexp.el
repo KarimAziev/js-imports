@@ -37,6 +37,9 @@
 (defvar js-import-imports-regexp
   "import[ \t\\n]+\\([a-zZ-A0-9_]+\\|*[\t\n\s]+as[\t\n\s][a-zZ-A_$]\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']\\([^['\"]*\\)")
 
+(defvar js-import-regexp-export-all-from
+  "export[ \s\t\n]+\\*+[ \s\t\n]+from[ \t]+['\"']\\([^['\"]*\\)")
+
 (defvar js-import-exclude-regexp
   "export[ \t]\\([ \t]default[ \t]\\)?\\|[ \t]import[ \t]\\|const[ \t]\\|let[ \t]\\|var[ \t]\\|type[ \t]\\|interface[ \t]\\|function[\\*]\\|class[ \t]?[ \t]\\|function*[ \t]\\|[ \t]class[ \t]\\|[ \t]let[ \t]\\||[ \t]var[ \t]\\|[ \t]type[ \t]\\|[ \t]interface[ \t]\\|[,\f\t\n\r\v}{]\\|[ \t]from[ \t]")
 
