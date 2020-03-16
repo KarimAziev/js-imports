@@ -26,6 +26,7 @@
 
 (require 'helm)
 (require 'projectile)
+(require 'js-export)
 (require 'js-import-from-path)
 (require 'js-import-relative)
 (require 'js-import-alias)

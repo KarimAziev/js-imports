@@ -55,10 +55,7 @@ Each car is a regexp match pattern of the imenu type string."
            (sexp :tag "Face"))))
 
 (defvar js-import-dependencies-cache-plist '())
-(defvar effects-path "/home/karim/sema4/s4-resulting-ui/node_modules/redux-saga/effects.d.ts")
 
-(defvar redux-saga-dir "/home/karim/sema4/s4-resulting-ui/node_modules/redux-saga")
-(defvar redux-saga-effects-dir "/home/karim/sema4/s4-resulting-ui/node_modules/redux-saga/effects")
 (defun js-import-cut-names(str reg)
   (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t)))))
 
@@ -165,7 +162,6 @@ ITEM is not string."
     (when-let ((deep-exports (s-match-strings-all js-import-regexp-export-all-from content)))
       (--map (car (last it)) deep-exports))))
 
-(js-import-collect-deep-exports effects-path)
 
 (defun js-import-find-exports (&optional path)
   (when-let (content (f-read path))
@@ -185,7 +181,7 @@ ITEM is not string."
     alist))
 
 (defun js-import-find-all-buffer-imports()
-  (with-current-buffer (buffer-name)p
+  (with-current-buffer (buffer-name)
     (let* ((content (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))
            (buffer (buffer-name))
            (all-matches (s-match-strings-all js-import-import-regexp content))
@@ -373,7 +369,7 @@ ITEM is not string."
 
 (defun js-import-get-dependencies (&optional $package-json-path $section)
   "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
-  (when-let ((dependencies-hash (js-import-dependencies-hash $package-json-path $section)))
+  (when-let ((dependencies-hash (js-import-read-package-json-section $package-json-path $section)))
     (hash-table-keys dependencies-hash)))
 
 (defun js-import-read-package-json-section (&optional $package-json-path $section)
@@ -440,14 +436,10 @@ ITEM is not string."
 
 
 (defun js-import-traverse-down(path)
-  (let ((filepathg (car (js-import-find-index-files-in-path path))))
-    (if filepathg
-        (js-import-traverse-down filepathg)
-      path
-      )))
-
-
-
+  (let ((filepath (car (js-import-find-index-files-in-path path))))
+    (if filepath
+        (js-import-traverse-down filepath)
+      path)))
 
 (defun js-import-process-file (fPath)
   "Process the file at fullpath FPATH.
@@ -461,17 +453,12 @@ Write result to buffer DESTBUFF."
     ))
 
 
-;;;###autoload
-(defun js-import-edit-buffer-imports()
-  (interactive)
-  (helm :sources (js-import-make-imports-sources)))
 
 (defun js-import-find-all-exports (display-path &optional real-path)
   (let* ((curr-path (or real-path buffer-file-name))
          (curr-dir (if (f-ext? curr-path) curr-path)))
 
     (unless real-path (setq real-path (js-import-path-to-real display-path curr-dir)))
-        (message "AFTER REAL SET buffer-file-name\n %s path %s real %s" buffer-file-name display-path real-path)
         (when-let ((real-path)
                    (dir-name (f-dirname real-path))
                    (content (f-read real-path)))
@@ -519,18 +506,16 @@ Write result to buffer DESTBUFF."
   (s-matches? "^\\." path))
 
 (defun js-import-path-to-relative(path &optional dir)
-  (let ((filepathg (f-short (f-expand path dir))))
-    (message "filepath\n %s"  filepathg)
+  (let ((filepath (f-short (f-expand path dir))))
     (cond
-     ((f-exists? (concat filepathg ".js"))
-      (setq filepathg (concat filepathg ".js"))
-e      filepathg)
-     ((f-exists? (concat filepathg "/index.js"))
-      (setq filepathg (concat filepathg "/index.js"))))
-    filepathg))
+     ((f-exists? (concat filepath ".js"))
+      (setq filepath (concat filepath ".js"))
+      filepath)
+     ((f-exists? (concat filepath "/index.js"))
+      (setq filepath (concat filepath "/index.js"))))
+    filepath))
 
 (defun js-import-path-to-real(path &optional dir)
-  (message "js-import-path-to-real path\n %s dir\n %s" path dir)
   (cond ((js-import-relative? path)
          (js-import-path-to-relative path dir))
         ((js-import-is-dependency? path)
@@ -552,17 +537,6 @@ e      filepathg)
                         (goto-char $p0)
                         (buffer-substring-no-properties $p1 $p2)))))
     $inputStr))
-
-(defun js-import-show-exports-from-path-at-point()
-  (interactive)
-  (let* (($inputStr (js-import-get-word-at-point))
-         (real-path (js-import-path-to-real $inputStr (f-dirname buffer-file-name)))
-         (all-exports (js-import-from-path real-path $inputStr)))))
-
-(defun js-import-open-file-at-point()
-  (interactive)
-  (let* (($inputStr (js-import-get-word-at-point))
-         (real-path (js-import-path-to-real $inputStr (f-dirname buffer-file-name))))))
 
 (provide 'js-import-utils)
 ;;; js-import-utils.el ends here
