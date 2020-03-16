@@ -473,7 +473,7 @@ Write result to buffer DESTBUFF."
             (when deep-exports
               (mapcar (lambda(path) (push (js-import-find-all-exports path (js-import-path-to-real path dir-name)) result))
                       deep-exports))
-            (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp)))
+            (-distinct (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
             ))
     ))
 
