@@ -253,9 +253,9 @@ ITEM is not string."
            collect disp))
 
 (defun js-import-get-export-type(str)
-  (cond
+(cond
    ((s-equals? "*" str) 16)
-   ((s-matches? "{[ \t\s\n]?default\\([ \\b$]\\|$\\)" str) 4)
+   ((s-matches? "{[ \t\s\n]?\\(default\\)[ \\s\\t]+as[^a-zZ-A0-9_$]" str) 4)
    ((s-matches? "[ \t\s\n]default\\([ \\b$]\\|$\\)" str) 1)
    (t 4)))
 
@@ -340,7 +340,6 @@ ITEM is not string."
   (replace-regexp-in-string "//"  "/" path))
 
 (defun js-import-expand-path(candidate)
-  (message "js-import-expand-path candidate\n %s" candidate)
   (f-short (f-expand candidate (projectile-project-root))))
 
 (defun js-import-get-node-modules-path (&optional project-dir)
@@ -431,11 +430,7 @@ ITEM is not string."
    ((js-import-is-package-json path)
     (when-let ((dir (f-dirname path))
                (module (js-import-read-package-json-section path "module")))
-
-
-      (list (f-expand module dir))
-
-      ))
+      (list (f-expand module dir))))
    (t nil)))
 
 
@@ -526,10 +521,10 @@ Write result to buffer DESTBUFF."
         (t (js-import-alias-path-to-real path))))
 
 (defun js-import-get-word-at-point()
+  (interactive)
   (let* (($inputStr (if (use-region-p)
                         (buffer-substring-no-properties (region-beginning) (region-end))
                       (let ($p0 $p1 $p2
-                                ;; chars that are likely to be delimiters of file path or url, e.g. whitespace, comma. The colon is a problem. cuz it's in url, but not in file name. Don't want to use just space as delimiter because path or url are often in brackets or quotes as in markdown or html
                                 ($pathStops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\"))
                         (setq $p0 (point))
                         (skip-chars-backward $pathStops)

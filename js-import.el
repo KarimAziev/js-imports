@@ -79,7 +79,7 @@
                                                            (helm-make-source (format "relative exports for %s" (buffer-name)) 'js-import-relative-source)))
           :allow-nest nil
           :prompt "Select path:"
-          :buffer "js imports"))
+          :buffer "*js imports*"))
 
 (provide 'js-import)
 ;;; js-import.el ends here
