@@ -37,8 +37,6 @@
          (import-source (js-import-build-imported-source import-alist normalized-path))
          (export-source (helm-build-sync-source (format "Exports from %s" normalized-path)
                           :candidates (-filter (lambda(it)
-
-                                                 (message "it\n %s" it)
                                                  (let ((name (car it))
                                                        (type (cdr it)))
                                                    (pcase type
@@ -66,14 +64,16 @@
     :display-to-real (lambda(candidate)
                        (js-import-make-item candidate
                                             :cell (assoc candidate candidates)
-                                            :real-path real-path
+                                            :real-path (or real-path (js-import-alias-path-to-real display-path))
                                             :display-path display-path))
     :candidate-transformer 'js-import-imports-transformer
     :candidates candidates
     :persistent-action 'js-import-action--goto-export
     :action '(("Go" . js-import-action--goto-export)
               ("Rename" . js-import-action--rename-import)
-              ("Delete" . js-import-action--delete-import))))
+              ("Add more imports" . js-import-action--add-to-import)
+              ("Delete" . js-import-action--delete-import)
+              ("Delete whole import" . js-import-action--delete-whole-import))))
 
 (defun js-import-build-exported-source(candidates display-path &optional real-path)
   (helm-build-sync-source (format "import from %s" display-path)
@@ -87,7 +87,9 @@
     :persistent-action 'js-import-action--goto-export
     :action '(("Go" . js-import-action--goto-export)
               ("Rename" . js-import-action--rename-import)
-              ("Delete" . js-import-action--delete-import))))
+              ("Delete" . js-import-action--delete-import)
+              ("Delete whole import" . js-import-action--delete-whole-import)
+              )))
 
 (defun js-import-action--goto-export(candidate)
   (with-helm-quittable
@@ -114,6 +116,21 @@
          (16 (js-import-delete-whole-import display-path))
          (t (js-import-delete-imported-name fullname display-path)))))
 
+   (helm-marked-candidates)))
+
+(defun js-import-action--delete-whole-import(cand)
+  (mapc
+   (lambda(candidate)
+     (let ((display-path (js-import-get-prop candidate 'display-path)))
+       (js-import-delete-whole-import display-path)))
+   (helm-marked-candidates)))
+
+(defun js-import-action--add-to-import(cand)
+  (mapc
+   (lambda(candidate)
+     (let ((display-path (js-import-get-prop candidate 'display-path))
+           (real-path (js-import-get-prop candidate 'real-path)))
+       (js-import-from-path real-path display-path)))
    (helm-marked-candidates)))
 
 (defun js-import-action--rename-import(cand)

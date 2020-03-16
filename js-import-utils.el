@@ -169,7 +169,7 @@ ITEM is not string."
       (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
 
 (defun js-import-find-current-imports(display-path)
-  (let* ((matches (s-match (js-import-make-import-regexp-from-path display-path) (buffer-string)))
+  (let* ((matches (s-match (js-import-make-import-regexp-from-path display-path) (buffer-substring-no-properties (point-min) (js-import-goto-last-import))))
          (default-import-name (nth 1 matches))
          (named-exports (js-import-cut-names (nth 2 matches) ",\\|}\\|{"))
          (alist '()))
@@ -340,6 +340,7 @@ ITEM is not string."
   (replace-regexp-in-string "//"  "/" path))
 
 (defun js-import-expand-path(candidate)
+  (message "js-import-expand-path candidate\n %s" candidate)
   (f-short (f-expand candidate (projectile-project-root))))
 
 (defun js-import-get-node-modules-path (&optional project-dir)
@@ -430,7 +431,11 @@ ITEM is not string."
    ((js-import-is-package-json path)
     (when-let ((dir (f-dirname path))
                (module (js-import-read-package-json-section path "module")))
-      (list (f-expand module dir))))
+
+
+      (list (f-expand module dir))
+
+      ))
    (t nil)))
 
 
@@ -468,8 +473,6 @@ Write result to buffer DESTBUFF."
             (when deep-exports
               (mapcar (lambda(path) (push (js-import-find-all-exports path (js-import-path-to-real path dir-name)) result))
                       deep-exports))
-
-            (message "result\n %s"  result)
             (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp)))
             ))
     ))
