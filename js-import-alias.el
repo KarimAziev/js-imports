@@ -41,7 +41,7 @@
       :candidates (js-import-get-alias-files alias)
       :nomark t
       :filter-one-by-one (lambda(it) (js-import-real-path-to-alias (f-join project-dir it) alias))
-      :candidate-number-limit 15
+      :candidate-number-limit 30
       :group 'js-import
       :action (lambda(candidate)
                 (let ((real-path (f-join alias-path (replace-regexp-in-string (concat "^" slashed-alias) "" candidate)))

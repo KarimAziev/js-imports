@@ -305,8 +305,8 @@ ITEM is not string."
 
 (defun js-import-normalize-path(path)
   (funcall (-compose
-            'js-import-remove-path-index
-            'f-no-ext
+            'js-import-maybe-remove-path-index
+            'js-import-remove-ext
             'js-import-remove-double-slashes)
            path))
 
@@ -330,11 +330,9 @@ ITEM is not string."
                      'js-import-normalize-path)
            path))
 
-(defun js-import-remove-path-index (path)
-  (let ((cutted-path (replace-regexp-in-string "[/]*index\\(.jsx?$\\|.tsx?$\\)" "" path)))
-    (if (s-blank? cutted-path)
-        path
-      cutted-path)))
+
+(defun js-import-maybe-remove-path-index (path)
+  (replace-regexp-in-string "index$" "" path))
 
 (defun js-import-remove-double-slashes (path)
   (replace-regexp-in-string "//"  "/" path))
@@ -352,25 +350,47 @@ ITEM is not string."
 
 (defun js-import-js-file? (filename)
   "Check if FILENAME ends with either .js or .jsx."
-  (or (string-suffix-p ".js" filename t)
-      (string-suffix-p ".jsx" filename t)
-      (string-suffix-p ".ts" filename t)
-      (string-suffix-p ".tsx" filename t)))
+  (s-matches? "\\.[jt]s\\(x\\)?$" filename))
 
 (defun js-import-get-package-json-path ()
   "Return the path to package.json."
   (f-join (projectile-project-root) "package.json"))
 
+(defun js-import-is-module-interface(path)
+  (s-matches? ".d.ts$" path))
+
+(defun js-import-remove-ext(path)
+  (replace-regexp-in-string "\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)$" "" path))
+
+(defun js-import-is-index-file?(path)
+  (s-matches? "\\(/\\|^\\)\\index\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)?$" path))
+
+(defun js-import-find-interfaces(display-path)
+  (when-let ((f-exists-p (js-import-expand-node-modules display-path))
+             (files (f-files (js-import-expand-node-modules display-path) (lambda(path) (and (js-import-is-module-interface path) (not (js-import-is-index-file? path)))))))
+    (--map (f-join display-path (f-filename (js-import-remove-ext it)))
+           files)
+
+      ))
 
 (defun js-import-get-all-dependencies(&optional $package-json-path)
-  "Return dependencies, devDependencies and peerDependencies from package-json-path"
+   "Return dependencies, devDependencies and peerDependencies from package-json-path"
   (let ((sections '("dependencies" "peerDependencies" "devDependencies")))
-    (--reduce-r-from (append acc (js-import-get-dependencies $package-json-path it)) '() sections)))
+    (--reduce-r-from (append (js-import-get-dependencies (js-import-get-package-json-path) it) acc) '() sections)))
+
+
 
 (defun js-import-get-dependencies (&optional $package-json-path $section)
   "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
-  (when-let ((dependencies-hash (js-import-read-package-json-section $package-json-path $section)))
-    (hash-table-keys dependencies-hash)))
+  (when-let ((dependencies-hash (js-import-read-package-json-section $package-json-path $section))
+              (keys (hash-table-keys dependencies-hash)))
+    (mapc (lambda(name)
+            (when-let ((subfile (js-import-find-interfaces name)))
+              (push subfile keys)))
+          keys)
+    ;;(result (--reduce-r-from (append (js-import-find-interfaces it) acc) '() keys))
+    keys
+    ))
 
 (defun js-import-read-package-json-section (&optional $package-json-path $section)
   "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
@@ -470,8 +490,7 @@ Write result to buffer DESTBUFF."
                       deep-exports))
             (-distinct (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
             ))
-    ))
-
+        ))
 
 (defun js-import-maybe-expand-dependency(display-path &optional $real-path)
   (let ((real-path (or $real-path (js-import-expand-node-modules display-path))))

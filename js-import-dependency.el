@@ -31,18 +31,15 @@
 (defclass js-import-dependency-source (helm-source-sync)
   ((candidates :initform 'js-import-init-dependencies-sources)
    (nomark :initform t)
-   (candidate-number-limit  :initform 25)
+   (candidate-number-limit  :initform 30)
    (action :initform 'js-import-dependency)
    (persistent-action :initform 'js-import-dependency)
    (group :initform 'js-import)))
 
 
 (defun js-import-init-dependencies-sources()
-  (let* ((project-name (projectile-project-root))
-         (cache (plist-get js-import-dependencies-cache-plist project-name)))
-    (unless cache
-      (setq js-import-dependencies-cache-plist (plist-put js-import-dependencies-cache-plist project-name (js-import-get-all-dependencies))))
-    (plist-get js-import-dependencies-cache-plist project-name)))
+  (let ((project-name (projectile-project-root)))
+    (js-import-get-all-dependencies)))
 
 ;;;###autoload
 (defun js-import-dependency (&optional dependency)

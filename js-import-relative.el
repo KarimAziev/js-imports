@@ -62,7 +62,7 @@
   ((candidates :initform 'js-import-relative-candidates)
    (filtered-candidate-transformer :initform 'js-import-helm-relative-ff-transformer)
    (nomark :initform t)
-   (candidate-number-limit  :initform 15)
+   (candidate-number-limit  :initform 30)
    (action :initform 'js-import-relative-file-action)
    (group :initform 'js-import)))
 
