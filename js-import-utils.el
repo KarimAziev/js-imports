@@ -450,6 +450,8 @@ ITEM is not string."
    ((js-import-is-package-json path)
     (when-let ((dir (f-dirname path))
                (module (js-import-read-package-json-section path "module")))
+      (unless (f-ext? module)
+        (setq module (f-swap-ext module "js")))
       (list (f-expand module dir))))
    (t nil)))
 
