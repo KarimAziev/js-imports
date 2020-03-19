@@ -305,7 +305,7 @@ ITEM is not string."
 
 (defun js-import-maybe-remove-path-index (path)
   (if (js-import-is-index-trimmable? path)
-      (replace-regexp-in-string "")
+      (replace-regexp-in-string js-import-file-index-regexp "" path)
         path))
 
 (defun js-import-remove-double-slashes (path)
@@ -348,7 +348,7 @@ ITEM is not string."
   (and (f-exists? path) (not (f-ext? path))))
 
 (defun js-import-is-package-json(path)
-  (string=(f-filename path)))
+  (string="package.json" (f-filename path)))
 
 (defun js-import-is-ext-enabled? (filename)
   "Check if FILENAME ends with either .js or .jsx."

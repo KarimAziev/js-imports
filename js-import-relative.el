@@ -69,16 +69,15 @@
 (defun js-import-relative-file-action(candidate)
   (let* ((buffer-dir (f-short (f-dirname buffer-file-name)))
          (expanded-path (js-import-expand-path candidate))
-         (relative-path (js-import-normalize-relative-path (f-relative expanded-path buffer-dir))))
+         (relative-path (js-import-normalize-path (f-relative expanded-path buffer-dir))))
     (js-import-from-path expanded-path relative-path)))
 
 ;;;###autoload
 (defun js-import-relative ()
   "Import from your current project with path relative to current buffer"
   (interactive)
-  (let ((source (helm-make-source (format "relative exports for %s" (buffer-name))) 'js-import-relative-source))
-    (helm :sources source
-          :buffer "*helm js import*")))
+  (helm :sources (helm-make-source (format "relative exports for %s" (buffer-name)) 'js-import-relative-source)
+        :buffer "*helm js import*"))
 
 (provide 'js-import-relative)
 ;;; js-import-relative.el ends here
