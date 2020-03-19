@@ -76,11 +76,9 @@
 (defun js-import-relative ()
   "Import from your current project with path relative to current buffer"
   (interactive)
-  (with-current-buffer (buffer-name)
-    (helm :sources (list
-                    (helm-make-source (format "relative exports for %s" (buffer-name)) 'js-import-relative-source))
-          :header-name (lambda (name) (format "import relative %s" (f-base name)))
-          :buffer "relative import")))
+  (let ((source (helm-make-source (format "relative exports for %s" (buffer-name))) 'js-import-relative-source))
+    (helm :sources source
+          :buffer "*helm js import*")))
 
 (provide 'js-import-relative)
 ;;; js-import-relative.el ends here

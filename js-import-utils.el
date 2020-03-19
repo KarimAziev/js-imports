@@ -54,6 +54,10 @@ Each car is a regexp match pattern of the imenu type string."
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
+
+(defmacro js-import-pipe (args &rest funcs)
+             `(funcall (-compose ,@funcs) ,args))
+
 (defvar js-import-dependencies-cache-plist '())
 
 (defun js-import-cut-names(str reg)
@@ -157,17 +161,6 @@ ITEM is not string."
   (if (stringp item)
       (get-text-property 0 property item)))
 
-(defun js-import-collect-deep-exports(path)
-  (when-let (content (f-read path))
-    (when-let ((deep-exports (s-match-strings-all js-import-regexp-export-all-from content)))
-      (--map (car (last it)) deep-exports))))
-
-
-(defun js-import-find-exports (&optional path)
-  (when-let (content (f-read path))
-    (let ((all-matches (s-match-strings-all js-import-export-regexp content)))
-      (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
-
 (defun js-import-find-current-imports(display-path)
   (let* ((matches (s-match (js-import-make-import-regexp-from-path display-path) (buffer-substring-no-properties (point-min) (js-import-goto-last-import))))
          (default-import-name (nth 1 matches))
@@ -225,7 +218,7 @@ ITEM is not string."
 
 (defun js-import-filter-pred(filename)
   (and (not (string-equal (s-replace (projectile-project-root) "" buffer-file-name) filename))
-       (js-import-js-file? filename)
+       (js-import-is-ext-enabled? filename)
        (not (s-matches? js-import-unsaved-file-regexp filename))
        (not (s-matches? js-import-test-file-regexp filename))))
 
@@ -304,11 +297,19 @@ ITEM is not string."
     (nreverse vals)))
 
 (defun js-import-normalize-path(path)
-  (funcall (-compose
-            'js-import-maybe-remove-path-index
-            'js-import-remove-ext
-            'js-import-remove-double-slashes)
-           path))
+  (js-import-pipe path
+                  'js-import-remove-double-slashes
+                  'js-import-remove-ext
+                  'js-import-maybe-remove-path-index))
+
+
+(defun js-import-maybe-remove-path-index (path)
+  (if (js-import-is-index-trimmable? path)
+      (replace-regexp-in-string "")
+        path))
+
+(defun js-import-remove-double-slashes (path)
+  (replace-regexp-in-string "//"  "/" path))
 
 (defun js-import-maybe-slash-alias(alias)
   (if (or (s-blank? alias) (s-matches? ".*\\/$" alias)) alias (concat alias "/")))
@@ -321,21 +322,6 @@ ITEM is not string."
 (defun js-import-get-alias-path(alias)
   (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
 
-(defun js-import-normalize-relative-path (path)
-  (funcall (-compose (lambda (str)
-                       (cond ((s-blank? str) "./index")
-                             ((not (s-matches? "\\.+/" str))
-                              (concat "./" str))
-                             (t str)))
-                     'js-import-normalize-path)
-           path))
-
-
-(defun js-import-maybe-remove-path-index (path)
-  (replace-regexp-in-string "index$" "" path))
-
-(defun js-import-remove-double-slashes (path)
-  (replace-regexp-in-string "//"  "/" path))
 
 (defun js-import-expand-path(candidate)
   (f-short (f-expand candidate (projectile-project-root))))
@@ -348,22 +334,47 @@ ITEM is not string."
   (let ((node-modules-path (f-join (js-import-get-node-modules-path project-dir) module)))
     node-modules-path))
 
-(defun js-import-js-file? (filename)
+
+(defun js-import-is-dependency? (display-path &optional project-root)
+  "Check if path is dependency"
+  (let ((dependencies (or (plist-get js-import-dependencies-cache-plist (or project-root (projectile-project-root))) (js-import-get-all-dependencies)))
+        (dirname (car (split-string display-path "/"))))
+
+
+    (or (f-exists? (js-import-expand-node-modules dirname project-root))
+        (-contains? dependencies dirname))))
+
+(defun js-import-is-dir-and-exist(path)
+  (and (f-exists? path) (not (f-ext? path))))
+
+(defun js-import-is-package-json(path)
+  (string=(f-filename path)))
+
+(defun js-import-is-ext-enabled? (filename)
   "Check if FILENAME ends with either .js or .jsx."
   (s-matches? "\\.[jt]s\\(x\\)?$" filename))
+
+(defun js-import-is-index-file?(path)
+  (s-matches? js-import-file-index-regexp path))
+
+(defun js-import-is-relative?(path)
+  (s-matches? "^\\." path))
+
+(defun js-import-is-module-interface(path)
+  (s-matches? ".d.ts$" path))
+
+(defun js-import-is-index-trimmable?(path)
+  (and (js-import-is-index-file? path)
+       (< 1 (s-count-matches "/" path))
+       (not (js-import-is-relative? path))))
+
 
 (defun js-import-get-package-json-path ()
   "Return the path to package.json."
   (f-join (projectile-project-root) "package.json"))
 
-(defun js-import-is-module-interface(path)
-  (s-matches? ".d.ts$" path))
-
 (defun js-import-remove-ext(path)
   (replace-regexp-in-string "\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)$" "" path))
-
-(defun js-import-is-index-file?(path)
-  (s-matches? "\\(/\\|^\\)\\index\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)?$" path))
 
 (defun js-import-find-interfaces(display-path)
   (when-let ((f-exists-p (js-import-expand-node-modules display-path))
@@ -388,7 +399,6 @@ ITEM is not string."
             (when-let ((subfile (js-import-find-interfaces name)))
               (push subfile keys)))
           keys)
-    ;;(result (--reduce-r-from (append (js-import-find-interfaces it) acc) '() keys))
     keys
     ))
 
@@ -402,16 +412,6 @@ ITEM is not string."
                (dependencies-hash (condition-case nil
                                       (gethash section (json-read-from-string package-json-content)) (error nil))))
       dependencies-hash)))
-
-
-(defun js-import-is-dependency? (display-path &optional project-root)
-  "Check if path is dependency"
-  (let ((dependencies (or (plist-get js-import-dependencies-cache-plist (or project-root (projectile-project-root))) (js-import-get-all-dependencies)))
-        (dirname (car (split-string display-path "/"))))
-
-
-    (or (f-exists? (js-import-expand-node-modules dirname project-root))
-        (-contains? dependencies dirname))))
 
 
 (defun js-import-get-dependency-dir(display-path)
@@ -433,35 +433,10 @@ ITEM is not string."
           files))
 
 (defun js-import-find-index-files(path)
-  (f-files path (lambda(file) (or (and (js-import-js-file? file)
+  (f-files path (lambda(file) (or (and (js-import-is-ext-enabled? file)
                                   (-contains? (list "index.d" "index") (f-base file)))
                              (equal "package.json" (f-filename file))
                              ))))
-
-(defun js-import-is-dir-and-exist(path)
-  (and (f-exists? path) (not (f-ext? path))))
-(defun js-import-is-package-json(path)
-  (equal "json" (f-ext path)))
-
-(defun js-import-find-index-files-in-path(path)
-  (cond
-   ((js-import-is-dir-and-exist path)
-    (funcall (-compose 'js-import-sort-by-ext 'js-import-find-index-files) path))
-   ((js-import-is-package-json path)
-    (when-let ((dir (f-dirname path))
-               (module (js-import-read-package-json-section path "module")))
-      (unless (f-ext? module)
-        (setq module (f-swap-ext module "js")))
-      (list (f-expand module dir))))
-   (t nil)))
-
-
-
-(defun js-import-traverse-down(path)
-  (let ((filepath (car (js-import-find-index-files-in-path path))))
-    (if filepath
-        (js-import-traverse-down filepath)
-      path)))
 
 (defun js-import-process-file (fPath)
   "Process the file at fullpath FPATH.
@@ -474,6 +449,19 @@ Write result to buffer DESTBUFF."
       (print (js-import-find-all-buffer-imports)))
     ))
 
+
+(defun js-import-collect-deep-exports(path)
+  (when-let (content (f-read path))
+    (when-let ((deep-exports (s-match-strings-all js-import-regexp-export-all-from content)))
+      (--map (car (last it)) deep-exports))))
+
+
+(defun js-import-find-exports (&optional path)
+  (when-let (content (f-read path))
+    (let ((all-matches (s-match-strings-all js-import-export-regexp content)))
+
+      (message "all-matches\n %s" all-matches)
+      (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
 
 
 (defun js-import-find-all-exports (display-path &optional real-path)
@@ -488,11 +476,35 @@ Write result to buffer DESTBUFF."
                 (deep-exports (--map (car (last it)) (s-match-strings-all js-import-regexp-export-all-from content)))
                 (result '()))
             (when deep-exports
-              (mapcar (lambda(path) (push (js-import-find-all-exports path (js-import-path-to-real path dir-name)) result))
+              (mapc (lambda(path) (push (js-import-find-all-exports path (js-import-path-to-real path dir-name)) result))
                       deep-exports))
             (-distinct (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
-            ))
-        ))
+            ))))
+
+(defun js-import-path-to-real(path &optional dir)
+  (cond ((js-import-is-relative? path)
+         (js-import-path-to-relative path dir))
+        ((js-import-is-dependency? path)
+         (js-import-maybe-expand-dependency path))
+        (t (js-import-alias-path-to-real path))))
+
+(defun js-import-find-index-files-in-path(path)
+  (cond
+   ((js-import-is-dir-and-exist path)
+    (funcall (-compose 'js-import-sort-by-ext 'js-import-find-index-files) path))
+   ((js-import-is-package-json path)
+    (when-let ((dir (f-dirname path))
+               (module (js-import-read-package-json-section path "module")))
+      (unless (f-ext? module)
+        (setq module (f-swap-ext module "js")))
+      (list (f-expand module dir))))
+   (t nil)))
+
+(defun js-import-traverse-down(path)
+  (let ((filepath (car (js-import-find-index-files-in-path path))))
+    (if filepath
+        (js-import-traverse-down filepath)
+      path)))
 
 (defun js-import-maybe-expand-dependency(display-path &optional $real-path)
   (let ((real-path (or $real-path (js-import-expand-node-modules display-path))))
@@ -521,9 +533,6 @@ Write result to buffer DESTBUFF."
           aliases)
     real-path))
 
-(defun js-import-relative?(path)
-  (s-matches? "^\\." path))
-
 (defun js-import-path-to-relative(path &optional dir)
   (let ((filepath (f-short (f-expand path dir))))
     (cond
@@ -533,13 +542,6 @@ Write result to buffer DESTBUFF."
      ((f-exists? (concat filepath "/index.js"))
       (setq filepath (concat filepath "/index.js"))))
     filepath))
-
-(defun js-import-path-to-real(path &optional dir)
-  (cond ((js-import-relative? path)
-         (js-import-path-to-relative path dir))
-        ((js-import-is-dependency? path)
-         (js-import-maybe-expand-dependency path))
-        (t (js-import-alias-path-to-real path))))
 
 (defun js-import-get-word-at-point()
   (interactive)

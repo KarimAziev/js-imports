@@ -45,7 +45,7 @@
       :group 'js-import
       :action (lambda(candidate)
                 (let ((real-path (f-join alias-path (replace-regexp-in-string (concat "^" slashed-alias) "" candidate)))
-                      (alias-path (replace-regexp-in-string "/index$" "" (f-no-ext candidate))))
+                      (alias-path (js-import-normalize-path candidate)))
                   (js-import-from-path real-path alias-path))))))
 
 (defun js-import-alias-make-sources()
@@ -64,9 +64,8 @@
 (defun js-import-alias ()
   "Import from your current project with alias prefix"
   (interactive)
-  (with-current-buffer (buffer-name)
-    (helm :sources (js-import-alias-make-sources)
-          :buffer "js imports from alias")))
+  (helm :sources (js-import-alias-make-sources)
+        :buffer "*helm js import*"))
 
 (provide 'js-import-alias)
 ;;; js-import-alias.el ends here

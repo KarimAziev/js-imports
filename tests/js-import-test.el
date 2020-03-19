@@ -27,7 +27,7 @@
 (require 'ert)
 (require 'js-import)
 
-(ert-deftest check-is-path-index()
+(ert-deftest js-import-test-is-index-file?()
   "Test to check if file is index"
   (should (equal (js-import-is-index-file? "/home/user/repos/index.js") t))
   (should (equal (js-import-is-index-file? "~/repos/index.js") t))
@@ -55,8 +55,6 @@
   (should (equal (js-import-is-index-file? "index.jsx") t))
   (should (equal (js-import-is-index-file? "@/index.jsx") t))
 
-
-
   (should (equal (js-import-is-index-file? "~/repos/App.js") nil))
   (should (equal (js-import-is-index-file? "/pathIndex.js") nil))
   (should (equal (js-import-is-index-file? "pathIndex.js") nil))
@@ -68,8 +66,8 @@
   (should (equal (js-import-is-index-file? "/iindex.js") nil)))
 
 
-(ert-deftest remove-path-ext()
-  "Test to check if file is index"
+(ert-deftest js-import-test-remove-ext()
+  "Test to remove extension"
   (should (equal (js-import-remove-ext "./index.jsx") "./index"))
   (should (equal (js-import-remove-ext "index.d.tsx") "index"))
   (should (equal (js-import-remove-ext "index.d.ts") "index"))
@@ -80,33 +78,20 @@
   (should (equal (js-import-remove-ext "app.ts/App.js") "app.ts/App"))
   (should (equal (js-import-remove-ext "App") "App")))
 
+(ert-deftest js-import-test-is-ext-enabled?()
+  "Test to check if file should included in sources"
+  (should (equal (js-import-is-ext-enabled? "./index.jsx") t))
+  (should (equal (js-import-is-ext-enabled? "index.d.tsx") t))
+  (should (equal (js-import-is-ext-enabled? "index.d.ts") t))
+  (should (equal (js-import-is-ext-enabled? "/home/user/repos/App.ts") t))
+  (should (equal (js-import-is-ext-enabled? "indd.ex.ts") t))
+  (should (equal (js-import-is-ext-enabled? "/home/user/repos/App.tsx") t))
+  (should (equal (js-import-is-ext-enabled? "/home/user/repos/App.js") t))
+  (should (equal (js-import-is-ext-enabled? "app.ts/App.js") t))
 
-(ert-deftest remove-path-ext()
-  "Test to check if file enabled by ext"
-  (should (equal (js-import-remove-ext "./index.jsx") "./index"))
-  (should (equal (js-import-remove-ext "index.d.tsx") "index"))
-  (should (equal (js-import-remove-ext "index.d.ts") "index"))
-  (should (equal (js-import-remove-ext "/home/user/repos/App.ts") "/home/user/repos/App"))
-  (should (equal (js-import-remove-ext "indd.ex.ts") "indd.ex"))
-  (should (equal (js-import-remove-ext "/home/user/repos/App.tsx") "/home/user/repos/App"))
-  (should (equal (js-import-remove-ext "/home/user/repos/App.js") "/home/user/repos/App"))
-  (should (equal (js-import-remove-ext "app.ts/App.js") "app.ts/App"))
-  (should (equal (js-import-remove-ext "App") "App")))
-
-(ert-deftest is-js-ts-file()
-  "Test to check if file enabled by ext"
-  (should (equal (js-import-js-file? "./index.jsx") t))
-  (should (equal (js-import-js-file? "index.d.tsx") t))
-  (should (equal (js-import-js-file? "index.d.ts") t))
-  (should (equal (js-import-js-file? "/home/user/repos/App.ts") t))
-  (should (equal (js-import-js-file? "indd.ex.ts") t))
-  (should (equal (js-import-js-file? "/home/user/repos/App.tsx") t))
-  (should (equal (js-import-js-file? "/home/user/repos/App.js") t))
-  (should (equal (js-import-js-file? "app.ts/App.js") t))
-
-  (should (equal (js-import-js-file? "App") nil))
-  (should (equal (js-import-js-file? "App.jx") nil))
-  (should (equal (js-import-js-file? "indd.ex") nil))
-  (should (equal (js-import-js-file? "indd.jsjs") nil)))
+  (should (equal (js-import-is-ext-enabled? "App") nil))
+  (should (equal (js-import-is-ext-enabled? "App.jx") nil))
+  (should (equal (js-import-is-ext-enabled? "indd.ex") nil))
+  (should (equal (js-import-is-ext-enabled? "indd.jsjs") nil)))
 
 ;;; js-import-test.el ends here

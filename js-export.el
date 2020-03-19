@@ -33,13 +33,14 @@
 (defun js-import-show-exports-from-path-at-point()
   (interactive)
   (let* (($inputStr (js-import-get-word-at-point))
-         (real-path (js-import-path-to-real $inputStr (f-dirname buffer-file-name)))
-         (all-exports (js-import-from-path real-path $inputStr)))))
+         (real-path (js-import-path-to-real $inputStr (f-dirname buffer-file-name))))
+    (js-import-from-path real-path $inputStr)))
 
 (defun js-import-open-file-at-point()
   (interactive)
-  (let* (($inputStr (js-import-get-word-at-point))
-         (real-path (js-import-path-to-real $inputStr (f-dirname buffer-file-name))))))
+  (when-let (($inputStr (js-import-get-word-at-point)))
+    (js-import-path-to-real $inputStr (f-dirname buffer-file-name))
+    ))
 
 
 
