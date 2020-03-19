@@ -43,15 +43,20 @@
 (defun js-import-helm-relative-sort-candidate-transformer (candidates)
   (js-import-sort-relative (js-import-helm-relative-ff-transformer candidates)))
 
+
+
+
 (defun js-import-helm-relative-ff-transformer(candidates &optional source)
   (with-current-buffer helm-current-buffer
-    (let* ((buffer-dir (f-short (f-dirname buffer-file-name))))
+    (let* ((buffer-dir (f-dirname buffer-file-name))
+           (project-name (projectile-project-root)))
       (-map (lambda (it)
-              (let* ((path (f-short (js-import-expand-path (format "%s" it))))
+              (let* ((path (f-join project-name (format "%s" it)))
                      (relative-path (f-relative path buffer-dir)))
-                (when (eq 0 (s-count-matches "\\.+/" relative-path))
-                  (setq relative-path (concat "./" relative-path)))
-                (cons relative-path (. path))))
+                 (unless (s-matches? "^\\." relative-path)
+                         (setq relative-path (concat "./" relative-path)))
+                relative-path))
+
             candidates))))
 
 (defun js-import-relative-candidates (&optional buffer)
@@ -60,16 +65,16 @@
 
 (defclass js-import-relative-source (helm-source-sync)
   ((candidates :initform 'js-import-relative-candidates)
-   (filtered-candidate-transformer :initform 'js-import-helm-relative-ff-transformer)
+   (candidate-transformer :initform 'js-import-helm-relative-ff-transformer)
    (nomark :initform t)
    (candidate-number-limit  :initform 30)
    (action :initform 'js-import-relative-file-action)
    (group :initform 'js-import)))
 
 (defun js-import-relative-file-action(candidate)
-  (let* ((buffer-dir (f-short (f-dirname buffer-file-name)))
-         (expanded-path (js-import-expand-path candidate))
-         (relative-path (js-import-normalize-path (f-relative expanded-path buffer-dir))))
+  (let* ((buffer-dir (f-dirname buffer-file-name))
+         (expanded-path (f-join buffer-dir candidate))
+         (relative-path (js-import-normalize-path candidate)))
     (js-import-from-path expanded-path relative-path)))
 
 ;;;###autoload

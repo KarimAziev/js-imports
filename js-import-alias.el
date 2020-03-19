@@ -38,7 +38,7 @@
         (slashed-alias (js-import-maybe-slash-alias alias)))
 
     (helm-build-sync-source (format "Alias import %s" alias)
-      :candidates (js-import-get-alias-files alias)
+      :candidates 'projectile-current-project-files
       :nomark t
       :filter-one-by-one (lambda(it) (js-import-real-path-to-alias (f-join project-dir it) alias))
       :candidate-number-limit 30
@@ -49,16 +49,19 @@
                   (js-import-from-path real-path alias-path))))))
 
 (defun js-import-alias-make-sources()
-  (let ((pl js-import-alias-map)
-        (vals  ()))
+  (with-current-buffer helm-current-buffer
+    (let ((pl js-import-alias-map)
+        (vals '()))
     (while pl
       (push (js-import-alias-make-alias-source (car pl)) vals)
       (setq pl (cddr pl)))
-    (nreverse vals)))
+    (nreverse vals))))
 
-(defun js-import-alias-candidates (&optional buffer)
-  (with-current-buffer (or buffer helm-current-buffer)
-    (js-import-get-project-files)))
+(defun js-import-alias-candidates (candidates)
+  (with-current-buffer helm-current-buffer
+    (let ((project-dir (projectile-project-root))
+        (alias-path (js-import-get-alias-path alias)))
+    (--filter (and (js-import-filter-pred it) (f-ancestor-of-p alias-path (f-join project-dir it))) (js-import-get-project-files)))))
 
 ;;;###autoload
 (defun js-import-alias ()

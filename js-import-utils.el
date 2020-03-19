@@ -323,8 +323,8 @@ ITEM is not string."
   (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
 
 
-(defun js-import-expand-path(candidate)
-  (f-short (f-expand candidate (projectile-project-root))))
+(defun js-import-expand-path(candidate &optional dir)
+  (f-expand candidate (or dir (projectile-project-root))))
 
 (defun js-import-get-node-modules-path (&optional project-dir)
   "Return the path to node-modules."
@@ -533,7 +533,7 @@ Write result to buffer DESTBUFF."
     real-path))
 
 (defun js-import-path-to-relative(path &optional dir)
-  (let ((filepath (f-short (f-expand path dir))))
+  (let ((filepath (f-expand path dir)))
     (cond
      ((f-exists? (concat filepath ".js"))
       (setq filepath (concat filepath ".js"))
