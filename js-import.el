@@ -68,8 +68,7 @@
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
   (interactive)
-  (helm :sources (js-import-make-imports-sources)
-        :buffer "*helm js import*"))
+  (helm :sources (js-import-make-imports-sources)))
 
 ;;;###autoload
 (defun js-import-helm ()
@@ -79,8 +78,7 @@
                                                            (helm-make-source "node modules" 'js-import-dependency-source)
                                                            (helm-make-source (format "relative exports for %s" (buffer-name)) 'js-import-relative-source)))
           :allow-nest nil
-          :prompt "Select path:"
-          :buffer "*helm js import*"))
+          :prompt "Select path:"))
 
 (provide 'js-import)
 ;;; js-import.el ends here

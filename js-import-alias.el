@@ -64,8 +64,7 @@
 (defun js-import-alias ()
   "Import from your current project with alias prefix"
   (interactive)
-  (helm :sources (js-import-alias-make-sources)
-        :buffer "*helm js import*"))
+  (helm :sources (js-import-alias-make-sources)))
 
 (provide 'js-import-alias)
 ;;; js-import-alias.el ends here

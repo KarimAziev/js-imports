@@ -46,8 +46,7 @@
   "Import from node modules"
   (interactive)
   (when-let ((module (or dependency (helm
-                                 :sources (helm-make-source "node modules" 'js-import-dependency-source)
-                                 :buffer "*helm js import*"))))
+                                 :sources (helm-make-source "node modules" 'js-import-dependency-source)))))
     (let ((path (js-import-maybe-expand-dependency module)))
                (js-import-from-path path module))))
 
