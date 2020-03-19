@@ -35,39 +35,33 @@
 (defun js-import-alias-make-alias-source(alias)
   (let ((project-dir (projectile-project-root))
         (alias-path (js-import-get-alias-path alias))
+        (files (js-import-get-alias-files alias))
         (slashed-alias (js-import-maybe-slash-alias alias)))
 
     (helm-build-sync-source (format "Alias import %s" alias)
-      :candidates 'projectile-current-project-files
+      :candidates (--map (js-import-real-path-to-alias (f-join project-dir it) alias) files)
       :nomark t
-      :filter-one-by-one (lambda(it) (js-import-real-path-to-alias (f-join project-dir it) alias))
-      :candidate-number-limit 30
+      :candidate-number-limit 25
       :group 'js-import
       :action (lambda(candidate)
                 (let ((real-path (f-join alias-path (replace-regexp-in-string (concat "^" slashed-alias) "" candidate)))
-                      (alias-path (js-import-normalize-path candidate)))
+                      (alias-path (replace-regexp-in-string "/index$" "" (f-no-ext candidate))))
                   (js-import-from-path real-path alias-path))))))
 
 (defun js-import-alias-make-sources()
-  (with-current-buffer helm-current-buffer
-    (let ((pl js-import-alias-map)
-        (vals '()))
+  (let ((pl js-import-alias-map)
+        (vals  ()))
     (while pl
       (push (js-import-alias-make-alias-source (car pl)) vals)
       (setq pl (cddr pl)))
-    (nreverse vals))))
-
-(defun js-import-alias-candidates (candidates)
-  (with-current-buffer helm-current-buffer
-    (let ((project-dir (projectile-project-root))
-        (alias-path (js-import-get-alias-path alias)))
-    (--filter (and (js-import-filter-pred it) (f-ancestor-of-p alias-path (f-join project-dir it))) (js-import-get-project-files)))))
+    (nreverse vals)))
 
 ;;;###autoload
 (defun js-import-alias ()
   "Import from your current project with alias prefix"
   (interactive)
-  (helm :sources (js-import-alias-make-sources)))
+  (with-current-buffer (buffer-name)
+    (helm :sources (js-import-alias-make-sources))))
 
 (provide 'js-import-alias)
 ;;; js-import-alias.el ends here
