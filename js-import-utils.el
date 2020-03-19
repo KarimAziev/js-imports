@@ -393,13 +393,12 @@ ITEM is not string."
 
 (defun js-import-get-dependencies (&optional $package-json-path $section)
   "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
-  (when-let ((dependencies-hash (js-import-read-package-json-section $package-json-path $section))
-              (keys (hash-table-keys dependencies-hash)))
-    (mapc (lambda(name)
-            (when-let ((subfile (js-import-find-interfaces name)))
-              (push subfile keys)))
-          keys)
-    keys
+  (when-let ((dependencies-hash (js-import-read-package-json-section $package-json-path $section)))
+    ;; (mapc (lambda(name)
+    ;;         (when-let ((subfile (js-import-find-interfaces name)))
+    ;;           (push subfile keys)))
+    ;;       keys)
+    (hash-table-keys dependencies-hash)
     ))
 
 (defun js-import-read-package-json-section (&optional $package-json-path $section)

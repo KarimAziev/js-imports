@@ -77,7 +77,6 @@
   (helm :sources (append (js-import-alias-make-sources) (list
                                                            (helm-make-source "node modules" 'js-import-dependency-source)
                                                            (helm-make-source (format "relative exports for %s" (buffer-name)) 'js-import-relative-source)))
-          :allow-nest nil
           :prompt "Select path:"))
 
 (provide 'js-import)
