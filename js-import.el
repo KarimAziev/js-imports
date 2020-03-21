@@ -40,11 +40,11 @@
 
 (defvar js-import-command-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c M-i") 'js-import-helm)
-    (define-key map (kbd "C-c M-e") 'js-import-edit-buffer-imports)
-    (define-key map (kbd "C-c M-d") 'js-import-dependency)
-    (define-key map (kbd "C-c M-a") 'js-import-alias)
-    (define-key map (kbd "C-c M-r") 'js-import-relative)
+    (define-key map (kbd "C-c C-i") 'js-import)
+    (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
+    (define-key map (kbd "C-c C-d") 'js-import-dependency)
+    (define-key map (kbd "C-c C-a") 'js-import-alias)
+    (define-key map (kbd "C-c C-r") 'js-import-relative)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
@@ -71,13 +71,16 @@
   (helm :sources (js-import-make-imports-sources)))
 
 ;;;###autoload
-(defun js-import-helm ()
+(defun js-import ()
   "Init imports from your current project"
   (interactive)
-  (helm :sources (append (js-import-alias-make-sources) (list
-                                                           (helm-make-source "node modules" 'js-import-dependency-source)
-                                                           (helm-make-source (format "relative exports for %s" (buffer-name)) 'js-import-relative-source)))
-          :prompt "Select path:"))
+  (save-excursion
+    (helm :sources (append (js-import-alias-make-sources)
+                           (list
+                            (helm-make-source "node modules" 'js-import-dependency-source)
+                            (helm-make-source "relative import" 'js-import-relative-source)))
+          :buffer "js import"
+          :prompt "Select path:")))
 
 (provide 'js-import)
 ;;; js-import.el ends here

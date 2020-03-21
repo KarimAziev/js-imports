@@ -38,13 +38,13 @@ Or if you want to always get the latest version:
 
 ## Usage
 
-Main commands are `js-import-helm`, `js-import-alias`, `js-import-relative` and `js-import-dependency`. All of them have the same flow:
+Main commands are `js-import`, `js-import-alias`, `js-import-relative` and `js-import-dependency`. All of them have the same flow:
 
 1. Propose you to select a file
 2. Propose you to choose export declarations (to select some declaration you need to mark them) from this file which you want to import.
 3. With default action, those declarations will be added to the current buffer. You can also import them as by another name with action `Import as`.
 
-` M-x js-import-helm ` proposes you to select js module from all available sources: dependencies and files from the current project with relative or alias path.
+` M-x js-import ` proposes you to select js module from all available sources: dependencies and files from the current project with relative or alias path.
 
 ` M-x js-import-relative ` proposes you to select js module by relative path
 
