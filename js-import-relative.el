@@ -44,8 +44,6 @@
   (js-import-sort-relative (js-import-helm-relative-ff-transformer candidates)))
 
 
-
-
 (defun js-import-helm-relative-ff-transformer(candidates &optional source)
   (with-current-buffer helm-current-buffer
     (let* ((buffer-dir (f-dirname buffer-file-name))
@@ -81,7 +79,9 @@
 (defun js-import-relative ()
   "Import from your current project with path relative to current buffer"
   (interactive)
-  (helm :sources (helm-make-source (format "relative exports for %s" (buffer-name)) 'js-import-relative-source)))
+  (save-excursion
+    (helm
+     :sources (helm-make-source "relative import" 'js-import-relative-source))))
 
 (provide 'js-import-relative)
 ;;; js-import-relative.el ends here

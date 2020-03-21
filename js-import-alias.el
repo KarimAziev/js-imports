@@ -41,7 +41,6 @@
     (helm-build-sync-source (format "Alias import %s" alias)
       :candidates (--map (js-import-real-path-to-alias (f-join project-dir it) alias) files)
       :nomark t
-      :candidate-number-limit 25
       :group 'js-import
       :action (lambda(candidate)
                 (let ((real-path (f-join alias-path (replace-regexp-in-string (concat "^" slashed-alias) "" candidate)))
@@ -60,8 +59,8 @@
 (defun js-import-alias ()
   "Import from your current project with alias prefix"
   (interactive)
-  (with-current-buffer (buffer-name)
-    (helm :sources (js-import-alias-make-sources))))
+  (save-excursion (with-current-buffer (buffer-name)
+                    (helm :sources (js-import-alias-make-sources)))))
 
 (provide 'js-import-alias)
 ;;; js-import-alias.el ends here

@@ -45,10 +45,11 @@
 (defun js-import-dependency (&optional dependency)
   "Import from node modules"
   (interactive)
-  (when-let ((module (or dependency (helm
-                                 :sources (helm-make-source "node modules" 'js-import-dependency-source)))))
-    (let ((path (js-import-maybe-expand-dependency module)))
-               (js-import-from-path path module))))
+  (save-excursion
+    (when-let ((module (or dependency (helm
+                                       :sources (helm-make-source "node modules" 'js-import-dependency-source)))))
+      (let ((path (js-import-maybe-expand-dependency module)))
+        (js-import-from-path path module)))))
 
 (provide 'js-import-dependency)
 ;;; js-import-dependency.el ends here
