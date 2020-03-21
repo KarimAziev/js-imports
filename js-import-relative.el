@@ -43,7 +43,6 @@
 (defun js-import-helm-relative-sort-candidate-transformer (candidates)
   (js-import-sort-relative (js-import-helm-relative-ff-transformer candidates)))
 
-
 (defun js-import-helm-relative-ff-transformer(candidates &optional source)
   (with-current-buffer helm-current-buffer
     (let* ((buffer-dir (f-dirname buffer-file-name))
@@ -73,7 +72,7 @@
   (let* ((buffer-dir (f-dirname buffer-file-name))
          (expanded-path (f-join buffer-dir candidate))
          (relative-path (js-import-normalize-path candidate)))
-    (js-import-from-path expanded-path relative-path)))
+    (js-import-from-path relative-path expanded-path)))
 
 ;;;###autoload
 (defun js-import-relative ()

@@ -29,7 +29,8 @@
 (require 'subr-x)
 (require 'js-import-utils)
 
-(defun js-import-from-path(path &optional normalized-path)
+
+(defun js-import-from-path(normalized-path &optional path)
   (let* ((import-alist (js-import-find-current-imports normalized-path))
          (all-exports-alist (js-import-find-all-exports normalized-path path))
          (import-reals (--map (funcall (-compose 's-trim 'car 'split-string 'car) it)

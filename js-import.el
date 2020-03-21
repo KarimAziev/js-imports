@@ -75,7 +75,8 @@
   "Init imports from your current project"
   (interactive)
   (save-excursion
-    (helm :sources (append (js-import-alias-make-sources)
+    (helm
+     :sources (append (js-import-alias-make-sources)
                            (list
                             (helm-make-source "node modules" 'js-import-dependency-source)
                             (helm-make-source "relative import" 'js-import-relative-source)))

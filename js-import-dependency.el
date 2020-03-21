@@ -32,10 +32,18 @@
   ((candidates :initform 'js-import-init-dependencies-sources)
    (nomark :initform t)
    (candidate-number-limit  :initform 30)
-   (action :initform 'js-import-dependency)
-   (persistent-action :initform 'js-import-dependency)
+   (action :initform '(("Show exported symbols" . js-import-dependency)
+                       ("Select from subdirectory" . js-import-select-subdir)))
+   (persistent-action 'js-import-select-subdir)
+   (persistent-action :initform 'js-import-find-interfaces)
    (group :initform 'js-import)))
 
+(defun js-import-select-subdir(dependency)
+  (with-helm-quittable
+    (when-let ((subfiles (js-import-find-interfaces dependency)))
+      (push dependency soubfiles)
+      (let ((module (completing-read "Select: " subfiles nil t dependency)))
+        (js-import-from-path module)))))
 
 (defun js-import-init-dependencies-sources()
   (let ((project-name (projectile-project-root)))
@@ -49,7 +57,7 @@
     (when-let ((module (or dependency (helm
                                        :sources (helm-make-source "node modules" 'js-import-dependency-source)))))
       (let ((path (js-import-maybe-expand-dependency module)))
-        (js-import-from-path path module)))))
+        (js-import-from-path module)))))
 
 (provide 'js-import-dependency)
 ;;; js-import-dependency.el ends here

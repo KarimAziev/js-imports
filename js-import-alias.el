@@ -41,15 +41,16 @@
     (helm-build-sync-source (format "Alias import %s" alias)
       :candidates (--map (js-import-real-path-to-alias (f-join project-dir it) alias) files)
       :nomark t
+      :candidate-number-limit 40
       :group 'js-import
       :action (lambda(candidate)
                 (let ((real-path (f-join alias-path (replace-regexp-in-string (concat "^" slashed-alias) "" candidate)))
                       (alias-path (replace-regexp-in-string "/index$" "" (f-no-ext candidate))))
-                  (js-import-from-path real-path alias-path))))))
+                  (js-import-from-path alias-path real-path))))))
 
 (defun js-import-alias-make-sources()
   (let ((pl js-import-alias-map)
-        (vals  ()))
+        (vals ()))
     (while pl
       (push (js-import-alias-make-alias-source (car pl)) vals)
       (setq pl (cddr pl)))
