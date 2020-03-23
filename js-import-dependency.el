@@ -31,7 +31,6 @@
 (defclass js-import-dependency-source (helm-source-sync)
   ((candidates :initform 'js-import-init-dependencies-sources)
    (nomark :initform t)
-   (candidate-number-limit  :initform 30)
    (action :initform '(("Show exported symbols" . js-import-dependency)
                        ("Select from subdirectory" . js-import-select-subdir)))
    (persistent-action 'js-import-select-subdir)
@@ -41,7 +40,7 @@
 (defun js-import-select-subdir(dependency)
   (with-helm-quittable
     (when-let ((subfiles (js-import-find-interfaces dependency)))
-      (push dependency soubfiles)
+      (push dependency subfiles)
       (let ((module (completing-read "Select: " subfiles nil t dependency)))
         (js-import-from-path module)))))
 

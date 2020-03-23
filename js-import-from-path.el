@@ -142,21 +142,33 @@
             (real-name (js-import-get-prop candidate 'real-name))
             (renamed-name (js-import-get-prop candidate 'renamed-name))
             (display-path (js-import-get-prop candidate 'display-path))
+            (prompt (if renamed-name (format "Rename %s as (%s) " real-name renamed-name)
+                      (format "Rename %s as " real-name)))
             (new-name (s-trim (read-string
-                               (format "Rename %s as (%s) " real-name renamed-name)
-                               nil nil renamed-name))))
-       (when new-name (save-excursion
-                        (save-restriction
-                          (js-import-narrow-to-import display-path)
-                          (let ((case-fold-search nil))
-                            (if renamed-name
-                                (progn (re-search-forward (concat real-name "[_\s\n]+as[_\s\n]") nil t 1)
-                                       (re-search-forward renamed-name nil t 1)
-                                       (replace-match new-name))
-                              (progn (re-search-forward (concat real-name "[_\s\n,]+") nil t 1)
+                               prompt
+                               (or renamed-name real-name)
+                               nil
+                               renamed-name
+                               ))))
+
+       (when (and new-name
+                  (<= 1 (length new-name))
+                  (not (string= new-name real-name)))
+         (save-excursion
+           (save-restriction
+             (js-import-narrow-to-import display-path)
+             (let ((case-fold-search nil))
+               (if renamed-name
+                   (progn (re-search-forward (concat real-name "[_\s\n]+as[_\s\n]") nil t 1)
+                          (re-search-forward renamed-name nil t 1)
+                          (replace-match new-name)
+                          (widen)
+                          (query-replace-regexp (concat "\\_<" renamed-name "\\_>") new-name))
+                 (progn (re-search-forward (concat real-name "[_\s\n,]+") nil t 1)
                                      (skip-chars-backward "[_\s\n,]")
-                                     (insert (concat " as " new-name)))))
-                          (widen))))))
+                                     (insert (concat " as " new-name))
+                                     (widen))))
+             )))))
    (helm-marked-candidates)))
 
 (defun js-import-action--import-candidate(candidate)
