@@ -165,6 +165,16 @@ Each car is a regexp match pattern of the imenu type string."
          (symbol-name str))
         (nil str)))
 
+(defun js-import-stringify (x)
+  "Convert any object to string effeciently.
+This is faster than `prin1-to-string' in many cases."
+  (cl-typecase x
+    (string x)
+    (symbol (symbol-name x))
+    (integer (number-to-string x))
+    (float (number-to-string x))
+    (t (format "%s" x))))
+
 (defun js-import-propertize (item &rest properties)
   "Same as `propertize' except that this avoids overriding
 existed name with `nil' property."
@@ -371,7 +381,7 @@ ITEM is not string."
   (s-matches? ".d.ts$" path))
 
 (defun js-import-is-index-trimmable?(path)
-  ("Check if PATH index can be trimmed")
+  "Check if PATH index can be trimmed"
   (and (js-import-is-index-file? path)
        (< 1 (s-count-matches "/" path))))
 
