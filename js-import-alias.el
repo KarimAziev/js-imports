@@ -39,13 +39,13 @@
 
 (defun js-import-alias-make-alias-source(alias)
   (helm-build-sync-source (format "Alias import %s" alias)
-      :init (lambda()
-              (setq js-import-alias-name alias)
-              (setq js-import-alias-candidates (js-import-get-alias-files alias)))
-      :candidates 'js-import-alias-candidates
-      :nomark nil
-      :group 'js-import
-      :action '(("Show exported symbols" . js-import-select-alias-file-action))))
+    :init (lambda()
+            (setq js-import-alias-name alias)
+            (setq js-import-alias-candidates (js-import-get-alias-files alias)))
+    :candidates js-import-alias-candidates
+    :nomark nil
+    :group 'js-import
+    :action '(("Show exported symbols" . js-import-select-alias-file-action))))
 
 (defun js-import-select-alias-file(candidate)
   "doc"
