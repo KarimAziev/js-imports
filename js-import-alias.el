@@ -32,21 +32,30 @@
 (require 'js-import-insert)
 (require 'js-import-from-path)
 
-(defun js-import-alias-make-alias-source(alias)
-  (let ((project-dir (projectile-project-root))
-        (alias-path (js-import-get-alias-path alias))
-        (files (js-import-get-alias-files alias))
-        (slashed-alias (js-import-maybe-slash-alias alias)))
+(defvar js-import-alias-candidates nil)
+(make-variable-buffer-local 'js-import-alias-candidates)
+(defvar js-import-alias-name nil)
+(make-variable-buffer-local 'js-import-alias-name)
 
-    (helm-build-sync-source (format "Alias import %s" alias)
-      :candidates (--map (js-import-real-path-to-alias (f-join project-dir it) alias) files)
-      :nomark t
-      :candidate-number-limit 40
+(defun js-import-alias-make-alias-source(alias)
+  (helm-build-sync-source (format "Alias import %s" alias)
+      :init (lambda()
+              (setq js-import-alias-name alias)
+              (setq js-import-alias-candidates (js-import-get-alias-files alias)))
+      :candidates 'js-import-alias-candidates
+      :nomark nil
       :group 'js-import
-      :action (lambda(candidate)
-                (let ((real-path (f-join alias-path (replace-regexp-in-string (concat "^" slashed-alias) "" candidate)))
-                      (alias-path (replace-regexp-in-string "/index$" "" (f-no-ext candidate))))
-                  (js-import-from-path alias-path real-path))))))
+      :action '(("Show exported symbols" . js-import-select-alias-file-action))))
+
+(defun js-import-select-alias-file(candidate)
+  "doc"
+  (let* ((real-path (f-join (projectile-project-root) candidate)))
+    (js-import-from-path (js-import-real-path-to-alias real-path js-import-alias-name) real-path)))
+
+(defun js-import-select-alias-file-action(file)
+  (mapc
+   'js-import-select-alias-file
+   (helm-marked-candidates)))
 
 (defun js-import-alias-make-sources()
   (let ((pl js-import-alias-map)

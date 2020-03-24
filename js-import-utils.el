@@ -27,6 +27,7 @@
 
 (require 'helm)
 (require 'projectile)
+(require 'cl-lib)
 (require 'f)
 (require 'json)
 (require 'subr-x)
@@ -54,11 +55,30 @@ Each car is a regexp match pattern of the imenu type string."
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
-
-(defmacro js-import-pipe (args &rest funcs)
-             `(funcall (-compose ,@funcs) ,args))
-
 (defvar js-import-dependencies-cache-plist '())
+(defmacro js-import-pipe (args &rest funcs)
+  `(funcall (-compose ,@funcs) ,args))
+
+;; (defvar js-import-dependencies-cache-plist '())
+;; (defvar js-import-cached-imported-symbols-alist nil)
+;; (make-variable-buffer-local 'js-import-cached-imported-symbols-alist)
+
+;; (defvar js-import-cached-exported-symbols-alist nil)
+;; (make-variable-buffer-local 'js-import-cached-exported-symbols-alist)
+
+;; (defvar js-import-cached-buffer-tick nil)
+;; (make-variable-buffer-local 'js-import-cached-buffer-tick)
+
+
+;; (defun js-import-imported-symbols-candidates (&optional buffer)
+;;   (with-current-buffer (or buffer helm-current-buffer)
+;;     (let ((tick (buffer-modified-tick)))
+;;       (if (and js-import-cached-imported-symbols-alist (eq js-import-cached-buffer-tick tick))
+;;         js-import-cached-imported-symbols-alist
+;;         (prog1 (setq js-import-cached-imported-symbols-alist (js-import-find-all-buffer-imports (or buffer helm-current-buffer)))
+;;           (setq js-import-cached-buffer-tick tick)
+;;           )))))
+
 
 (defun js-import-cut-names(str reg)
   (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t)))))
@@ -103,6 +123,7 @@ Each car is a regexp match pattern of the imenu type string."
         (setq pos1 (point)))
       (cons pos1 pos2))))
 
+
 (defun js-import-narrow-to-import(path)
   (let* ((bounds (js-import-get-import-positions path))
          (pos1 (car bounds))
@@ -135,15 +156,14 @@ Each car is a regexp match pattern of the imenu type string."
         (replace-match ""))
       (widen))))
 
-(defun js-import-stringify (x)
-  "Convert any object to string effeciently.
-This is faster than `prin1-to-string' in many cases."
-  (cl-typecase x
-    (string x)
-    (symbol (symbol-name x))
-    (integer (number-to-string x))
-    (float (number-to-string x))
-    (t (format "%s" x))))
+(defun js-import-strip-text-props(str)
+  "Remove all text properties from string or stringifies symbol"
+  (cond ((stringp str)
+         (set-text-properties 0 (length str) nil str)
+         str)
+        ((and str (symbolp str))
+         (symbol-name str))
+        (nil str)))
 
 (defun js-import-propertize (item &rest properties)
   "Same as `propertize' except that this avoids overriding
@@ -173,10 +193,9 @@ ITEM is not string."
       (push (cons default-import-name (. 1)) alist))
     alist))
 
-(defun js-import-find-all-buffer-imports()
-  (with-current-buffer (buffer-name)
+(defun js-import-find-all-buffer-imports(&optional buffer)
+  (with-current-buffer (or buffer helm-current-buffer)
     (let* ((content (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))
-           (buffer (buffer-name))
            (all-matches (s-match-strings-all js-import-import-regexp content))
            (result (mapcar (lambda (sublist)
                              (let* ((reversed-list (reverse sublist))
@@ -232,18 +251,6 @@ ITEM is not string."
         (alias-path (js-import-get-alias-path alias)))
     (--filter (and (js-import-filter-pred it) (f-ancestor-of-p alias-path (f-join project-dir it))) (js-import-get-project-files))))
 
-(defun js-import-imports-transformer (candidates)
-  (cl-loop for (k . v) in candidates
-           for parts = (split-string k)
-           for disp = (mapconcat (lambda (x)
-                                   (propertize
-                                    x 'face
-                                    (cl-loop for (p . f) in js-import-type-faces
-                                             when (string-match p x) return f
-                                             when (equal v 1) return 'font-lock-function-name-face
-                                             finally return 'default)))
-                                 parts "\s")
-           collect disp))
 
 (defun js-import-get-export-type(str)
 (cond
@@ -317,7 +324,7 @@ ITEM is not string."
 (defun js-import-real-path-to-alias(real-path alias)
   (let ((alias-path (js-import-get-alias-path alias))
         (slashed-alias (js-import-maybe-slash-alias alias)))
-    (replace-regexp-in-string (concat "^" alias-path) slashed-alias real-path)))
+    (js-import-normalize-path (replace-regexp-in-string (concat "^" alias-path) slashed-alias real-path))))
 
 (defun js-import-get-alias-path(alias)
   (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
@@ -364,10 +371,9 @@ ITEM is not string."
   (s-matches? ".d.ts$" path))
 
 (defun js-import-is-index-trimmable?(path)
+  ("Check if PATH index can be trimmed")
   (and (js-import-is-index-file? path)
-       (< 1 (s-count-matches "/" path))
-       (not (js-import-is-relative? path))))
-
+       (< 1 (s-count-matches "/" path))))
 
 (defun js-import-get-package-json-path ()
   "Return the path to package.json."
@@ -380,9 +386,7 @@ ITEM is not string."
   (when-let ((f-exists-p (js-import-expand-node-modules display-path))
              (files (f-files (js-import-expand-node-modules display-path) (lambda(path) (and (js-import-is-module-interface path) (not (js-import-is-index-file? path)))))))
     (--map (f-join display-path (f-filename (js-import-remove-ext it)))
-           files)
-
-      ))
+           files)))
 
 (defun js-import-get-all-dependencies(&optional $package-json-path)
    "Return dependencies, devDependencies and peerDependencies from package-json-path"
@@ -557,6 +561,7 @@ Write result to buffer DESTBUFF."
                         (goto-char $p0)
                         (buffer-substring-no-properties $p1 $p2)))))
     $inputStr))
+
 
 (provide 'js-import-utils)
 ;;; js-import-utils.el ends here

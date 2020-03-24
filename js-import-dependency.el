@@ -30,8 +30,8 @@
 
 (defclass js-import-dependency-source (helm-source-sync)
   ((candidates :initform 'js-import-init-dependencies-sources)
-   (nomark :initform t)
-   (action :initform '(("Show exported symbols" . js-import-dependency)
+   (nomark :initform nil)
+   (action :initform '(("Show exported symbols" . js-import-select-dependency-action)
                        ("Select from subdirectory" . js-import-select-subdir)))
    (persistent-action 'js-import-select-subdir)
    (persistent-action :initform 'js-import-find-interfaces)
@@ -47,6 +47,11 @@
 (defun js-import-init-dependencies-sources()
   (let ((project-name (projectile-project-root)))
     (js-import-get-all-dependencies)))
+
+(defun js-import-select-dependency-action(file)
+  (mapc
+   'js-import-dependency
+   (helm-marked-candidates)))
 
 ;;;###autoload
 (defun js-import-dependency (&optional dependency)

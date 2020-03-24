@@ -30,6 +30,7 @@
 (require 'js-import-from-path)
 (require 'js-import-relative)
 (require 'js-import-alias)
+(require 'js-import-regexp)
 (require 'js-import-dependency)
 
 (defgroup js-import nil
@@ -68,20 +69,26 @@
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
   (interactive)
-  (helm :sources (js-import-make-imports-sources)))
+  (let ((input (thing-at-point 'sexp t)))
+    (setq input (and (not (js-import-word-reserved? input)) input))
+
+    (helm
+     :input input
+     :sources (js-import-make-imports-sources))))
 
 ;;;###autoload
 (defun js-import ()
   "Init imports from your current project"
   (interactive)
+
   (save-excursion
     (helm
      :sources (append (js-import-alias-make-sources)
-                           (list
-                            (helm-make-source "node modules" 'js-import-dependency-source)
-                            (helm-make-source "relative import" 'js-import-relative-source)))
-          :buffer "js import"
-          :prompt "Select path:")))
+                      (list
+                       (helm-make-source "node modules" 'js-import-dependency-source)
+                       (helm-make-source "relative import" 'js-import-relative-source)))
+     :buffer "js import"
+     :prompt "Select path:")))
 
 (provide 'js-import)
 ;;; js-import.el ends here

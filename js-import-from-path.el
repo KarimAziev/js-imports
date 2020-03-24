@@ -23,7 +23,7 @@
 ;; Hello world!
 
 ;;; Code:
-
+(require 'cl-lib)
 (require 'f)
 (require 'json)
 (require 'subr-x)
@@ -59,6 +59,19 @@
                                     ("Go" . js-import-action--goto-export)))))
 
     (helm :sources (list export-source import-source))))
+
+(defun js-import-imports-transformer (candidates)
+  (cl-loop for (k . v) in candidates
+           for parts = (split-string k)
+           for disp = (mapconcat (lambda (x)
+                                   (propertize
+                                    x 'face
+                                    (cl-loop for (p . f) in js-import-type-faces
+                                             when (string-match p x) return f
+                                             when (equal v 1) return 'font-lock-function-name-face
+                                             finally return 'default)))
+                                 parts "\s")
+           collect disp))
 
 (defun js-import-build-imported-source(candidates display-path &optional real-path)
   (helm-build-sync-source (format "imported from %s" display-path)
