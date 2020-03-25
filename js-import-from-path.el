@@ -90,29 +90,14 @@
               ("Delete" . js-import-action--delete-import)
               ("Delete whole import" . js-import-action--delete-whole-import))))
 
-(defun js-import-build-exported-source(candidates display-path &optional real-path)
-  (helm-build-sync-source (format "import from %s" display-path)
-    :display-to-real (lambda(candidate)
-                       (js-import-make-item candidate
-                                            :cell (assoc candidate candidates)
-                                            :real-path real-path
-                                            :display-path display-path))
-    :candidate-transformer 'js-import-imports-transformer
-    :candidates candidates
-    :persistent-action 'js-import-action--goto-export
-    :action '(("Go" . js-import-action--goto-export)
-              ("Rename" . js-import-action--rename-import)
-              ("Delete" . js-import-action--delete-import)
-              ("Delete whole import" . js-import-action--delete-whole-import)
-              )))
 
 (defun js-import-action--goto-export(candidate)
   (with-helm-quittable
     (let ((real-name-regexp (concat "\\([\s\t\n,]" (js-import-get-prop candidate 'real-name) "[\s\t\n,]\\)"))
           (real-path (js-import-get-prop candidate 'real-path))
           (export-type  (js-import-get-prop candidate 'type)))
-      (when (f-exists? real-path)
-        (find-file-other-window real-path)
+      (when (and real-path (f-exists? real-path))
+        (find-file-read-only-other-window real-path)
         (goto-char 0)
         (re-search-forward (pcase export-type
                              (1 (concat "export[\t\s\n]+default"))

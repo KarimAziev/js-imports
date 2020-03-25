@@ -136,6 +136,8 @@ Each car is a regexp match pattern of the imenu type string."
         (replace-match ""))
       (widen))))
 
+
+
 (defun js-import-strip-text-props(str)
   "Remove all text properties from string or stringifies symbol"
   (cond ((stringp str)
@@ -171,6 +173,30 @@ ITEM is not string."
   (if (stringp item)
       (get-text-property 0 property item)))
 
+(cl-defun js-import-make-item (candidate
+                               &key
+                               display-path
+                               type
+                               real-path
+                               cell)
+  "Utility function to make js-import item. See also
+
+`js-import-propertize'."
+
+  (let* ((splitted-name (split-string candidate "[ \t\s]+as[ \t\s]+"))
+         (result (js-import-propertize candidate
+                                       'real-name (nth 0 splitted-name)
+                                       'display-name candidate
+                                       'display-path display-path
+                                       'renamed-name (nth 1 splitted-name)
+                                       'real-path (or real-path (js-import-path-to-real display-path))
+                                       'type (or type (cdr cell)))))
+
+    result
+    ))
+
+
+
 (defun js-import-find-current-imports(display-path)
   (let* ((matches (s-match (js-import-make-import-regexp-from-path display-path) (buffer-substring-no-properties (point-min) (js-import-goto-last-import))))
          (default-import-name (nth 1 matches))
@@ -203,27 +229,6 @@ ITEM is not string."
                            all-matches)))
       result)))
 
-(cl-defun js-import-make-item (candidate
-                               &key
-                               display-path
-                               type
-                               face
-                               real-path
-                               cell
-                               selection-face)
-  "Utility function to make js-import item. See also
-
-`js-import-propertize'."
-  (let ((splitted-name (split-string candidate "[ \t\s]+as[ \t\s]+")))
-    (js-import-propertize candidate
-                          'real-name (nth 0 splitted-name)
-                          'display-name candidate
-                          'display-path display-path
-                          'renamed-name (nth 1 splitted-name)
-                          'real-path (or real-path (js-import-path-to-real display-path))
-                          'js-import-face face
-                          'selection-face selection-face
-                          'type (or type (cdr cell)))))
 
 (defun js-import-filter-pred(filename)
   (and (not (string-equal (s-replace (projectile-project-root) "" buffer-file-name) filename))
@@ -233,7 +238,7 @@ ITEM is not string."
 
 
 (defun js-import-get-export-type(str)
-(cond
+  (cond
    ((s-equals? "*" str) 16)
    ((s-matches? "{[ \t\s\n]?\\(default\\)[ \\s\\t]+as[^a-zZ-A0-9_$]" str) 4)
    ((s-matches? "[ \t\s\n]default\\([ \\b$]\\|$\\)" str) 1)
@@ -293,13 +298,10 @@ ITEM is not string."
 (defun js-import-maybe-remove-path-index (path)
   (if (js-import-is-index-trimmable? path)
       (replace-regexp-in-string js-import-file-index-regexp "" path)
-        path))
+    path))
 
 (defun js-import-remove-double-slashes (path)
   (replace-regexp-in-string "//"  "/" path))
-
-(defun js-import-maybe-slash-alias(alias)
-  (if (or (s-blank? alias) (s-matches? ".*\\/$" alias)) alias (concat alias "/")))
 
 (defun js-import-real-path-to-alias(real-path alias)
   (let ((alias-path (js-import-get-alias-path alias)))
@@ -308,9 +310,6 @@ ITEM is not string."
 (defun js-import-get-alias-path(alias)
   (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
 
-
-(defun js-import-expand-path(candidate &optional dir)
-  (f-expand candidate (or dir (projectile-project-root))))
 
 (defun js-import-get-node-modules-path (&optional project-dir)
   "Return the path to node-modules."
@@ -368,7 +367,7 @@ ITEM is not string."
            files)))
 
 (defun js-import-get-all-dependencies(&optional $package-json-path)
-   "Return dependencies, devDependencies and peerDependencies from package-json-path"
+  "Return dependencies, devDependencies and peerDependencies from package-json-path"
   (let ((sections '("dependencies" "peerDependencies" "devDependencies")))
     (--reduce-r-from (append (js-import-get-dependencies (js-import-get-package-json-path) it) acc) '() sections)))
 
@@ -377,12 +376,7 @@ ITEM is not string."
 (defun js-import-get-dependencies (&optional $package-json-path $section)
   "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
   (when-let ((dependencies-hash (js-import-read-package-json-section $package-json-path $section)))
-    ;; (mapc (lambda(name)
-    ;;         (when-let ((subfile (js-import-find-interfaces name)))
-    ;;           (push subfile keys)))
-    ;;       keys)
-    (hash-table-keys dependencies-hash)
-    ))
+    (hash-table-keys dependencies-hash)))
 
 (defun js-import-read-package-json-section (&optional $package-json-path $section)
   "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
@@ -441,8 +435,6 @@ Write result to buffer DESTBUFF."
 (defun js-import-find-exports (&optional path)
   (when-let (content (f-read path))
     (let ((all-matches (s-match-strings-all js-import-export-regexp content)))
-
-      (message "all-matches\n %s" all-matches)
       (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
 
 
@@ -451,17 +443,17 @@ Write result to buffer DESTBUFF."
          (curr-dir (if (f-ext? curr-path) (f-dirname curr-path) curr-path)))
 
     (unless real-path (setq real-path (js-import-path-to-real display-path curr-dir)))
-        (when-let ((real-path)
-                   (dir-name (f-dirname real-path))
-                   (content (f-read real-path)))
-          (let ((all-matches (s-match-strings-all js-import-export-regexp content))
-                (deep-exports (--map (car (last it)) (s-match-strings-all js-import-regexp-export-all-from content)))
-                (result '()))
-            (when deep-exports
-              (mapc (lambda(path) (push (js-import-find-all-exports path (js-import-path-to-real path dir-name)) result))
-                      deep-exports))
-            (-distinct (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
-            ))))
+    (when-let ((real-path)
+               (dir-name (f-dirname real-path))
+               (content (f-read real-path)))
+      (let ((all-matches (s-match-strings-all js-import-export-regexp content))
+            (deep-exports (--map (car (last it)) (s-match-strings-all js-import-regexp-export-all-from content)))
+            (result '()))
+        (when deep-exports
+          (mapc (lambda(path) (push (js-import-find-all-exports path (js-import-path-to-real path dir-name)) result))
+                deep-exports))
+        (-distinct (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
+        ))))
 
 (defun js-import-path-to-real(path &optional dir)
   (cond ((js-import-is-relative? path)
@@ -499,17 +491,20 @@ Write result to buffer DESTBUFF."
          (project-dir (projectile-project-root))
          (real-path nil))
     (mapc (lambda(alias)
-            (let* ((alias-regexp (concat "^" alias "/"))
+            (let* ((alias-regexp (if (s-blank? alias) (concat "^" alias) (concat "^" alias "/")))
                    (alias-path (js-import-get-alias-path alias))
                    (joined-path (f-join
                                  alias-path (s-replace-regexp alias-regexp "" path))))
-              (when (s-matches?
-                     (js-import-remove-double-slashes (concat "^" alias "/")) path)
+              (when (s-matches? alias-regexp path)
                 (cond
                  ((and (f-ext? joined-path) (f-exists? joined-path))
                   (setq real-path joined-path))
+                 ((f-exists? (f-swap-ext joined-path "ts") )
+                  (setq real-path (f-swap-ext joined-path "ts")))
                  ((f-exists? (f-swap-ext joined-path "js") )
                   (setq real-path (f-swap-ext joined-path "js")))
+                 ((and (not (f-ext? joined-path)) (f-exists? (f-join joined-path "index.ts")) )
+                  (setq real-path (f-join joined-path "index.ts")))
                  ((and (not (f-ext? joined-path)) (f-exists? (f-join joined-path "index.js")) )
                   (setq real-path (f-join joined-path "index.js")))))))
           aliases)
