@@ -59,26 +59,6 @@ Each car is a regexp match pattern of the imenu type string."
 (defmacro js-import-pipe (args &rest funcs)
   `(funcall (-compose ,@funcs) ,args))
 
-;; (defvar js-import-dependencies-cache-plist '())
-;; (defvar js-import-cached-imported-symbols-alist nil)
-;; (make-variable-buffer-local 'js-import-cached-imported-symbols-alist)
-
-;; (defvar js-import-cached-exported-symbols-alist nil)
-;; (make-variable-buffer-local 'js-import-cached-exported-symbols-alist)
-
-;; (defvar js-import-cached-buffer-tick nil)
-;; (make-variable-buffer-local 'js-import-cached-buffer-tick)
-
-
-;; (defun js-import-imported-symbols-candidates (&optional buffer)
-;;   (with-current-buffer (or buffer helm-current-buffer)
-;;     (let ((tick (buffer-modified-tick)))
-;;       (if (and js-import-cached-imported-symbols-alist (eq js-import-cached-buffer-tick tick))
-;;         js-import-cached-imported-symbols-alist
-;;         (prog1 (setq js-import-cached-imported-symbols-alist (js-import-find-all-buffer-imports (or buffer helm-current-buffer)))
-;;           (setq js-import-cached-buffer-tick tick)
-;;           )))))
-
 
 (defun js-import-cut-names(str reg)
   (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t)))))
@@ -251,16 +231,6 @@ ITEM is not string."
        (not (s-matches? js-import-unsaved-file-regexp filename))
        (not (s-matches? js-import-test-file-regexp filename))))
 
-(defun js-import-get-project-files()
-  "Get js and ts files from current project"
-  (-filter 'js-import-filter-pred (projectile-current-project-files)))
-
-(defun js-import-get-alias-files(alias)
-  "Get filtered by alias path js and ts files from current project"
-  (let ((project-dir (projectile-project-root))
-        (alias-path (js-import-get-alias-path alias)))
-    (--filter (and (js-import-filter-pred it) (f-ancestor-of-p alias-path (f-join project-dir it))) (js-import-get-project-files))))
-
 
 (defun js-import-get-export-type(str)
 (cond
@@ -332,9 +302,8 @@ ITEM is not string."
   (if (or (s-blank? alias) (s-matches? ".*\\/$" alias)) alias (concat alias "/")))
 
 (defun js-import-real-path-to-alias(real-path alias)
-  (let ((alias-path (js-import-get-alias-path alias))
-        (slashed-alias (js-import-maybe-slash-alias alias)))
-    (js-import-normalize-path (replace-regexp-in-string (concat "^" alias-path) slashed-alias real-path))))
+  (let ((alias-path (js-import-get-alias-path alias)))
+    (f-join alias (replace-regexp-in-string (concat "^" alias-path) "" real-path))))
 
 (defun js-import-get-alias-path(alias)
   (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
@@ -375,7 +344,7 @@ ITEM is not string."
   (s-matches? js-import-file-index-regexp path))
 
 (defun js-import-is-relative?(path)
-  (s-matches? "^\\." path))
+  (s-matches? "^\\.+/" path))
 
 (defun js-import-is-module-interface(path)
   (s-matches? ".d.ts$" path))
@@ -479,7 +448,7 @@ Write result to buffer DESTBUFF."
 
 (defun js-import-find-all-exports (display-path &optional real-path)
   (let* ((curr-path (or real-path buffer-file-name))
-         (curr-dir (if (f-ext? curr-path) curr-path)))
+         (curr-dir (if (f-ext? curr-path) (f-dirname curr-path) curr-path)))
 
     (unless real-path (setq real-path (js-import-path-to-real display-path curr-dir)))
         (when-let ((real-path)

@@ -28,7 +28,6 @@
 (require 'projectile)
 (require 'js-export)
 (require 'js-import-from-path)
-(require 'js-import-relative)
 (require 'js-import-alias)
 (require 'js-import-regexp)
 (require 'js-import-dependency)
@@ -45,14 +44,12 @@
     (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
     (define-key map (kbd "C-c C-d") 'js-import-dependency)
     (define-key map (kbd "C-c C-a") 'js-import-alias)
-    (define-key map (kbd "C-c C-r") 'js-import-relative)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
         ["Import from all sources" js-import-helm]
         ["Edit current buffer imports" js-import-edit-buffer-imports]
         ["Import alias" js-import-alias]
-        ["Import relative" js-import-relative]
         ["Import depenency" js-import-dependency]))
     map)
   "Keymap for Js-import commands")
@@ -83,10 +80,9 @@
 
   (save-excursion
     (helm
-     :sources (append (js-import-alias-make-sources)
-                      (list
-                       (helm-make-source "node modules" 'js-import-dependency-source)
-                       (helm-make-source "relative import" 'js-import-relative-source)))
+     :sources (append (list
+                       (helm-make-source "js import project files" 'js-import-alias-source)
+                       (helm-make-source "node modules" 'js-import-dependency-source)))
      :buffer "js import"
      :prompt "Select path:")))
 

@@ -31,7 +31,8 @@
 
 
 (defun js-import-from-path(normalized-path &optional path)
-  (let* ((import-alist (js-import-find-current-imports normalized-path))
+  (let* ((display-path (js-import-normalize-path normalized-path))
+         (import-alist (js-import-find-current-imports display-path))
          (all-exports-alist (js-import-find-all-exports normalized-path path))
          (import-reals (--map (funcall (-compose 's-trim 'car 'split-string 'car) it)
                               import-alist))
@@ -52,7 +53,7 @@
                                              (js-import-make-item candidate
                                                                   :real-path path
                                                                   :cell (assoc candidate all-exports-alist)
-                                                                  :display-path normalized-path))
+                                                                  :display-path display-path))
 
                           :action '(("Import" . js-import-action--import-candidate)
                                     ("Import as " . js-import-action--import-as)
@@ -163,6 +164,7 @@
                                nil
                                renamed-name
                                ))))
+
 
        (when (and new-name
                   (<= 1 (length new-name))
