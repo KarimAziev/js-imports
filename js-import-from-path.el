@@ -130,7 +130,7 @@
    (lambda(candidate)
      (let ((display-path (js-import-get-prop candidate 'display-path))
            (real-path (js-import-get-prop candidate 'real-path)))
-       (js-import-from-path real-path display-path)))
+       (js-import-from-path display-path real-path)))
    (helm-marked-candidates)))
 
 (defun js-import-action--rename-import(cand)

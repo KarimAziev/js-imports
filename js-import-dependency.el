@@ -55,8 +55,7 @@
   (save-excursion
     (when-let ((module (or dependency (helm
                                        :sources (helm-make-source "node modules" 'js-import-dependency-source)))))
-      (let ((path (js-import-maybe-expand-dependency module)))
-        (js-import-from-path module)))))
+      (js-import-from-path module))))
 
 (provide 'js-import-dependency)
 ;;; js-import-dependency.el ends here
