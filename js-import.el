@@ -44,7 +44,6 @@
     (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
     (define-key map (kbd "C-c C-d") 'js-import-dependency)
     (define-key map (kbd "C-c C-a") 'js-import-alias)
-    (define-key map (kbd "C-,") 'js-import-dwim)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
@@ -55,6 +54,7 @@
     map)
   "Keymap for Js-import commands")
 
+
 ;;;###autoload
 (define-minor-mode js-import-mode
   "js-import-mode is a minor mode for importing.
@@ -63,6 +63,7 @@
   :group 'js-import
   :global nil
   :keymap js-import-command-map)
+
 
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
