@@ -520,7 +520,47 @@ Write result to buffer DESTBUFF."
       (setq filepath (concat filepath "/index.js"))))
     filepath))
 
-(defun js-import-get-word-at-point()
+
+(let* ((fn (function-called-at-point))
+       (enable-recursive-minibuffers t)
+       (val (completing-read
+             (if fn
+                 (format "Describe function (default %s): " fn)
+               "Describe function: ")
+             #'help--symbol-completion-table
+             (lambda (f) (or (fboundp f) (get f 'function-documentation)))
+             t nil nil
+             (and fn (symbol-name fn)))))
+  (unless (equal val "")
+    (setq fn (intern val)))
+  (unless (and fn (symbolp fn))
+    (user-error "You didn't specify a function symbol"))
+  (unless (or (fboundp fn) (get fn 'function-documentation))
+    (user-error "Symbol's function definition is void: %s" fn))
+  (list fn))
+
+(defun js-import-which-word ()
+  "Find closest to point whole word."
+  (interactive)
+  (save-excursion
+    (let ( $p1 $p2 )
+    (if (use-region-p)
+        (progn
+          (setq $p1 (region-beginning))
+          (setq $p2 (region-end)))
+      (save-excursion
+        (skip-chars-backward "_A-Za-z0-9")
+        (setq $p1 (point))
+        (right-char)
+        (skip-chars-forward "_A-Za-z0-9")
+        (setq $p2 (point))))
+    (setq mark-active nil)
+    (when (< $p1 (point))
+      (goto-char $p1))
+    (buffer-substring-no-properties $p1 $p2))))
+
+
+(defun js-import-get-path-at-point()
   (interactive)
   (let* (($inputStr (if (use-region-p)
                         (buffer-substring-no-properties (region-beginning) (region-end))
@@ -535,6 +575,15 @@ Write result to buffer DESTBUFF."
                         (goto-char $p0)
                         (buffer-substring-no-properties $p1 $p2)))))
     $inputStr))
+
+(defun js-import-get-unreserved-word-at-point()
+  "Returns whole word at point unless its javascript reserved word"
+  (interactive)
+  (save-excursion
+    (when-let* ((whole-word (js-import-which-word))
+               (is-enabled (and (not (js-import-word-reserved? whole-word))
+                 (s-matches? js-import-word-chars-regexp whole-word))))
+        whole-word)))
 
 
 (provide 'js-import-utils)

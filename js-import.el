@@ -44,6 +44,7 @@
     (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
     (define-key map (kbd "C-c C-d") 'js-import-dependency)
     (define-key map (kbd "C-c C-a") 'js-import-alias)
+    (define-key map (kbd "C-,") 'js-import-dwim)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
@@ -65,13 +66,11 @@
 
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
+  "Find all imported symbols in current buffer and propose to jump or edit them"
   (interactive)
-  (let ((input (thing-at-point 'sexp t)))
-    (setq input (and (not (js-import-word-reserved? input)) input))
-
-    (helm
-     :input input
-     :sources (js-import-make-imports-sources))))
+  (helm
+   :preselect (js-import-get-unreserved-word-at-point)
+   :sources (js-import-make-imports-sources)))
 
 ;;;###autoload
 (defun js-import ()

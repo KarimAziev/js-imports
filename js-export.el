@@ -32,12 +32,12 @@
 
 (defun js-import-show-exports-from-path-at-point()
   (interactive)
-  (when-let (($inputStr (js-import-get-word-at-point)))
+  (when-let (($inputStr (js-import-which-word)))
     (js-import-from-path $inputStr)))
 
 (defun js-import-open-file-at-point()
   (interactive)
-  (when-let (($inputStr (js-import-get-word-at-point)))
+  (when-let (($inputStr (js-import-which-word)))
     (js-import-path-to-real $inputStr)))
 
 

@@ -34,6 +34,8 @@
   :group 'js-import
   :type 'string)
 
+(defvar js-import-word-chars-regexp "[a-zZ-A0-9_$]")
+
 (defvar js-import-imports-regexp
   "^import[ \t\\n]+\\([a-zZ-A0-9_$]+\\|*[\t\n\s]+as[\t\n\s][a-zZ-A0-9_$]\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']\\([^['\"]*\\)")
 
@@ -97,6 +99,7 @@
     "delete"
     "do"
     "double"
+    "export",
     "else"
     "enum*"
     "eval"
@@ -148,7 +151,8 @@
 
 (defun js-import-word-reserved?(str)
   "Check if STR is js reserved word"
-  (member str js-import-reserved-words))
+  (when (stringp str)
+    (member str js-import-reserved-words)))
 
 (provide 'js-import-regexp)
 ;;; js-import-regexp.el ends here
