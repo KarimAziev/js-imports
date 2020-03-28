@@ -56,7 +56,8 @@ Each car is a regexp match pattern of the imenu type string."
            (sexp :tag "Face"))))
 
 (defvar js-import-dependencies-cache-plist '())
-(defmacro js-import-pipe (args &rest funcs)
+
+(defmacro js-import-compose (args &rest funcs)
   `(funcall (-compose ,@funcs) ,args))
 
 
@@ -192,9 +193,7 @@ ITEM is not string."
                                        'real-path (or real-path (js-import-path-to-real display-path))
                                        'type (or type (cdr cell)))))
 
-    result
-    ))
-
+    result))
 
 
 (defun js-import-find-current-imports(display-path)
@@ -257,10 +256,21 @@ ITEM is not string."
           matches)
     export-list))
 
-(defun js-propose-import-name (path cell &optional default-name)
+
+(defun js-import-generate-name-from-path(path)
+  "Generate name for default export from PATH"
+  (js-import-compose path
+                     '(lambda(words) (mapconcat 'capitalize words ""))
+                     (-partial '-take 2)
+                     'reverse
+                     's-split-words
+                     (-partial 'replace-regexp-in-string js-import-file-index-regexp "")
+                     'js-import-remove-ext))
+
+(defun js-propose-import-name (path cell)
   (let* ((current-name (car cell))
          (export-type (cdr cell))
-         (proposed-symbol (s-replace-regexp "[^a-zZ-A0-9$_]" "" (or default-name (s-join "" (reverse (--update-at 0 (capitalize it) (-take-last 2 (--remove (eq it "index") (split-string path "[/,.]")))))))))
+         (proposed-symbol (js-import-generate-name-from-path path))
          (prompt (format
                   (pcase export-type
                     (1 "Import default as (default: %s): ")
@@ -270,6 +280,7 @@ ITEM is not string."
          (read-symbols
           (read-string
            prompt
+           proposed-symbol
            nil nil proposed-symbol))
 
          (symbols (car (split-string (string-trim read-symbols))))
@@ -289,7 +300,7 @@ ITEM is not string."
     (nreverse vals)))
 
 (defun js-import-normalize-path(path)
-  (js-import-pipe path
+  (js-import-compose path
                   'js-import-remove-double-slashes
                   'js-import-remove-ext
                   'js-import-maybe-remove-path-index))
@@ -394,8 +405,7 @@ ITEM is not string."
   (let ((parts (s-slice-at "/[^/]+$" display-path)))
     (when-let (lastpath (nth 1 parts))
       (setcdr parts (s-replace-regexp "^/" "" lastpath)))
-    parts
-    ))
+    parts))
 
 (defun js-import-sort-by-ext(files)
   (--sort (let ((aExt (f-ext it))
@@ -422,8 +432,7 @@ Write result to buffer DESTBUFF."
     (with-output-to-temp-buffer fPath
       (insert-file-contents fPath)
       (print (js-import-find-exports fPath))
-      (print (js-import-find-all-buffer-imports)))
-    ))
+      (print (js-import-find-all-buffer-imports)))))
 
 
 (defun js-import-collect-deep-exports(path)
@@ -544,20 +553,20 @@ Write result to buffer DESTBUFF."
   (interactive)
   (save-excursion
     (let ( $p1 $p2 )
-    (if (use-region-p)
-        (progn
-          (setq $p1 (region-beginning))
-          (setq $p2 (region-end)))
-      (save-excursion
-        (skip-chars-backward "_A-Za-z0-9")
-        (setq $p1 (point))
-        (right-char)
-        (skip-chars-forward "_A-Za-z0-9")
-        (setq $p2 (point))))
-    (setq mark-active nil)
-    (when (< $p1 (point))
-      (goto-char $p1))
-    (buffer-substring-no-properties $p1 $p2))))
+      (if (use-region-p)
+          (progn
+            (setq $p1 (region-beginning))
+            (setq $p2 (region-end)))
+        (save-excursion
+          (skip-chars-backward "_A-Za-z0-9")
+          (setq $p1 (point))
+          (right-char)
+          (skip-chars-forward "_A-Za-z0-9")
+          (setq $p2 (point))))
+      (setq mark-active nil)
+      (when (< $p1 (point))
+        (goto-char $p1))
+      (buffer-substring-no-properties $p1 $p2))))
 
 
 (defun js-import-get-path-at-point()
@@ -581,9 +590,9 @@ Write result to buffer DESTBUFF."
   (interactive)
   (save-excursion
     (when-let* ((whole-word (js-import-which-word))
-               (is-enabled (and (not (js-import-word-reserved? whole-word))
-                 (s-matches? js-import-word-chars-regexp whole-word))))
-        whole-word)))
+                (is-enabled (and (not (js-import-word-reserved? whole-word))
+                                 (s-matches? js-import-word-chars-regexp whole-word))))
+      whole-word)))
 
 
 (provide 'js-import-utils)
