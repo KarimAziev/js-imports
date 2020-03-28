@@ -35,11 +35,10 @@
 (defgroup js-import nil
   "Minor mode providing JavaScript import."
   :link '(url-link :tag "Repository" "https://github.com/KarimAziev/js-import")
-  :prefix 'js-import
-  :group 'languages)
+  :prefix 'js-import)
 
 (defvar js-import-file-names-sources
-  '("js import project files" "node modules"))
+  '("project files" "node modules"))
 
 (defvar js-import-command-map
   (let ((map (make-sparse-keymap)))
@@ -51,9 +50,10 @@
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
-        ["Import from all sources" js-import-helm]
+        ["Import from all sources" js-import]
         ["Edit current buffer imports" js-import-edit-buffer-imports]
         ["Import alias" js-import-alias]
+        ["Show import lines" js-import-show-buffer-imports]
         ["Import depenency" js-import-dependency]))
     map)
   "Keymap for Js-import commands")
@@ -81,7 +81,6 @@
 
 (defun js-import-reset-source-filter ()
   (interactive)
-
   (helm-set-source-filter nil))
 
 
@@ -97,9 +96,7 @@
 
 
 (define-key helm-map (kbd "C-M-n") 'js-import-dependencies-only-action)
-(put 'js-import-dependencies-only-action 'helm-only t)
-(put 'js-import-reset-source-filter 'helm-only t)
-
+(define-key helm-map (kbd "C-M-p") 'js-import-reset-source-filter)
 
 
 ;;;###autoload
@@ -110,7 +107,7 @@
     (let ((result (helm
                    :keymap js-import-helm-keymap
                    :sources (append (list
-                                     (helm-make-source "js import project files" 'js-import-alias-source)
+                                     (helm-make-source "project files" 'js-import-alias-source)
                                      (helm-make-source "node modules" 'js-import-dependency-source)))
                    :buffer "js import"
                    :prompt "Select path:"))))))

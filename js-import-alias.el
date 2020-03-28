@@ -131,7 +131,7 @@
   "Import from your current project with alias prefix"
   (interactive)
   (save-excursion
-    (helm`
+    (helm
      :sources (helm-make-source "js import project files" 'js-import-alias-source))))
 
 (provide 'js-import-alias)

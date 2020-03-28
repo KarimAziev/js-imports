@@ -530,24 +530,6 @@ Write result to buffer DESTBUFF."
     filepath))
 
 
-(let* ((fn (function-called-at-point))
-       (enable-recursive-minibuffers t)
-       (val (completing-read
-             (if fn
-                 (format "Describe function (default %s): " fn)
-               "Describe function: ")
-             #'help--symbol-completion-table
-             (lambda (f) (or (fboundp f) (get f 'function-documentation)))
-             t nil nil
-             (and fn (symbol-name fn)))))
-  (unless (equal val "")
-    (setq fn (intern val)))
-  (unless (and fn (symbolp fn))
-    (user-error "You didn't specify a function symbol"))
-  (unless (or (fboundp fn) (get fn 'function-documentation))
-    (user-error "Symbol's function definition is void: %s" fn))
-  (list fn))
-
 (defun js-import-which-word ()
   "Find closest to point whole word."
   (interactive)
