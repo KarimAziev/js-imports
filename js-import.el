@@ -137,7 +137,7 @@
 
   (helm
    :preselect (js-import-get-unreserved-word-at-point)
-   :sources 'js-import-source-imported))
+   :sources js-import-source-imported))
 
 (provide 'js-import)
 ;;; js-import.el ends here
