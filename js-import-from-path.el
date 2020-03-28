@@ -74,22 +74,6 @@
                                  parts "\s")
            collect disp))
 
-(defun js-import-build-imported-source(candidates display-path &optional real-path)
-  (helm-build-sync-source (format "imported from %s" display-path)
-    :display-to-real (lambda(candidate)
-                       (js-import-make-item candidate
-                                            :cell (assoc candidate candidates)
-                                            :real-path (or real-path (js-import-alias-path-to-real display-path))
-                                            :display-path display-path))
-    :candidate-transformer 'js-import-imports-transformer
-    :candidates candidates
-    :persistent-action 'js-import-action--goto-export
-    :action '(("Go" . js-import-action--goto-export)
-              ("Rename" . js-import-action--rename-import)
-              ("Add more imports" . js-import-action--add-to-import)
-              ("Delete" . js-import-action--delete-import)
-              ("Delete whole import" . js-import-action--delete-whole-import))))
-
 
 (defun js-import-action--goto-export(candidate)
   (with-helm-quittable
@@ -199,10 +183,33 @@
                   (16 (js-import-insert-exports full-name nil normalized-path)))))
         (helm-marked-candidates)))
 
+(defun js-import-build-imported-source(candidates display-path &optional real-path)
+  (helm-build-sync-source (format "imported from %s" display-path)
+    :display-to-real (lambda(candidate)
+                       (js-import-make-item candidate
+                                            :cell (assoc candidate candidates)
+                                            :real-path (or real-path (js-import-alias-path-to-real display-path))
+                                            :display-path display-path))
+    :candidate-transformer 'js-import-imports-transformer
+    :candidates candidates
+    :persistent-action 'js-import-action--goto-export
+    :action '(("Go" . js-import-action--goto-export)
+              ("Rename" . js-import-action--rename-import)
+              ("Add more imports" . js-import-action--add-to-import)
+              ("Delete" . js-import-action--delete-import)
+              ("Delete whole import" . js-import-action--delete-whole-import))))
+
 (defun js-import-make-imports-sources()
-  (save-excursion
-    (--map (js-import-build-imported-source (cdr it) (car it))
-           (js-import-find-all-buffer-imports))))
+  (let* ((lst (js-import-find-all-buffer-imports))
+         (progress-reporter (make-progress-reporter
+                             "Js import indexing buffers..." 1 (length lst))))
+    (prog1
+        (cl-loop with cur-buf = helm-current-buffer
+                 for path in lst
+                 for count from 1
+                 collect (js-import-build-imported-source (cdr path) (car path))
+                 do (progress-reporter-update progress-reporter count))
+      (progress-reporter-done progress-reporter))))
 
 (provide 'js-import-from-path)
 ;;; js-import-from-path.el ends here
