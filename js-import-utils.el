@@ -29,6 +29,7 @@
 (require 'projectile)
 (require 'cl-lib)
 (require 'f)
+(require 'dash)
 (require 'json)
 (require 'subr-x)
 (require 's)

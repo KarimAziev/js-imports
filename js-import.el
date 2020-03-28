@@ -129,19 +129,15 @@
                         (delete-non-matching-lines js-import-import-regexp)))
               :get-line #'buffer-substring-no-properties)))
 
-(defvar js-import-source-imported nil "Current imports in buffer")
-(make-variable-buffer-local 'js-import-source-imported)
+
+
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
   "Find all imported symbols in current buffer and propose to jump or edit them"
   (interactive)
-  (save-excursion
-    (unless js-import-source-imported
-      (setq js-import-source-imported (js-import-make-imports-sources)))
-
     (helm
      :preselect (js-import-get-unreserved-word-at-point)
-     :sources js-import-source-imported)))
+     :sources (js-import-make-imports-sources)))
 
 (provide 'js-import)
 ;;; js-import.el ends here
