@@ -35,7 +35,8 @@
 (defgroup js-import nil
   "Minor mode providing JavaScript import."
   :link '(url-link :tag "Repository" "https://github.com/KarimAziev/js-import")
-  :prefix 'js-import)
+  :prefix 'js-import
+  :group 'languages)
 
 (defvar js-import-file-names-sources
   '("project files" "node modules"))
@@ -84,7 +85,7 @@
   (helm-set-source-filter nil))
 
 
-(defvar js-import-source-imported nil "Current imports in buffer")
+
 (defvar js-import-helm-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
@@ -120,24 +121,27 @@
   (helm
    :preselect (js-import-get-unreserved-word-at-point)
    :sources (helm-build-in-buffer-source "js imports in buffer"
-                   :init (lambda ()
-                           (with-current-buffer (helm-candidate-buffer 'global)
+              :init (lambda ()
+                      (with-current-buffer (helm-candidate-buffer 'global)
 
-                             (insert (with-helm-current-buffer (buffer-substring-no-properties (point-min) (point-max))))
-                             (goto-char (point-min))
-                             (delete-non-matching-lines js-import-import-regexp)))
-                   :get-line #'buffer-substring-no-properties)))
+                        (insert (with-helm-current-buffer (buffer-substring-no-properties (point-min) (point-max))))
+                        (goto-char (point-min))
+                        (delete-non-matching-lines js-import-import-regexp)))
+              :get-line #'buffer-substring-no-properties)))
 
+(defvar js-import-source-imported nil "Current imports in buffer")
+(make-variable-buffer-local 'js-import-source-imported)
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
   "Find all imported symbols in current buffer and propose to jump or edit them"
   (interactive)
-  (unless js-import-source-imported
-    (setq js-import-source-imported (js-import-make-imports-sources)))
+  (save-excursion
+    (unless js-import-source-imported
+      (setq js-import-source-imported (js-import-make-imports-sources)))
 
-  (helm
-   :preselect (js-import-get-unreserved-word-at-point)
-   :sources js-import-source-imported))
+    (helm
+     :preselect (js-import-get-unreserved-word-at-point)
+     :sources js-import-source-imported)))
 
 (provide 'js-import)
 ;;; js-import.el ends here
