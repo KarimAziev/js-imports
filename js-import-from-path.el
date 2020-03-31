@@ -36,7 +36,18 @@
          (all-exports-alist (js-import-find-all-exports normalized-path path))
          (import-reals (--map (funcall (-compose 's-trim 'car 'split-string 'car) it)
                               import-alist))
-         (import-source (js-import-build-imported-source import-alist normalized-path))
+         (import-source (helm-build-sync-source (format "imported from %s" display-path)
+                                  :display-to-real (lambda(candidate)
+                                                     (js-import-make-item candidate
+                                                                          :display-path display-path))
+                                  :candidate-transformer 'js-import-imports-transformer
+                                  :candidates import-alist
+                                  :persistent-action 'js-import-action--goto-export
+                                  :action '(("Go" . js-import-action--goto-export)
+                                            ("Rename" . js-import-action--rename-import)
+                                            ("Add more imports" . js-import-action--add-to-import)
+                                            ("Delete" . js-import-action--delete-import)
+                                            ("Delete whole import" . js-import-action--delete-whole-import))))
          (export-source (helm-build-sync-source (format "Exports from %s" normalized-path)
                           :candidates (-filter (lambda(it)
                                                  (let ((name (car it))
