@@ -73,7 +73,7 @@
 
 
 
-(defun js-import-dependencies-only-action ()
+(defun js-import-set-source-filter ()
   (interactive)
   (let ((curr-source (helm-get-current-source)))
     (helm-set-source-filter (-remove-item (helm-attr 'name curr-source) js-import-file-names-sources))))
@@ -84,19 +84,16 @@
   (interactive)
   (helm-set-source-filter nil))
 
-
-
 (defvar js-import-helm-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
-    (define-key map (kbd "C-M-n") 'js-import-dependencies-only-action)
+    (define-key map (kbd "C-M-n") 'js-import-set-source-filter)
     (define-key map (kbd "C-M-p") 'js-import-reset-source-filter)
-    ;;(define-key map (kbd "C-r") 'js-import-switch-to-relative)
     map)
   "keymap for a helm source.")
 
 
-(define-key helm-map (kbd "C-M-n") 'js-import-dependencies-only-action)
+(define-key helm-map (kbd "C-M-n") 'js-import-set-source-filter)
 (define-key helm-map (kbd "C-M-p") 'js-import-reset-source-filter)
 
 
@@ -135,9 +132,25 @@
 (defun js-import-edit-buffer-imports()
   "Find all imported symbols in current buffer and propose to jump or edit them"
   (interactive)
-    (helm
-     :preselect (js-import-get-unreserved-word-at-point)
-     :sources (js-import-make-imports-sources)))
+  (helm
+   :preselect (js-import-get-unreserved-word-at-point)
+   :sources (append (mapcar (lambda(sublist)
+                              (let ((path (car sublist))
+                                    (items (cdr sublist)))
+                                (helm-build-sync-source (format "imported from %s" path)
+                                  :display-to-real (lambda(candidate)
+                                                     (js-import-make-item candidate
+                                                                          :real-path (js-import-alias-path-to-real path)
+                                                                          :display-path path))
+                                  :candidate-transformer 'js-import-imports-transformer
+                                  :candidates items
+                                  :persistent-action 'js-import-action--goto-export
+                                  :action '(("Go" . js-import-action--goto-export)
+                                            ("Rename" . js-import-action--rename-import)
+                                            ("Add more imports" . js-import-action--add-to-import)
+                                            ("Delete" . js-import-action--delete-import)
+                                            ("Delete whole import" . js-import-action--delete-whole-import)))))
+                            (js-import-find-all-buffer-imports)))))
 
 (provide 'js-import)
 ;;; js-import.el ends here

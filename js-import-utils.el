@@ -210,7 +210,7 @@ ITEM is not string."
     alist))
 
 (defun js-import-find-all-buffer-imports(&optional buffer)
-  (with-current-buffer (or buffer helm-current-buffer)
+  (save-excursion
     (let* ((content (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))
            (all-matches (s-match-strings-all js-import-import-regexp content))
            (result (mapcar (lambda (sublist)
@@ -227,6 +227,8 @@ ITEM is not string."
 
                                (cons path (-flatten imports-list))))
                            all-matches)))
+
+
       result)))
 
 
@@ -302,10 +304,9 @@ ITEM is not string."
 
 (defun js-import-normalize-path(path)
   (js-import-compose path
-                  'js-import-remove-double-slashes
-                  'js-import-remove-ext
-                  'js-import-maybe-remove-path-index))
-
+                     'js-import-remove-double-slashes
+                     'js-import-remove-ext
+                     'js-import-maybe-remove-path-index))
 
 (defun js-import-maybe-remove-path-index (path)
   (if (js-import-is-index-trimmable? path)
@@ -569,7 +570,7 @@ Write result to buffer DESTBUFF."
     $inputStr))
 
 (defun js-import-get-unreserved-word-at-point()
-  "Returns whole word at point unless its javascript reserved word"
+  "Returns camelCased word at point unless it is javascript reserved."
   (interactive)
   (save-excursion
     (when-let* ((whole-word (js-import-which-word))
