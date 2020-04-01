@@ -32,10 +32,10 @@
 (require 'js-import-insert)
 (require 'js-import-from-path)
 
-(defvar js-import-alias-candidates nil)
-(make-variable-buffer-local 'js-import-alias-candidates)
 (defvar js-import-alias-name nil)
 (make-variable-buffer-local 'js-import-alias-name)
+(defvar js-import-aliases nil)
+(make-variable-buffer-local 'js-import-aliases)
 (defvar js-import-relative-transformer nil)
 (make-variable-buffer-local 'js-import-relative-transformer)
 
@@ -75,17 +75,56 @@
 (defun js-import-switch-to-relative(&optional cand)
   (interactive)
   "Toggle relative displaying files"
-  (with-helm-window
-    (helm-refresh)))
+  (with-current-buffer helm-current-buffer
+    (let ((source (helm-get-current-source)))
+      (if js-import-alias-name
+          (progn
+            (setq js-import-relative-transformer 'js-import-relative-one-by-one)
+            (setq js-import-alias-name nil)
+            (helm-refresh))
+        (progn
+          (setq js-import-relative-transformer nil)
+          (setq js-import-alias-name (car (js-import-get-aliases)))
+          (helm-refresh))
+        ))))
+
+(defun js-import-switch-to-next-alias(&optional cand)
+  (interactive)
+  "Switch to next alias"
+  (with-current-buffer helm-current-buffer
+    (let ((source (helm-get-current-source)))
+      (when js-import-alias-name
+        (progn
+          (setq js-import-alias-name (or (car (cdr (member js-import-alias-name js-import-aliases)))
+                                         (car js-import-aliases)))
+
+          (helm-refresh))))))
+
+(defun js-import-switch-to-prev-alias(&optional cand)
+  (interactive)
+  "Switch to previous alias"
+  (with-current-buffer helm-current-buffer
+    (let ((source (helm-get-current-source)))
+      (when js-import-alias-name
+        (progn
+          (setq js-import-alias-name (or (car (cdr (member js-import-alias-name (reverse js-import-aliases))))
+                                         (car (reverse js-import-aliases))))
+
+          (helm-refresh))))))
 
 (defvar js-import-alias-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
+    (define-key map (kbd "C->") 'js-import-switch-to-next-alias)
+    (define-key map (kbd "C-<") 'js-import-switch-to-prev-alias)
     (define-key map (kbd "C-r") 'js-import-switch-to-relative)
     map)
   "keymap for a helm source.")
 
 (put 'js-import-switch-to-relative 'helm-only t)
+(put 'js-import-switch-to-prev-alias 'helm-only t)
+(put 'js-import-switch-to-next-alias 'helm-only t)
+
 (defun js-import-select-file-action(file)
   (with-current-buffer helm-current-buffer
     (mapc
@@ -95,36 +134,25 @@
 
 (defclass js-import-alias-source (helm-source-sync)
   ((init :initform (lambda()
-                     (let ((aliases (js-import-get-aliases)))
-                       (unless (and js-import-alias-name (not js-import-relative-transformer))
-                         (setq js-import-alias-name (car (js-import-get-aliases)))))))
-   (update :initform 'js-import-files-update)
+                     (unless js-import-aliases
+                       (setq js-import-aliases (append (js-import-get-aliases))))
+                     (unless (and js-import-alias-name (not js-import-relative-transformer))
+                       (setq js-import-alias-name (car js-import-aliases)))))
    (candidates :initform 'projectile-current-project-files)
+   (candidate-number-limit :initform 40)
    (candidate-transformer :initform 'js-import-project-files-transformer)
    (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
    (nomark :initform nil)
    (keymap :initform js-import-alias-keymap)
    (action :initform `(("Show exported symbols" . js-import-select-file-action)
+                       (,(substitute-command-keys "Switch to next alias \\<js-import-alias-keymap>`\\[js-import-switch-to-next-alias]'")
+                        . js-import-switch-to-next-alias)
+                       (,(substitute-command-keys "Switch to previous alias \\<js-import-alias-keymap>`\\[js-import-switch-to-prev-alias]'")
+                        . js-import-switch-to-prev-alias)
                        (,(substitute-command-keys "Switch to relative \\<js-import-alias-keymap>`\\[js-import-switch-to-relative]'")
                         . js-import-switch-to-relative)))
    (group :initform 'js-import)))
 
-(defun js-import-files-update()
-  (with-current-buffer helm-current-buffer
-    (if js-import-alias-name
-        (progn
-          (setq js-import-relative-transformer 'js-import-relative-one-by-one)
-          (setq js-import-alias-name nil))
-      (progn
-        (setq js-import-relative-transformer nil)
-        (setq js-import-alias-name (car (js-import-get-aliases)))))))
-
-(defun js-import-alias-init()
-  (with-current-buffer helm-current-buffer
-    (let ((aliases (js-import-get-aliases)))
-
-      (unless (and js-import-alias-name (not js-import-relative-transformer))
-        (setq js-import-alias-name (car (js-import-get-aliases)))))))
 
 ;;;###autoload
 (defun js-import-alias ()
