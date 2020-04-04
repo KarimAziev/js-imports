@@ -1,59 +1,95 @@
+
+# Table of Contents
+
+1.  [js-import](#org7a05a1c)
+    1.  [Requirements](#org8bb2ccf)
+    2.  [Installation](#org66d242b)
+    3.  [Usage](#orgd8bdc4e)
+    4.  [Alias setup](#orgc8d9f05)
+
+
+<a id="org7a05a1c"></a>
+
 # js-import
 
-An Emacs plugin for importing JavaScript and TypeScript files with [helm](https://github.com/emacs-helm/helm "helm") interface.
+An Emacs package for import JavaScript and TypeScript modules with [helm](<https://github.com/emacs-helm/helm> "helm") interface.
 
-![](js-import-demo.gif)
 
-A package proposes to select a file or dependency of the current project, reads its exports statements and inserts an import statement with selected candidates into a buffer.
+![](js-import-demo.gif).
+
+
+<a id="org8bb2ccf"></a>
 
 ## Requirements
 
-- Emacs 24.4 or higher
-- Helm 3.0 or higher
-- [Projectile](https://github.com/bbatsov/projectile "projectile")
-- [Quelpa](https://github.com/quelpa/quelpa "quelpa") - while package is under develop and is not available on Melpa
+-   Emacs 24.4 or higher
+-   Helm 3.0 or higher
+-   [Projectile](<https://github.com/bbatsov/projectile> "projectile")
+-   [Quelpa](<https://github.com/quelpa/quelpa> "quelpa") - while package is under develop and is not available on Melpa
+
+
+<a id="org66d242b"></a>
 
 ## Installation
 
-Until `js-import` is not published on Melpa you can install the package from [quelpa](https://github.com/quelpa/quelpa "quelpa").
-
+Until \`js-import\` is not published on Melpa you can install the package from [quelpa](<https://github.com/quelpa/quelpa> "quelpa").
 
 ```cl
-(quelpa '(js-import
-          :repo "KarimAziev/js-import"
-          :fetcher git
-          :url "git@github.com:KarimAziev/js-import.git"))
+    (quelpa '(js-import
+        :repo "KarimAziev/js-import"
+        :fetcher git
+        :url "git@github.com:KarimAziev/js-import.git"))
 ```
-
 
 Or if you want to always get the latest version:
 
 ```cl
-(quelpa '(js-import
-          :repo "KarimAziev/js-import"
-          :fetcher git
-          :url "git@github.com:KarimAziev/js-import.git")
-        :upgrade t)
+    (quelpa '(js-import
+        :repo "KarimAziev/js-import"
+        :fetcher git
+        :url "git@github.com:KarimAziev/js-import.git")
+    :upgrade t)
 ```
+
+
+<a id="orgd8bdc4e"></a>
 
 ## Usage
 
-Main commands are `js-import`, `js-import-alias`, `js-import-relative` and `js-import-dependency`. All of them have the same flow:
+1.  Select a module with one of these commands
+    - `M-x js-import`
+      Includes alias, relative and node_modules
+        Helm actions:
+        `C->`  switch to next webpack alias
+        `C-<`  switch to previous previous webpack alias
+        `C-r`  switch to a relative paths
 
-1. Propose you to select a file
-2. Propose you to choose export declarations (to select some declaration you need to mark them) from this file which you want to import.
-3. With default action, those declarations will be added to the current buffer. You can also import them as by another name with action `Import as`.
+    - `M-x js-import-alias`
+      Helm actions:
+      `C-r`  switch to a relative paths
+      Includes alias and relative sources.
 
-` M-x js-import ` proposes you to select js module from all available sources: dependencies and files from the current project with relative or alias path.
+    - `M-x js-import-dependency`
+        Includes only dependencies.
 
-` M-x js-import-relative ` proposes you to select js module by relative path
+2.  Select symbols
+        `F1` insert a symbol to an existing or new import statement
+        `F2` to make a named import (\`import as\`)
+        `F3` visit a module
+3. Edit current imports, jumping and deleting
+    `M-x js-import-edit-buffer-imports`
+        `F1` visit a module
+        `F2` select more imports from candidate path;
+        `F3` delete an imported symbol
+        `F4` delete whole import statement
 
-` M-x js-import-dependency ` proposes you to select js module from dependencies specified in the `package.json`.
 
-` M-x js-import-alias ` proposes you to select js module with alias path. You can specify aliases in variable `js-import-alias-map` or adding it to your root project  `.dir-locals.el` file.
+<a id="orgc8d9f05"></a>
 
-Suppose your webpack config includes two aliases `@` and `UI`:
+## Alias setup
 
+To resolve webpack-alias imports customize variable \`M-x js-import-alias-map\` which is a list of strings with ("aliasA" "pathA" "aliasB" "pathB"). Default is value ("" "src").
+For example your webpack config includes two aliases \`@\` and \`UI\`:
 
 ```javascript
 module.exports = {
@@ -67,14 +103,12 @@ module.exports = {
 };
 ```
 
-In this case you need to add them also in your `.dir-locals.el`:
+In this case `js-import-alias-map` should be ("@" "src" "UI" "src/components/UI"). Put to the root directory of your project `.dir-locals` following:
 
 ```cl
 ((nil . (
-         (eval . (setq js-import-alias-map '("@" "src" "UI" "src/components/UI")))
-         )))
+(eval . (setq js-import-alias-map '("@" "src" "UI" "src/components/UI")))
+)))
+\\\
 ```
-
-You can also edit current imports with command:
-
-` M-x js-import-edit-buffer-imports `
+Or configure it globally with `M-x customize-variable js-import-alias-map`.
