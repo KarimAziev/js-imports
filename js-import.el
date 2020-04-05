@@ -617,5 +617,26 @@ Each car is a regexp match pattern of the imenu type string."
         (insert "{" names "}")))))
 
 
+(cl-defun js-import-make-item (candidate
+                               &key
+                               display-path
+                               type
+                               real-path
+                               cell)
+  "Utility function to make js-import item. See also
+
+`js-import-propertize'."
+
+  (let* ((splitted-name (split-string candidate "[ \t\s]+as[ \t\s]+"))
+         (result (js-import-propertize candidate
+                                       'real-name (nth 0 splitted-name)
+                                       'display-name candidate
+                                       'display-path display-path
+                                       'renamed-name (nth 1 splitted-name)
+                                       'real-path (or real-path (js-import-path-to-real display-path))
+                                       'type (or type (cdr cell)))))
+
+    result))
+
 (provide 'js-import)
 ;;; js-import.el ends here
