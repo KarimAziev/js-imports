@@ -65,7 +65,6 @@ Or if you want to always get the latest version:
     -  `C-r`  switches to a relative paths
     -  `C->`  switches to next webpack alias
     -  `C-<`  switches to previous previous webpack alias
-    -  `C-r`  switches to a relative paths
 
 
 2. Select symbols

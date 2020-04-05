@@ -69,17 +69,6 @@ Each car is a regexp match pattern of the imenu type string."
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
-
-;;;###autoload
-(define-minor-mode js-import-mode
-  "js-import-mode is a minor mode for importing.
-\\{js-import-mode-map}"
-  :lighter " js-import"
-  :group 'js-import
-  :global nil
-  :keymap js-import-command-map)
-
-
 (defvar js-import-command-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-i") 'js-import)
@@ -95,6 +84,16 @@ Each car is a regexp match pattern of the imenu type string."
         ["Import depenency" js-import-dependency]))
     map)
   "Keymap for Js-import commands")
+
+;;;###autoload
+(define-minor-mode js-import-mode
+  "js-import-mode is a minor mode for importing.
+\\{js-import-mode-map}"
+  :lighter " js-import"
+  :group 'js-import
+  :global nil
+  :keymap js-import-command-map)
+
 
 (defvar js-import-alias-keymap
   (let ((map (make-sparse-keymap)))
@@ -433,7 +432,6 @@ Each car is a regexp match pattern of the imenu type string."
   (mapc
    (lambda(candidate)
      (let* ((type (js-import-get-prop candidate 'type))
-            (fullname (js-import-get-prop candidate 'display-name))
             (real-name (js-import-get-prop candidate 'real-name))
             (renamed-name (js-import-get-prop candidate 'renamed-name))
             (display-path (js-import-get-prop candidate 'display-path))
@@ -469,7 +467,6 @@ Each car is a regexp match pattern of the imenu type string."
   (mapc (lambda(c)
           (save-excursion
             (let ((type (js-import-get-prop c 'type))
-                  (real-name (js-import-get-prop c 'real-name))
                   (name (js-import-get-prop c 'display-name))
                   (renamed-name (js-import-get-prop c 'display-name))
                   (normalized-path (js-import-get-prop c 'display-path)))
@@ -505,7 +502,6 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defun js-import-alias-path-to-real(path)
   (let* ((aliases (js-import-get-aliases))
-         (project-dir (projectile-project-root))
          (real-path nil))
     (mapc (lambda(alias)
             (let* ((alias-regexp (if (s-blank? alias) (concat "^" alias) (concat "^" alias "/")))
@@ -527,6 +523,13 @@ Each car is a regexp match pattern of the imenu type string."
           aliases)
     real-path))
 
+(defun js-import-path-to-real(path &optional dir)
+  (cond ((js-import-is-relative? path)
+         (js-import-path-to-relative path dir))
+        ((js-import-is-dependency? path)
+         (js-import-maybe-expand-dependency path))
+        (t (js-import-alias-path-to-real path))))
+
 (defun js-import-find-all-exports (display-path &optional real-path)
   (let* ((curr-path (or real-path buffer-file-name))
          (curr-dir (if (f-ext? curr-path) (f-dirname curr-path) curr-path)))
@@ -544,12 +547,6 @@ Each car is a regexp match pattern of the imenu type string."
         (-distinct (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
         ))))
 
-(defun js-import-path-to-real(path &optional dir)
-  (cond ((js-import-is-relative? path)
-         (js-import-path-to-relative path dir))
-        ((js-import-is-dependency? path)
-         (js-import-maybe-expand-dependency path))
-        (t (js-import-alias-path-to-real path))))
 
 (defun js-import-real-path-to-alias(real-path alias)
   (let ((alias-path (js-import-get-alias-path alias)))

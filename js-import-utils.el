@@ -33,6 +33,15 @@
 (require 's)
 (require 'js-import-regexp)
 
+(defun -compose (&rest fns)
+  "Takes a list of functions and returns a fn that is the
+composition of those fns. The returned fn takes a variable
+number of arguments, and returns the result of applying
+each fn to the result of applying the previous fn to
+the arguments (right-to-left)."
+  (lambda (&rest args)
+    (car (-reduce-r-from (lambda (fn xs) (list (apply fn xs)))
+                         args fns))))
 
 (defmacro js-import-compose (args &rest funcs)
   `(funcall (-compose ,@funcs) ,args))
@@ -184,7 +193,7 @@ ITEM is not string."
       (push (cons default-import-name (. 1)) alist))
     alist))
 
-(defun js-import-find-all-buffer-imports(&optional buffer)
+(defun js-import-find-all-buffer-imports()
   (save-excursion
     (let* ((content (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))
            (all-matches (s-match-strings-all js-import-import-regexp content))
@@ -332,7 +341,7 @@ ITEM is not string."
 (defun js-import-get-all-dependencies(&optional $package-json-path)
   "Return dependencies, devDependencies and peerDependencies from package-json-path"
   (let ((sections '("dependencies" "peerDependencies" "devDependencies")))
-    (--reduce-r-from (append (js-import-get-dependencies (js-import-get-package-json-path) it) acc) '() sections)))
+    (--reduce-r-from (append (js-import-get-dependencies (or $package-json-path (js-import-get-package-json-path)) it) acc) '() sections)))
 
 
 
