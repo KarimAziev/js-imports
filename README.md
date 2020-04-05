@@ -57,32 +57,32 @@ Or if you want to always get the latest version:
 ## Usage
 
 1.  Select a module with one of these commands
-    - `M-x js-import`
-      Includes alias, relative and node_modules
-        Helm actions:
-        `C->`  switch to next webpack alias
-        `C-<`  switch to previous previous webpack alias
-        `C-r`  switch to a relative paths
+    * `M-x js-import` to include alias, relative and node_modules files
+    * `M-x js-import-alias` to include alias and relative files
+    * `M-x js-import-dependency` to include dependencies
 
-    - `M-x js-import-alias`
-      Helm actions:
-      `C-r`  switch to a relative paths
-      Includes alias and relative sources.
+    *Helm actions*
+    -  `C-r`  switches to a relative paths
+    -  `C->`  switches to next webpack alias
+    -  `C-<`  switches to previous previous webpack alias
+    -  `C-r`  switches to a relative paths
 
-    - `M-x js-import-dependency`
-        Includes only dependencies.
 
-2.  Select symbols
-        `F1` insert a symbol to an existing or new import statement
-        `F2` to make a named import (\`import as\`)
-        `F3` visit a module
+2. Select symbols
+    *Helm actions*
+    -  `f1`  inserts a symbol to an existing or new import statement
+    -  `f2`  makes a named import (`import { exportName as newName }`)
+    -  `f3`  jumps to a file
+
 3. Edit current imports, jumping and deleting
-    `M-x js-import-edit-buffer-imports`
-        `F1` visit a module
-        `F2` select more imports from candidate path;
-        `F3` delete an imported symbol
-        `F4` delete whole import statement
+   * `M-x js-import-edit-buffer-imports`
+     Shows all imported symbols in current buffer.
 
+     *Helm actions*
+     -  `f1`  jumps to a file
+     -  `f2`  makes more imports from symbol's export path
+     -  `f3`  deletes an imported symbol
+     -  `f4`  deletes whole import statement
 
 <a id="orgc8d9f05"></a>
 
@@ -107,8 +107,8 @@ In this case `js-import-alias-map` should be ("@" "src" "UI" "src/components/UI"
 
 ```cl
 ((nil . (
-(eval . (setq js-import-alias-map '("@" "src" "UI" "src/components/UI")))
+    (eval . (setq js-import-alias-map '("@" "src" "UI" "src/components/UI")))
 )))
-\\\
+
 ```
 Or configure it globally with `M-x customize-variable js-import-alias-map`.
