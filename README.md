@@ -1,11 +1,9 @@
 
 # Table of Contents
-
-1.  [js-import](#org7a05a1c)
-    1.  [Requirements](#org8bb2ccf)
-    2.  [Installation](#org66d242b)
-    3.  [Usage](#orgd8bdc4e)
-    4.  [Alias setup](#orgc8d9f05)
+* [Requirements](#org8bb2ccf)
+* [Installation](#org66d242b)
+* [Usage](#orgd8bdc4e)
+* [Alias setup](#orgc8d9f05)
 
 
 <a id="org7a05a1c"></a>
@@ -32,7 +30,7 @@ An Emacs package for import JavaScript and TypeScript modules with [helm](<https
 
 ## Installation
 
-Until \`js-import\` is not published on Melpa you can install the package from [quelpa](<https://github.com/quelpa/quelpa> "quelpa").
+Until `js-import` is not published on Melpa you can install the package from [quelpa](<https://github.com/quelpa/quelpa> "quelpa").
 
 ```cl
     (quelpa '(js-import
@@ -61,14 +59,14 @@ Or if you want to always get the latest version:
     * `M-x js-import-alias` to include alias and relative files
     * `M-x js-import-dependency` to include dependencies
 
-    *Helm actions*
+    **Helm actions**
     -  `C-r`  switches to a relative paths
     -  `C->`  switches to next webpack alias
     -  `C-<`  switches to previous previous webpack alias
 
 
 2. Select symbols
-    *Helm actions*
+    **Helm actions**
     -  `f1`  inserts a symbol to an existing or new import statement
     -  `f2`  makes a named import (`import { exportName as newName }`)
     -  `f3`  jumps to a file
@@ -77,9 +75,10 @@ Or if you want to always get the latest version:
    * `M-x js-import-edit-buffer-imports`
      Shows all imported symbols in current buffer.
 
-     *Helm actions*
+     **Helm actions**
      -  `f1`  jumps to a file
-     -  `f2`  makes more imports from symbol's export path
+     -  `f2`  renames symbol
+     -  `f2`  reads more imports from symbol's export path
      -  `f3`  deletes an imported symbol
      -  `f4`  deletes whole import statement
 
@@ -87,8 +86,10 @@ Or if you want to always get the latest version:
 
 ## Alias setup
 
-To resolve webpack-alias imports customize variable \`M-x js-import-alias-map\` which is a list of strings with ("aliasA" "pathA" "aliasB" "pathB"). Default is value ("" "src").
-For example your webpack config includes two aliases \`@\` and \`UI\`:
+To use webpack-aliases customize variable `js-import-alias-map`. It is a list of strings with `("aliasA" "pathA" "aliasB" "pathB")`. Default is value `("" "src")`.
+
+For example your webpack config includes two aliases *@* and *UI*:
+
 
 ```javascript
 module.exports = {
@@ -102,7 +103,7 @@ module.exports = {
 };
 ```
 
-In this case `js-import-alias-map` should be ("@" "src" "UI" "src/components/UI"). Put to the root directory of your project `.dir-locals` following:
+In this case `js-import-alias-map` should be `("@" "src" "UI" "src/components/UI")`. Put to the root directory of your project `.dir-locals` following:
 
 ```cl
 ((nil . (
