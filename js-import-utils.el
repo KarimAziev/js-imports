@@ -24,8 +24,6 @@
 
 ;;; Code:
 
-
-(require 'helm)
 (require 'projectile)
 (require 'cl-lib)
 (require 'f)
@@ -35,32 +33,9 @@
 (require 's)
 (require 'js-import-regexp)
 
-(defcustom js-import-alias-map '("" "src")
-  "List of pairs (alias and path)"
-  :group 'js-import
-  :type '(repeat string))
-
-(defcustom js-import-type-faces
-  '(("^\\(as\\)$" . font-lock-type-face)
-    ("^\\(*\\)$" . font-lock-type-face)
-    ("^\\(default\\)$" . font-lock-variable-name-face)
-    ("^\\(Function\\|Functions\\|Defuns\\)$" . font-lock-function-name-face)
-    ("^\\(Types\\|Provides\\|Requires\\|Classes\\|Class\\|Includes\\|Imports\\|Misc\\)$" . font-lock-type-face))
-  "Faces for showing type in helm-js-import-menu.
-This is a list of cons cells.  The cdr of each cell is a face to be used,
-and it can also just be like \\='(:foreground \"yellow\").
-Each car is a regexp match pattern of the imenu type string."
-  :group 'js-import
-  :type '(repeat
-          (cons
-           (regexp :tag "Js import type regexp pattern")
-           (sexp :tag "Face"))))
-
-(defvar js-import-dependencies-cache-plist '())
 
 (defmacro js-import-compose (args &rest funcs)
   `(funcall (-compose ,@funcs) ,args))
-
 
 (defun js-import-cut-names(str reg)
   (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t)))))
@@ -81,7 +56,7 @@ Each car is a regexp match pattern of the imenu type string."
     (s-join ", " symbols)))
 
 (defun js-import-join-imports-names(default-name names)
-  (let (parts '())
+  (let (parts)
     (when (stringp names) (push (concat "{ " names" }") parts))
     (when (stringp default-name) (push default-name parts))
     (s-join ", " (-non-nil parts))))
@@ -293,15 +268,6 @@ ITEM is not string."
                  (16 (format "%s as %s" current-name symbols)))))
     name))
 
-(defun js-import-get-aliases ()
-  "Get list of aliases"
-  (let ((pl js-import-alias-map)
-        (vals  ()))
-    (while pl
-      (push (car pl) vals)
-      (setq pl  (cddr pl)))
-    (nreverse vals)))
-
 (defun js-import-normalize-path(path)
   (js-import-compose path
                      'js-import-remove-double-slashes
@@ -316,13 +282,6 @@ ITEM is not string."
 (defun js-import-remove-double-slashes (path)
   (replace-regexp-in-string "//"  "/" path))
 
-(defun js-import-real-path-to-alias(real-path alias)
-  (let ((alias-path (js-import-get-alias-path alias)))
-    (f-join alias (replace-regexp-in-string (concat "^" alias-path) "" real-path))))
-
-(defun js-import-get-alias-path(alias)
-  (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
-
 
 (defun js-import-get-node-modules-path (&optional project-dir)
   "Return the path to node-modules."
@@ -332,15 +291,6 @@ ITEM is not string."
   (let ((node-modules-path (f-join (js-import-get-node-modules-path project-dir) module)))
     node-modules-path))
 
-
-(defun js-import-is-dependency? (display-path &optional project-root)
-  "Check if path is dependency"
-  (let ((dependencies (or (plist-get js-import-dependencies-cache-plist (or project-root (projectile-project-root))) (js-import-get-all-dependencies)))
-        (dirname (car (split-string display-path "/"))))
-
-
-    (or (f-exists? (js-import-expand-node-modules dirname project-root))
-        (-contains? dependencies dirname))))
 
 (defun js-import-is-dir-and-exist(path)
   (and (f-exists? path) (not (f-ext? path))))
@@ -449,30 +399,6 @@ Write result to buffer DESTBUFF."
       (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
 
 
-(defun js-import-find-all-exports (display-path &optional real-path)
-  (let* ((curr-path (or real-path buffer-file-name))
-         (curr-dir (if (f-ext? curr-path) (f-dirname curr-path) curr-path)))
-
-    (unless real-path (setq real-path (js-import-path-to-real display-path curr-dir)))
-    (when-let ((real-path)
-               (dir-name (f-dirname real-path))
-               (content (f-read real-path)))
-      (let ((all-matches (s-match-strings-all js-import-export-regexp content))
-            (deep-exports (--map (car (last it)) (s-match-strings-all js-import-regexp-export-all-from content)))
-            (result '()))
-        (when deep-exports
-          (mapc (lambda(path) (push (js-import-find-all-exports path (js-import-path-to-real path dir-name)) result))
-                deep-exports))
-        (-distinct (-flatten (append result (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
-        ))))
-
-(defun js-import-path-to-real(path &optional dir)
-  (cond ((js-import-is-relative? path)
-         (js-import-path-to-relative path dir))
-        ((js-import-is-dependency? path)
-         (js-import-maybe-expand-dependency path))
-        (t (js-import-alias-path-to-real path))))
-
 (defun js-import-find-index-files-in-path(path)
   (cond
    ((js-import-is-dir-and-exist path)
@@ -496,30 +422,6 @@ Write result to buffer DESTBUFF."
     (unless (f-ext real-path)
       (setq real-path (js-import-traverse-down real-path)))))
 
-
-(defun js-import-alias-path-to-real(path)
-  (let* ((aliases (js-import-get-aliases))
-         (project-dir (projectile-project-root))
-         (real-path nil))
-    (mapc (lambda(alias)
-            (let* ((alias-regexp (if (s-blank? alias) (concat "^" alias) (concat "^" alias "/")))
-                   (alias-path (js-import-get-alias-path alias))
-                   (joined-path (f-join
-                                 alias-path (s-replace-regexp alias-regexp "" path))))
-              (when (s-matches? alias-regexp path)
-                (cond
-                 ((and (f-ext? joined-path) (f-exists? joined-path))
-                  (setq real-path joined-path))
-                 ((f-exists? (f-swap-ext joined-path "ts") )
-                  (setq real-path (f-swap-ext joined-path "ts")))
-                 ((f-exists? (f-swap-ext joined-path "js") )
-                  (setq real-path (f-swap-ext joined-path "js")))
-                 ((and (not (f-ext? joined-path)) (f-exists? (f-join joined-path "index.ts")) )
-                  (setq real-path (f-join joined-path "index.ts")))
-                 ((and (not (f-ext? joined-path)) (f-exists? (f-join joined-path "index.js")) )
-                  (setq real-path (f-join joined-path "index.js")))))))
-          aliases)
-    real-path))
 
 (defun js-import-path-to-relative(path &optional dir)
   (let ((filepath (f-expand path dir)))
