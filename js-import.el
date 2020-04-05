@@ -47,19 +47,15 @@
     (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
     (define-key map (kbd "C-c C-d") 'js-import-dependency)
     (define-key map (kbd "C-c C-a") 'js-import-alias)
-    (define-key map (kbd "C-c C-b") 'js-import-show-buffer-imports)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
         ["Import from all sources" js-import]
         ["Edit current buffer imports" js-import-edit-buffer-imports]
         ["Import alias" js-import-alias]
-        ["Show import lines" js-import-show-buffer-imports]
         ["Import depenency" js-import-dependency]))
     map)
   "Keymap for Js-import commands")
-
-(defvar js-import-buffer-source nil)
 
 
 ;;;###autoload
@@ -71,13 +67,50 @@
   :global nil
   :keymap js-import-command-map)
 
+;;;###autoload
+(defun js-import ()
+  "Init imports from your current project"
+  (interactive)
+  (save-excursion
+    (helm
+     :keymap js-import-helm-keymap
+     :sources (append (list
+                       (helm-make-source (or (projectile-project-name) (projectile-project-root)) 'js-import-alias-source)
+                       (helm-make-source "node modules" 'js-import-dependency-source)))
+     :buffer "js import"
+     :prompt "Select file:")))
+
+
+;;;###autoload
+(defun js-import-edit-buffer-imports()
+  "Find all imported symbols in current buffer and propose to jump or edit them"
+  (interactive)
+  (helm
+   :preselect (js-import-get-unreserved-word-at-point)
+   :sources (append
+             (mapcar (lambda(sublist) (let ((path (car sublist))
+                                       (items (cdr sublist)))
+                                   (helm-build-sync-source (format "imported from %s" path)
+                                     :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
+                                                                                         :real-path (js-import-alias-path-to-real path)
+                                                                                         :display-path path))
+                                     :candidate-transformer 'js-import-imports-transformer
+                                     :candidates items
+                                     :persistent-action 'js-import-action--goto-export
+                                     :action '(("Go" . js-import-action--goto-export)
+                                               ("Rename" . js-import-action--rename-import)
+                                               ("Add more imports" . js-import-action--add-to-import)
+                                               ("Delete" . js-import-action--delete-import)
+                                               ("Delete whole import" . js-import-action--delete-whole-import)))))
+                     (js-import-find-all-buffer-imports)))))
 
 
 (defun js-import-set-source-filter ()
   (interactive)
   (let ((curr-source (helm-get-current-source)))
-    (helm-set-source-filter (-remove-item (helm-attr 'name curr-source) js-import-file-names-sources))))
-
+    (helm-set-source-filter
+     (-remove-item (helm-attr 'name curr-source)
+                   js-import-file-names-sources))))
 
 
 (defun js-import-reset-source-filter ()
@@ -95,62 +128,6 @@
 
 (define-key helm-map (kbd "C-M-n") 'js-import-set-source-filter)
 (define-key helm-map (kbd "C-M-p") 'js-import-reset-source-filter)
-
-
-;;;###autoload
-(defun js-import ()
-  "Init imports from your current project"
-  (interactive)
-  (save-excursion
-    (let ((result (helm
-                   :keymap js-import-helm-keymap
-                   :sources (append (list
-                                     (helm-make-source "project files" 'js-import-alias-source)
-                                     (helm-make-source "node modules" 'js-import-dependency-source)))
-                   :buffer "js import"
-                   :prompt "Select path:"))))))
-
-
-;;;###autoload
-(defun js-import-show-buffer-imports()
-  "Show current imports lines in buffer"
-  (interactive)
-  (helm
-   :preselect (js-import-get-unreserved-word-at-point)
-   :sources (helm-build-in-buffer-source "js imports in buffer"
-              :init (lambda ()
-                      (with-current-buffer (helm-candidate-buffer 'global)
-
-                        (insert (with-helm-current-buffer (buffer-substring-no-properties (point-min) (point-max))))
-                        (goto-char (point-min))
-                        (delete-non-matching-lines js-import-import-regexp)))
-              :get-line #'buffer-substring-no-properties)))
-
-
-
-;;;###autoload
-(defun js-import-edit-buffer-imports()
-  "Find all imported symbols in current buffer and propose to jump or edit them"
-  (interactive)
-  (helm
-   :preselect (js-import-get-unreserved-word-at-point)
-   :sources (append (mapcar (lambda(sublist)
-                              (let ((path (car sublist))
-                                    (items (cdr sublist)))
-                                (helm-build-sync-source (format "imported from %s" path)
-                                  :display-to-real (lambda(candidate)
-                                                     (js-import-make-item candidate
-                                                                          :real-path (js-import-alias-path-to-real path)
-                                                                          :display-path path))
-                                  :candidate-transformer 'js-import-imports-transformer
-                                  :candidates items
-                                  :persistent-action 'js-import-action--goto-export
-                                  :action '(("Go" . js-import-action--goto-export)
-                                            ("Rename" . js-import-action--rename-import)
-                                            ("Add more imports" . js-import-action--add-to-import)
-                                            ("Delete" . js-import-action--delete-import)
-                                            ("Delete whole import" . js-import-action--delete-whole-import)))))
-                            (js-import-find-all-buffer-imports)))))
 
 (provide 'js-import)
 ;;; js-import.el ends here

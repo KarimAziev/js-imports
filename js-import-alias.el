@@ -127,14 +127,48 @@
 (put 'js-import-switch-to-next-alias 'helm-only t)
 
 
+(defun js-import-alias-header-name(project-name)
+  "A function for display header name. Concatenates `js-import-alias-name' and PROJECT-NAME"
+  (with-helm-current-buffer helm-current-buffer
+                            (cond
+                             (js-import-alias-name
+                              (concat (propertize js-import-alias-name 'face 'font-lock-function-name-face) "\s" project-name "/" (lax-plist-get js-import-alias-map js-import-alias-name)))
+                             (js-import-relative-transformer
+                              (format "%s" project-name))
+                             (t project-name))))
+
+(defun js-import-ff-persistent-action (candidate)
+  "Preview the contents of a file in a temporary buffer."
+  (setq candidate (js-import-path-to-real candidate))
+  (let ((buf (get-buffer-create " *js-import persistent*")))
+    (cl-flet ((preview (candidate)
+                       (switch-to-buffer buf)
+                       (setq inhibit-read-only t)
+                       (erase-buffer)
+                       (insert-file-contents candidate)
+                       (let ((buffer-file-name candidate))
+                         (set-auto-mode))
+                       (font-lock-ensure)
+                       (setq inhibit-read-only nil)))
+      (if (and (helm-attr 'previewp)
+               (string= candidate (helm-attr 'current-candidate)))
+          (progn
+            (kill-buffer buf)
+            (helm-attrset 'previewp nil))
+        (preview candidate)
+        (helm-attrset 'previewp t)))
+    (helm-attrset 'current-candidate candidate)))
+
 (defclass js-import-alias-source (helm-source-sync)
-  ((init :initform (lambda()
+  ((header-name :initform 'js-import-alias-header-name)
+   (init :initform (lambda()
                      (unless js-import-aliases
                        (setq js-import-aliases (append (js-import-get-aliases))))
                      (unless (and js-import-alias-name (not js-import-relative-transformer))
                        (setq js-import-alias-name (car js-import-aliases)))))
    (candidates :initform 'projectile-current-project-files)
    (candidate-number-limit :initform 40)
+   (persistent-action :initform 'js-import-ff-persistent-action)
    (candidate-transformer :initform 'js-import-project-files-transformer)
    (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
    (nomark :initform nil)
@@ -147,6 +181,8 @@
                        (,(substitute-command-keys "Switch to relative \\<js-import-alias-keymap>`\\[js-import-switch-to-relative]'")
                         . js-import-switch-to-relative)))
    (group :initform 'js-import)))
+
+
 
 
 ;;;###autoload
