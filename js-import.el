@@ -257,7 +257,7 @@ Each car is a regexp match pattern of the imenu type string."
       (let ((module (completing-read "Select: " subfiles nil t dependency)))
         (js-import-from-path module)))))
 
-(defun js-import-select-dependency-action(&optional file)
+(defun js-import-select-dependency-action(&optional _file)
   (mapc
    'js-import-from-path
    (helm-marked-candidates)))
@@ -280,7 +280,7 @@ Each car is a regexp match pattern of the imenu type string."
         (alias-path (js-import-get-alias-path js-import-current-alias)))
     (--filter (and (js-import-filter-pred it) (f-ancestor-of-p alias-path (f-join project-dir it))) files)))
 
-(defun js-import-project-files-transformer(files &optional source)
+(defun js-import-project-files-transformer(files &optional _source)
   "Filter FILES by extension and one of the aliases, if present."
   (with-current-buffer helm-current-buffer
     (cond
@@ -297,7 +297,7 @@ Each car is a regexp match pattern of the imenu type string."
      (t (js-import-relative-one-by-one path)))))
 
 
-(defun js-import-switch-to-relative(&optional cand)
+(defun js-import-switch-to-relative(&optional _cand)
   "Toggle displaying aliased files to relative."
   (interactive)
   (with-current-buffer helm-current-buffer
@@ -311,7 +311,7 @@ Each car is a regexp match pattern of the imenu type string."
         (setq js-import-current-alias (car (js-import-get-aliases)))
         (helm-refresh)))))
 
-(defun js-import-switch-to-next-alias(&optional cand)
+(defun js-import-switch-to-next-alias(&optional _cand)
   "Switch to next alias in `js-import-aliases' list"
   (interactive)
   (with-current-buffer helm-current-buffer
@@ -321,7 +321,7 @@ Each car is a regexp match pattern of the imenu type string."
 
       (helm-refresh))))
 
-(defun js-import-switch-to-prev-alias(&optional cand)
+(defun js-import-switch-to-prev-alias(&optional _cand)
   "Switch to previous alias in `js-import-aliases' list"
   (interactive)
   (with-current-buffer helm-current-buffer
@@ -331,7 +331,7 @@ Each car is a regexp match pattern of the imenu type string."
       (helm-refresh))))
 
 
-(defun js-import-select-file-action(&optional file)
+(defun js-import-select-file-action(&optional _file)
   (with-current-buffer helm-current-buffer
     (mapc
      'js-import-from-path
@@ -417,7 +417,7 @@ Each car is a regexp match pattern of the imenu type string."
                              (16 "export[\s\t\n]")))
         (helm-highlight-current-line)))))
 
-(defun js-import-action--delete-import(cand)
+(defun js-import-action--delete-import(_cand)
   (mapc
    (lambda(candidate)
      (let ((type (js-import-get-prop candidate 'type))
@@ -428,14 +428,14 @@ Each car is a regexp match pattern of the imenu type string."
          (js-import-delete-imported-name fullname display-path))))
    (helm-marked-candidates)))
 
-(defun js-import-action--delete-whole-import(cand)
+(defun js-import-action--delete-whole-import(_cand)
   (mapc
    (lambda(candidate)
      (let ((display-path (js-import-get-prop candidate 'display-path)))
        (js-import-delete-whole-import display-path)))
    (helm-marked-candidates)))
 
-(defun js-import-action--add-to-import(cand)
+(defun js-import-action--add-to-import(_cand)
   (mapc
    (lambda(candidate)
      (let ((display-path (js-import-get-prop candidate 'display-path))
@@ -443,11 +443,10 @@ Each car is a regexp match pattern of the imenu type string."
        (js-import-from-path display-path real-path)))
    (helm-marked-candidates)))
 
-(defun js-import-action--rename-import(cand)
+(defun js-import-action--rename-import(_cand)
   (mapc
    (lambda(candidate)
-     (let* ((type (js-import-get-prop candidate 'type))
-            (real-name (js-import-get-prop candidate 'real-name))
+     (let* ((real-name (js-import-get-prop candidate 'real-name))
             (renamed-name (js-import-get-prop candidate 'renamed-name))
             (display-path (js-import-get-prop candidate 'display-path))
             (prompt (if renamed-name (format "Rename %s as (%s) " real-name renamed-name)
@@ -478,7 +477,7 @@ Each car is a regexp match pattern of the imenu type string."
              )))))
    (helm-marked-candidates)))
 
-(defun js-import-action--import-candidate(candidate)
+(defun js-import-action--import-candidate(_candidate)
   (mapc (lambda(c)
           (save-excursion
             (let ((type (js-import-get-prop c 'type))
@@ -491,7 +490,7 @@ Each car is a regexp match pattern of the imenu type string."
                 (16 (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))))))
         (helm-marked-candidates)))
 
-(defun js-import-action--import-as(candidate)
+(defun js-import-action--import-as(_candidate)
   (mapc (lambda(c) (let* ((type (js-import-get-prop c 'type))
                      (normalized-path (js-import-get-prop c 'display-path))
                      (real-name (js-import-get-prop c 'real-name))

@@ -177,8 +177,7 @@ ITEM is not string."
     (let* ((content (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))
            (all-matches (s-match-strings-all js-import-import-regexp content))
            (result (mapcar (lambda (sublist)
-                             (let* ((reversed-list (reverse sublist))
-                                    (path (car (last sublist)))
+                             (let* ((path (car (last sublist)))
                                     (imports (js-import-cut-names (car sublist) js-import-import-regexp-exclude))
                                     (imports-list (mapcar (lambda(str)
                                                             (cond
@@ -361,8 +360,7 @@ ITEM is not string."
 (defun js-import-find-index-files(path)
   (f-files path (lambda(file) (or (and (js-import-is-ext-enabled? file)
                                   (-contains? (list "index.d" "index") (f-base file)))
-                             (equal "package.json" (f-filename file))
-                             ))))
+                             (equal "package.json" (f-filename file))))))
 
 (defun js-import-process-file (fPath)
   "Process the file at fullpath FPATH.
