@@ -118,6 +118,7 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defvar js-import-dependencies-cache-plist '())
 
+(defvar js-import-dependency-source-name "node modules")
 
 ;;;###autoload
 (defun js-import ()
@@ -127,9 +128,9 @@ Each car is a regexp match pattern of the imenu type string."
     (helm
      :sources (append (list
                        (helm-make-source (or (projectile-project-name) (projectile-project-root)) 'js-import-alias-source)
-                       (helm-make-source "node modules" 'js-import-dependency-source)))
+                       (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))
      :buffer "js import"
-     :prompt "Select file:")))
+     :prompt "Select file: ")))
 
 
 ;;;###autoload
@@ -138,7 +139,7 @@ Each car is a regexp match pattern of the imenu type string."
   (interactive)
   (save-excursion
     (helm
-     :sources (helm-make-source "js import project files" 'js-import-alias-source))))
+     :sources (helm-make-source (or (projectile-project-name) (projectile-project-root)) 'js-import-alias-source))))
 
 
 ;;;###autoload
@@ -147,7 +148,7 @@ Each car is a regexp match pattern of the imenu type string."
   (interactive)
   (save-excursion
     (when-let ((module (or dependency (helm
-                                       :sources (helm-make-source "node modules" 'js-import-dependency-source)))))
+                                       :sources (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))))
       (js-import-from-path module))))
 
 
@@ -162,11 +163,11 @@ Each car is a regexp match pattern of the imenu type string."
                                        (items (cdr sublist)))
                                    (helm-build-sync-source (format "imported from %s" path)
                                      :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
-                                                                                         :real-path (js-import-alias-path-to-real path)
+                                                                                         :real-path (js-import-path-to-real path)
                                                                                          :display-path path))
                                      :candidate-transformer 'js-import-imports-transformer
                                      :candidates items
-                                     :persistent-action 'js-import-action--goto-export
+                                     :persistent-action 'js-import-action--goto-persistent
                                      :action '(("Go" . js-import-action--goto-export)
                                                ("Rename" . js-import-action--rename-import)
                                                ("Add more imports" . js-import-action--add-to-import)
@@ -177,10 +178,11 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defclass js-import-dependency-source (helm-source-sync)
   ((candidates :initform 'js-import-get-all-dependencies)
+   (candidate-number-limit :initform 60)
    (nomark :initform nil)
    (action :initform '(("Show exported symbols" . js-import-select-dependency-action)
                        ("Select from subdirectory" . js-import-select-subdir)))
-   (persistent-action :initform 'js-import-select-subdir)
+   (persistent-action :initform 'js-import-ff-persistent-action)
    (group :initform 'js-import)))
 
 
@@ -237,7 +239,7 @@ Each car is a regexp match pattern of the imenu type string."
                                                    ))
                                                all-exports-alist)
                           :candidate-transformer 'js-import-imports-transformer
-                          :persistent-action 'js-import-action--goto-export
+                          :persistent-action 'js-import-action--goto-persistent
                           :display-to-real (lambda(candidate)
                                              (js-import-make-item candidate
                                                                   :real-path path
@@ -318,7 +320,7 @@ Each car is a regexp match pattern of the imenu type string."
   (with-current-buffer helm-current-buffer
     (when js-import-current-alias
       (setq js-import-current-alias (or (car (cdr (member js-import-current-alias js-import-aliases)))
-                                     (car js-import-aliases)))
+                                        (car js-import-aliases)))
 
       (helm-refresh))))
 
@@ -328,7 +330,7 @@ Each car is a regexp match pattern of the imenu type string."
   (with-current-buffer helm-current-buffer
     (when js-import-current-alias
       (setq js-import-current-alias (or (car (cdr (member js-import-current-alias (reverse js-import-aliases))))
-                                     (car (reverse js-import-aliases))))
+                                        (car (reverse js-import-aliases))))
       (helm-refresh))))
 
 
@@ -351,8 +353,12 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defun js-import-ff-persistent-action (candidate)
   "Preview the contents of a file in a temporary buffer."
+
+  (print candidate)
   (setq candidate (js-import-path-to-real candidate))
-  (let ((buf (get-buffer-create " *js-import persistent*")))
+
+  (when-let ((str (stringp candidate))
+             (buf (get-buffer-create " *js-import persistent*")))
     (cl-flet ((preview (candidate)
                        (switch-to-buffer buf)
                        (setq inhibit-read-only t)
@@ -384,18 +390,36 @@ Each car is a regexp match pattern of the imenu type string."
                                  parts "\s")
            collect disp))
 
+
+
+(defun js-import-action--goto-persistent(candidate)
+  (with-helm-quittable
+    (let ((real-name-regexp (concat "\\([ \s\t\n,]" (js-import-get-prop candidate 'real-name) "[\s\t\n,]\\)"))
+          (real-path (js-import-get-prop candidate 'real-path))
+          (display-path (js-import-get-prop candidate 'display-path))
+          (export-type  (js-import-get-prop candidate 'type)))
+      (when (and (not real-path) display-path)
+        (setq real-path (js-import-path-to-real candidate)))
+      (when (and real-path (f-exists? real-path))
+
+        (js-import-ff-persistent-action real-path)
+        ))))
+
 (defun js-import-action--goto-export(candidate)
   (with-helm-quittable
     (let ((real-name-regexp (concat "\\([\s\t\n,]" (js-import-get-prop candidate 'real-name) "[\s\t\n,]\\)"))
           (real-path (js-import-get-prop candidate 'real-path))
+          (display-path (js-import-get-prop candidate 'display-path))
           (export-type  (js-import-get-prop candidate 'type)))
+      (when (and (not real-path) display-path)
+        (setq real-path (js-import-path-to-real candidate)))
       (when (and real-path (f-exists? real-path))
         (find-file-read-only-other-window real-path)
         (goto-char 0)
         (re-search-forward (pcase export-type
-                             (1 (concat "export[\t\s\n]+default"))
-                             (4 (concat "export[\t\s\n]+.*+" real-name-regexp))
-                             (16 "export[\t\s\n]")))
+                             (1 (concat "export[ \s\t\n]+default"))
+                             (4 (concat "export[ \s\t\n]+.*+" real-name-regexp))
+                             (16 "export[\s\t\n]")))
         (helm-highlight-current-line)))))
 
 (defun js-import-action--delete-import(cand)
@@ -498,6 +522,7 @@ Each car is a regexp match pattern of the imenu type string."
       (setq pl  (cddr pl)))
     (nreverse vals)))
 
+
 (defun js-import-alias-path-to-real(path)
   (let* ((aliases (js-import-get-aliases))
          (real-path nil))
@@ -506,6 +531,8 @@ Each car is a regexp match pattern of the imenu type string."
                    (alias-path (js-import-get-alias-path alias))
                    (joined-path (f-join
                                  alias-path (s-replace-regexp alias-regexp "" path))))
+
+
               (when (s-matches? alias-regexp path)
                 (cond
                  ((and (f-ext? joined-path) (f-exists? joined-path))
@@ -521,12 +548,16 @@ Each car is a regexp match pattern of the imenu type string."
           aliases)
     real-path))
 
+
 (defun js-import-path-to-real(path &optional dir)
-  (cond ((js-import-is-relative? path)
-         (js-import-path-to-relative path dir))
-        ((js-import-is-dependency? path)
-         (js-import-maybe-expand-dependency path))
-        (t (js-import-alias-path-to-real path))))
+  (when (stringp path)
+    (setq path (js-import-strip-text-props path))
+    (cond ((and (f-ext? path) (f-exists? path)) path)
+          ((js-import-is-relative? path)
+           (js-import-path-to-relative path dir))
+          ((js-import-is-dependency? path)
+           (js-import-maybe-expand-dependency path))
+          (t (js-import-alias-path-to-real path)))))
 
 (defun js-import-find-all-exports (display-path &optional real-path)
   (let* ((curr-path (or real-path buffer-file-name))
@@ -624,7 +655,7 @@ Each car is a regexp match pattern of the imenu type string."
   "Utility function to make js-import item. See also
 
 `js-import-propertize'."
-
+  (setq candidate (js-import-strip-text-props candidate))
   (let* ((splitted-name (split-string candidate "[ \t\s]+as[ \t\s]+"))
          (result (js-import-propertize candidate
                                        'real-name (nth 0 splitted-name)
