@@ -162,24 +162,25 @@ Each car is a regexp match pattern of the imenu type string."
 (defun js-import-edit-buffer-imports()
   "Find all imported symbols in current buffer and propose to jump or edit them"
   (interactive)
-  (helm
-   :preselect (js-import-get-unreserved-word-at-point)
-   :sources (append
-             (mapcar (lambda(sublist) (let ((path (car sublist))
-                                       (items (cdr sublist)))
-                                   (helm-build-sync-source (format "imported from %s" path)
-                                     :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
-                                                                                         :real-path (js-import-path-to-real path)
-                                                                                         :display-path path))
-                                     :candidate-transformer 'js-import-imports-transformer
-                                     :candidates items
-                                     :persistent-action 'js-import-action--goto-persistent
-                                     :action '(("Go" . js-import-action--goto-export)
-                                               ("Rename" . js-import-action--rename-import)
-                                               ("Add more imports" . js-import-action--add-to-import)
-                                               ("Delete" . js-import-action--delete-import)
-                                               ("Delete whole import" . js-import-action--delete-whole-import)))))
-                     (js-import-find-all-buffer-imports)))))
+  (save-excursion
+    (helm
+     :preselect (js-import-get-unreserved-word-at-point)
+     :sources (append
+               (mapcar (lambda(sublist) (let ((path (car sublist))
+                                         (items (cdr sublist)))
+                                     (helm-build-sync-source (format "imported from %s" path)
+                                       :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
+                                                                                           :real-path (js-import-path-to-real path)
+                                                                                           :display-path path))
+                                       :candidate-transformer 'js-import-imports-transformer
+                                       :candidates items
+                                       :persistent-action 'js-import-action--goto-persistent
+                                       :action '(("Go" . js-import-action--goto-export)
+                                                 ("Rename" . js-import-action--rename-import)
+                                                 ("Add more imports" . js-import-action--add-to-import)
+                                                 ("Delete" . js-import-action--delete-import)
+                                                 ("Delete whole import" . js-import-action--delete-whole-import)))))
+                       (js-import-find-all-buffer-imports))))))
 
 
 (defclass js-import-dependency-source (helm-source-sync)
