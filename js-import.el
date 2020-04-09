@@ -340,7 +340,7 @@ Each car is a regexp match pattern of the imenu type string."
   "Transform alias to path"
   (when-let ((path (lax-plist-get js-import-alias-map alias)))
     (unless (s-matches? "/$" path)
-      (setq path (concat "" path "/+"))
+      (setq path (concat "" path "/\s"))
       (concat path))))
 
 
