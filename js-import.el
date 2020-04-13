@@ -126,6 +126,20 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defvar js-import-dependency-source-name "node modules")
 
+(defvar js-import-imported-items-actions
+  (helm-make-actions
+   "Go" 'js-import-action--goto-export
+   "Rename" 'js-import-action--rename-import
+   "Add more imports" 'js-import-action--add-to-import
+   "Delete" 'js-import-action--delete-import
+   "Delete whole import" 'js-import-action--delete-whole-import))
+
+(defvar js-import-export-items-actions
+  (helm-make-actions
+   "Import" 'js-import-action--import-candidate
+   "Import as " 'js-import-action--import-as
+   "Go" 'js-import-action--goto-export))
+
 ;;;###autoload
 (defun js-import ()
   "Init imports from your current project"
@@ -175,11 +189,7 @@ Each car is a regexp match pattern of the imenu type string."
                                        :candidate-transformer 'js-import-imports-transformer
                                        :candidates items
                                        :persistent-action 'js-import-action--goto-persistent
-                                       :action '(("Go" . js-import-action--goto-export)
-                                                 ("Rename" . js-import-action--rename-import)
-                                                 ("Add more imports" . js-import-action--add-to-import)
-                                                 ("Delete" . js-import-action--delete-import)
-                                                 ("Delete whole import" . js-import-action--delete-whole-import)))))
+                                       :action 'js-import-imported-items-actions)))
                        (js-import-find-all-buffer-imports))))))
 
 
@@ -233,11 +243,7 @@ Each car is a regexp match pattern of the imenu type string."
                           :candidate-transformer 'js-import-imports-transformer
                           :candidates import-alist
                           :persistent-action 'js-import-action--goto-persistent
-                          :action '(("Go" . js-import-action--goto-export)
-                                    ("Rename" . js-import-action--rename-import)
-                                    ("Add more imports" . js-import-action--add-to-import)
-                                    ("Delete" . js-import-action--delete-import)
-                                    ("Delete whole import" . js-import-action--delete-whole-import)) ))
+                          :action 'js-import-imported-items-actions))
          (export-source (helm-build-sync-source (format "Exports from %s" normalized-path)
                           :candidates (-filter (lambda(it)
                                                  (pcase (cdr it)
@@ -253,9 +259,7 @@ Each car is a regexp match pattern of the imenu type string."
                                                                   :cell (assoc candidate all-exports-alist)
                                                                   :display-path display-path))
 
-                          :action '(("Import" . js-import-action--import-candidate)
-                                    ("Import as " . js-import-action--import-as)
-                                    ("Go" . js-import-action--goto-export)))))
+                          :action 'js-import-export-items-actions)))
 
     (helm :sources (list export-source import-source))))
 
