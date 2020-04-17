@@ -141,6 +141,11 @@
                         'var-type var-type
                         'marker marker))
 
+(defun js-import-inside-comment? ()
+  "Returns value of comment character in syntax table's or nil otherwise"
+  (interactive)
+  (nth 4 (syntax-ppss)))
+
 
 (provide 'js-import-symbols)
 ;;; js-import-symbols.el ends here

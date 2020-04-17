@@ -34,7 +34,7 @@
 (require 's)
 (require 'js-import-regexp)
 (require 'js-import-utils)
-
+(require 'js-import-symbols)
 
 (defgroup js-import nil
   "Minor mode providing JavaScript import."
@@ -63,6 +63,19 @@
   :group 'js-import
   :type 'number)
 
+(defun js-import-symbols-menu()
+  (interactive)
+  "Helm menu of javascript variables, declarations and interfaces from current buffer"
+  (helm :sources (helm-make-source "*js symbols*" 'js-import-symbols-source)))
+
+(defclass js-import-symbols-source(helm-source-sync)
+  ((candidates :initform 'js-import-symbols-candidates-in-buffer)
+   (real-to-display :initform 'js-import-symbols-real-to-display)
+   (nomark :initform t)
+   (persistent-help :initform "Show symbol")
+   (persistent-action :initform 'js-import-jump-in-buffer)
+   (action :initform 'js-import-symbols-actions)))
+
 (defcustom js-import-type-faces
   '(("^\\(as\\)$" . font-lock-type-face)
     ("^\\(*\\)$" . font-lock-type-face)
@@ -85,6 +98,7 @@ Each car is a regexp match pattern of the imenu type string."
     (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
     (define-key map (kbd "C-c C-d") 'js-import-dependency)
     (define-key map (kbd "C-c C-a") 'js-import-alias)
+    (define-key map (kbd "C-c C-t") 'js-import-symbols-menu)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
@@ -216,26 +230,26 @@ Each car is a regexp match pattern of the imenu type string."
      :preselect (js-import-get-unreserved-word-at-point)
      :sources (append
                (mapcar (lambda(sublist) (let ((path (car sublist))
-                                              (items (cdr sublist)))
-                                          (helm-build-sync-source (format "imported from %s" path)
-                                            :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
-                                                                                                     :real-path (js-import-path-to-real path)
-                                                                                                     :display-path path))
-                                            :candidate-transformer 'js-import-imports-transformer
-                                            :candidates items
-                                            :persistent-action 'js-import-action--goto-persistent
-                                            :action 'js-import-imported-items-actions)))
+                                         (items (cdr sublist)))
+                                     (helm-build-sync-source (format "imported from %s" path)
+                                       :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
+                                                                                           :real-path (js-import-path-to-real path)
+                                                                                           :display-path path))
+                                       :candidate-transformer 'js-import-imports-transformer
+                                       :candidates items
+                                       :persistent-action 'js-import-action--goto-persistent
+                                       :action 'js-import-imported-items-actions)))
                        (js-import-find-all-buffer-imports))))))
 
 
 
 (defclass js-import-buffer-source(helm-source-in-buffer)
   ((init :initform (lambda() (with-current-buffer (helm-candidate-buffer 'global)
-                               (let ((items (with-helm-current-buffer (buffer-substring-no-properties
-                                                                       (point-min) (js-import-goto-last-import)))))
-                                 (setq items (mapcar (lambda(name) (car (last name))) (s-match-strings-all js-import-import-regexp items)))
-                                 (mapc (lambda(name) (insert name) (newline-and-indent)) items))
-                               (goto-char (point-min)))))
+                          (let ((items (with-helm-current-buffer (buffer-substring-no-properties
+                                                                  (point-min) (js-import-goto-last-import)))))
+                            (setq items (mapcar (lambda(name) (car (last name))) (s-match-strings-all js-import-import-regexp items)))
+                            (mapc (lambda(name) (insert name) (newline-and-indent)) items))
+                          (goto-char (point-min)))))
    (action :initform 'js-import-select-file-action)
    (header-name :initform (lambda(name) (with-helm-current-buffer
                                      (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
