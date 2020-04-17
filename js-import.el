@@ -216,25 +216,26 @@ Each car is a regexp match pattern of the imenu type string."
      :preselect (js-import-get-unreserved-word-at-point)
      :sources (append
                (mapcar (lambda(sublist) (let ((path (car sublist))
-                                         (items (cdr sublist)))
-                                     (helm-build-sync-source (format "imported from %s" path)
-                                       :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
-                                                                                           :real-path (js-import-path-to-real path)
-                                                                                           :display-path path))
-                                       :candidate-transformer 'js-import-imports-transformer
-                                       :candidates items
-                                       :persistent-action 'js-import-action--goto-persistent
-                                       :action 'js-import-imported-items-actions)))
+                                              (items (cdr sublist)))
+                                          (helm-build-sync-source (format "imported from %s" path)
+                                            :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
+                                                                                                     :real-path (js-import-path-to-real path)
+                                                                                                     :display-path path))
+                                            :candidate-transformer 'js-import-imports-transformer
+                                            :candidates items
+                                            :persistent-action 'js-import-action--goto-persistent
+                                            :action 'js-import-imported-items-actions)))
                        (js-import-find-all-buffer-imports))))))
 
 
 
 (defclass js-import-buffer-source(helm-source-in-buffer)
   ((init :initform (lambda() (with-current-buffer (helm-candidate-buffer 'global)
-                          (let ((items (with-helm-current-buffer (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))))
-                            (setq items (mapcar (lambda(name) (car (last name))) (s-match-strings-all js-import-import-regexp items)))
-                            (mapc (lambda(name) (insert name) (newline-and-indent)) items))
-                          (goto-char (point-min)))))
+                               (let ((items (with-helm-current-buffer (buffer-substring-no-properties
+                                                                       (point-min) (js-import-goto-last-import)))))
+                                 (setq items (mapcar (lambda(name) (car (last name))) (s-match-strings-all js-import-import-regexp items)))
+                                 (mapc (lambda(name) (insert name) (newline-and-indent)) items))
+                               (goto-char (point-min)))))
    (action :initform 'js-import-select-file-action)
    (header-name :initform (lambda(name) (with-helm-current-buffer
                                      (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
@@ -335,8 +336,7 @@ Each car is a regexp match pattern of the imenu type string."
   "Switch to next alias in `js-import-aliases' list"
   (interactive)
   (with-current-buffer helm-current-buffer
-    (let ((current-alias js-import-current-alias)
-          (default-alias (car js-import-aliases))
+    (let ((default-alias (car js-import-aliases))
           (next-alias (car (cdr (member js-import-current-alias js-import-aliases)))))
       (setq js-import-current-alias (or next-alias default-alias))
       (setq js-import-relative-transformer nil)
@@ -347,8 +347,7 @@ Each car is a regexp match pattern of the imenu type string."
   "Switch to previous alias in `js-import-aliases' list"
   (interactive)
   (with-current-buffer helm-current-buffer
-    (let ((current-alias js-import-current-alias)
-          (default-alias (car (reverse js-import-aliases)))
+    (let ((default-alias (car (reverse js-import-aliases)))
           (next-alias (car (cdr (member js-import-current-alias (reverse js-import-aliases))))))
       (setq js-import-current-alias (or next-alias default-alias))
       (setq js-import-relative-transformer nil)
@@ -537,16 +536,16 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defun js-import-action--import-as(_candidate)
   (mapc (lambda(c) (let* ((type (js-import-get-prop c 'type))
-                     (normalized-path (js-import-get-prop c 'display-path))
-                     (real-name (js-import-get-prop c 'real-name))
-                     (renamed-name (s-trim (read-string
-                                            (format "import %s as " real-name)
-                                            nil nil)))
-                     (full-name (concat real-name " as " renamed-name)))
-                (pcase type
-                  (1 (js-import-insert-exports renamed-name nil normalized-path))
-                  (4 (js-import-insert-exports nil full-name normalized-path))
-                  (16 (js-import-insert-exports full-name nil normalized-path)))))
+                          (normalized-path (js-import-get-prop c 'display-path))
+                          (real-name (js-import-get-prop c 'real-name))
+                          (renamed-name (s-trim (read-string
+                                                 (format "import %s as " real-name)
+                                                 nil nil)))
+                          (full-name (concat real-name " as " renamed-name)))
+                     (pcase type
+                       (1 (js-import-insert-exports renamed-name nil normalized-path))
+                       (4 (js-import-insert-exports nil full-name normalized-path))
+                       (16 (js-import-insert-exports full-name nil normalized-path)))))
         (helm-marked-candidates)))
 
 
