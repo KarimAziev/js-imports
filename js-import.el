@@ -53,7 +53,7 @@
   :type '(choice (const :tag "Double" "\"")
                  (const :tag "Single" "\\'")))
 
-(defcustom js-import-files-number-limit 50
+(defcustom js-import-files-number-limit 30
   "The limit for number of project files displayed. Override `helm-candidate-number-limit'"
   :group 'js-import
   :type 'number)
@@ -67,6 +67,7 @@
   (interactive)
   "Helm menu of javascript variables, declarations and interfaces from current buffer"
   (helm :sources (helm-make-source "*js symbols*" 'js-import-symbols-source)))
+
 
 (defclass js-import-symbols-source(helm-source-sync)
   ((candidates :initform 'js-import-symbols-candidates-in-buffer)
@@ -91,6 +92,11 @@ Each car is a regexp match pattern of the imenu type string."
           (cons
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
+
+(defcustom js-import-node-modules-dir "node_modules"
+  "Node modules path"
+  :group 'js-import
+  :type 'string)
 
 (defvar js-import-command-map
   (let ((map (make-sparse-keymap)))
@@ -119,7 +125,7 @@ Each car is a regexp match pattern of the imenu type string."
   :keymap js-import-command-map)
 
 
-(defvar js-import-alias-keymap
+(defvar js-import-files-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
     (define-key map (kbd "C->") 'js-import-switch-to-next-alias)
@@ -130,6 +136,7 @@ Each car is a regexp match pattern of the imenu type string."
 
 
 (defvar js-import-current-alias nil)
+
 (make-variable-buffer-local 'js-import-current-alias)
 (defvar js-import-aliases nil)
 (make-variable-buffer-local 'js-import-aliases)
@@ -141,19 +148,6 @@ Each car is a regexp match pattern of the imenu type string."
 (defvar js-import-dependency-source-name "node modules")
 (defvar js-import-buffer-source-name "imports in buffer")
 
-(defvar js-import-imported-items-actions
-  (helm-make-actions
-   "Go" 'js-import-action--goto-export
-   "Rename" 'js-import-action--rename-import
-   "Add more imports" 'js-import-action--add-to-import
-   "Delete" 'js-import-action--delete-import
-   "Delete whole import" 'js-import-action--delete-whole-import))
-
-(defvar js-import-export-items-actions
-  (helm-make-actions
-   "Import" 'js-import-action--import-candidate
-   "Import as " 'js-import-action--import-as
-   "Go" 'js-import-action--goto-export))
 
 ;;;###autoload
 (defun js-import ()
@@ -183,9 +177,25 @@ Each car is a regexp match pattern of the imenu type string."
   "Import from node modules"
   (interactive)
   (save-excursion
-    (when-let ((module (or dependency (helm
-                                       :sources (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))))
+    (when-let ((module (or dependency
+                           (helm :sources (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))))
       (js-import-from-path module))))
+
+
+
+(defvar js-import-imported-items-actions
+  (helm-make-actions
+   "Go" 'js-import-action--goto-export
+   "Rename" 'js-import-action--rename-import
+   "Add more imports" 'js-import-action--add-to-import
+   "Delete" 'js-import-action--delete-import
+   "Delete whole import" 'js-import-action--delete-whole-import))
+
+(defvar js-import-export-items-actions
+  (helm-make-actions
+   "Import" 'js-import-action--import-candidate
+   "Import as " 'js-import-action--import-as
+   "Go" 'js-import-action--goto-export))
 
 
 (defun js-import-from-path(normalized-path &optional path)
@@ -221,6 +231,7 @@ Each car is a regexp match pattern of the imenu type string."
 
     (helm :sources (list export-source import-source))))
 
+
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
   "Find all imported symbols in current buffer and propose to jump or edit them"
@@ -243,6 +254,19 @@ Each car is a regexp match pattern of the imenu type string."
 
 
 
+(defun js-import-find-file(file)
+  "Transform FILE to real and open it"
+  (find-file (js-import-path-to-real file)))
+
+(defun js-import-find-file-other-window(file)
+  "Transform FILE to real and open it in other window"
+  (find-file (js-import-path-to-real file)))
+
+(defvar js-import-files-actions
+  (helm-make-actions "Import from file" 'js-import-select-file-action
+                     "Find file" 'js-import-find-file
+                     "Find file other window" 'js-import-find-file-other-window))
+
 (defclass js-import-buffer-source(helm-source-in-buffer)
   ((init :initform (lambda() (with-current-buffer (helm-candidate-buffer 'global)
                           (let ((items (with-helm-current-buffer (buffer-substring-no-properties
@@ -250,20 +274,27 @@ Each car is a regexp match pattern of the imenu type string."
                             (setq items (mapcar (lambda(name) (car (last name))) (s-match-strings-all js-import-import-regexp items)))
                             (mapc (lambda(name) (insert name) (newline-and-indent)) items))
                           (goto-char (point-min)))))
-   (action :initform 'js-import-select-file-action)
+   (action :initform 'js-import-files-actions)
    (header-name :initform (lambda(name) (with-helm-current-buffer
                                      (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
    (persistent-action :initform 'js-import-ff-persistent-action)
+   (action-transformer :initform 'js-import-files-actions-transformer)
+   (mode-line :initform (list "Imports"))
+   (keymap :initform js-import-files-keymap)
    (get-line :initform #'buffer-substring)))
+
 
 (defclass js-import-dependency-source (helm-source-sync)
   ((candidates :initform 'js-import-get-all-dependencies)
    (candidate-number-limit :initform js-import-dependencies-number-limit)
    (nomark :initform nil)
-   (action :initform '(("Show exported symbols" . js-import-select-file-action)
-                       ("Select from subdirectory" . js-import-select-subdir)))
+   (action :initform 'js-import-files-actions)
+   (mode-line :initform (list "Dependencies"))
+   (keymap :initform js-import-files-keymap)
+   (action-transformer :initform 'js-import-files-actions-transformer)
    (persistent-action :initform 'js-import-ff-persistent-action)
    (group :initform 'js-import)))
+
 
 (defun js-import-alias-init()
   "Init project files."
@@ -271,6 +302,7 @@ Each car is a regexp match pattern of the imenu type string."
     (setq js-import-aliases (js-import-get-aliases))
     (unless (and js-import-current-alias (not js-import-relative-transformer))
       (setq js-import-current-alias (car js-import-aliases)))))
+
 
 (defclass js-import-alias-source (helm-source-sync)
   ((header-name :initform 'js-import-alias-header-name)
@@ -280,18 +312,22 @@ Each car is a regexp match pattern of the imenu type string."
    (persistent-action :initform 'js-import-ff-persistent-action)
    (candidate-transformer :initform 'js-import-project-files-transformer)
    (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
-   (nomark :initform nil)
-   (keymap :initform js-import-alias-keymap)
-   (action :initform `(("Show exported symbols" . js-import-select-file-action)
-                       (,(substitute-command-keys "Switch to next alias \\<js-import-alias-keymap>`\\[js-import-switch-to-next-alias]'")
-                        . js-import-switch-to-next-alias)
-                       (,(substitute-command-keys "Switch to previous alias \\<js-import-alias-keymap>`\\[js-import-switch-to-prev-alias]'")
-                        . js-import-switch-to-prev-alias)
-                       (,(substitute-command-keys "Switch to relative \\<js-import-alias-keymap>`\\[js-import-switch-to-relative]'")
-                        . js-import-switch-to-relative)))
+   (mode-line :initform (list "File(s)"))
+   (keymap :initform js-import-files-keymap)
+   (action-transformer :initform 'js-import-files-actions-transformer)
+   (action :initform 'js-import-files-actions)
    (group :initform 'js-import)))
 
 
+(defun js-import-files-actions-transformer(actions candidate)
+  "Actions"
+  (let* ((marked (helm-marked-candidates))
+         (source (helm-attr 'name (helm-get-current-source)))
+         (actions (cond ((js-import-is-dependency? candidate)
+                         (helm-append-at-nth actions
+                                             '(("Expand" . 'js-import-select-subdir)) 1))
+                        (t actions))))
+    actions))
 
 (defun js-import-relative-one-by-one(path)
   "Transform relative to `projectile-project-root' PATH into relative to the current `buffer-file-name'"
@@ -409,8 +445,6 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defun js-import-ff-persistent-action (candidate)
   "Preview the contents of a file in a temporary buffer."
-
-  (print candidate)
   (setq candidate (js-import-path-to-real candidate))
 
   (when-let ((str (stringp candidate))
@@ -550,16 +584,16 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defun js-import-action--import-as(_candidate)
   (mapc (lambda(c) (let* ((type (js-import-get-prop c 'type))
-                          (normalized-path (js-import-get-prop c 'display-path))
-                          (real-name (js-import-get-prop c 'real-name))
-                          (renamed-name (s-trim (read-string
-                                                 (format "import %s as " real-name)
-                                                 nil nil)))
-                          (full-name (concat real-name " as " renamed-name)))
-                     (pcase type
-                       (1 (js-import-insert-exports renamed-name nil normalized-path))
-                       (4 (js-import-insert-exports nil full-name normalized-path))
-                       (16 (js-import-insert-exports full-name nil normalized-path)))))
+                     (normalized-path (js-import-get-prop c 'display-path))
+                     (real-name (js-import-get-prop c 'real-name))
+                     (renamed-name (s-trim (read-string
+                                            (format "import %s as " real-name)
+                                            nil nil)))
+                     (full-name (concat real-name " as " renamed-name)))
+                (pcase type
+                  (1 (js-import-insert-exports renamed-name nil normalized-path))
+                  (4 (js-import-insert-exports nil full-name normalized-path))
+                  (16 (js-import-insert-exports full-name nil normalized-path)))))
         (helm-marked-candidates)))
 
 
