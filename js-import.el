@@ -34,7 +34,7 @@
 (require 's)
 (require 'js-import-regexp)
 (require 'js-import-utils)
-
+(require 'js-import-symbols)
 
 (defgroup js-import nil
   "Minor mode providing JavaScript import."
@@ -53,13 +53,37 @@
   :type '(choice (const :tag "Double" "\"")
                  (const :tag "Single" "\\'")))
 
+(defcustom js-import-files-number-limit 30
+  "The limit for number of project files displayed. Override `helm-candidate-number-limit'"
+  :group 'js-import
+  :type 'number)
+
+(defcustom js-import-dependencies-number-limit 50
+  "The limit for number of dependencies files displayed. Override `helm-candidate-number-limit'"
+  :group 'js-import
+  :type 'number)
+
+(defun js-import-symbols-menu()
+  (interactive)
+  "Helm menu of javascript variables, declarations and interfaces from current buffer"
+  (helm :sources (helm-make-source "*js symbols*" 'js-import-symbols-source)))
+
+
+(defclass js-import-symbols-source(helm-source-sync)
+  ((candidates :initform 'js-import-symbols-candidates-in-buffer)
+   (real-to-display :initform 'js-import-symbols-real-to-display)
+   (nomark :initform t)
+   (persistent-help :initform "Show symbol")
+   (persistent-action :initform 'js-import-jump-in-buffer)
+   (action :initform 'js-import-symbols-actions)))
+
 (defcustom js-import-type-faces
   '(("^\\(as\\)$" . font-lock-type-face)
     ("^\\(*\\)$" . font-lock-type-face)
     ("^\\(default\\)$" . font-lock-variable-name-face)
     ("^\\(Function\\|Functions\\|Defuns\\)$" . font-lock-function-name-face)
     ("^\\(Types\\|Provides\\|Requires\\|Classes\\|Class\\|Includes\\|Imports\\|Misc\\)$" . font-lock-type-face))
-  "Faces for showing type in helm-js-import-menu.
+  "Faces for showing type in js-import-menu.
 This is a list of cons cells.  The cdr of each cell is a face to be used,
 and it can also just be like \\='(:foreground \"yellow\").
 Each car is a regexp match pattern of the imenu type string."
@@ -69,12 +93,18 @@ Each car is a regexp match pattern of the imenu type string."
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
+(defcustom js-import-node-modules-dir "node_modules"
+  "Node modules path"
+  :group 'js-import
+  :type 'string)
+
 (defvar js-import-command-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-i") 'js-import)
     (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
     (define-key map (kbd "C-c C-d") 'js-import-dependency)
     (define-key map (kbd "C-c C-a") 'js-import-alias)
+    (define-key map (kbd "C-c C-t") 'js-import-symbols-menu)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
@@ -95,7 +125,7 @@ Each car is a regexp match pattern of the imenu type string."
   :keymap js-import-command-map)
 
 
-(defvar js-import-alias-keymap
+(defvar js-import-files-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
     (define-key map (kbd "C->") 'js-import-switch-to-next-alias)
@@ -104,12 +134,9 @@ Each car is a regexp match pattern of the imenu type string."
     map)
   "Keymap for `js-import-alias-source' source.")
 
-(put 'js-import-switch-to-relative 'helm-only t)
-(put 'js-import-switch-to-prev-alias 'helm-only t)
-(put 'js-import-switch-to-next-alias 'helm-only t)
-
 
 (defvar js-import-current-alias nil)
+
 (make-variable-buffer-local 'js-import-current-alias)
 (defvar js-import-aliases nil)
 (make-variable-buffer-local 'js-import-aliases)
@@ -119,6 +146,8 @@ Each car is a regexp match pattern of the imenu type string."
 (defvar js-import-dependencies-cache-plist '())
 
 (defvar js-import-dependency-source-name "node modules")
+(defvar js-import-buffer-source-name "imports in buffer")
+
 
 ;;;###autoload
 (defun js-import ()
@@ -127,6 +156,7 @@ Each car is a regexp match pattern of the imenu type string."
   (save-excursion
     (helm
      :sources (append (list
+                       (helm-make-source js-import-buffer-source-name 'js-import-buffer-source)
                        (helm-make-source (or (projectile-project-name) (projectile-project-root)) 'js-import-alias-source)
                        (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))
      :buffer "js import"
@@ -147,67 +177,25 @@ Each car is a regexp match pattern of the imenu type string."
   "Import from node modules"
   (interactive)
   (save-excursion
-    (when-let ((module (or dependency (helm
-                                       :sources (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))))
+    (when-let ((module (or dependency
+                           (helm :sources (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))))
       (js-import-from-path module))))
 
 
-;;;###autoload
-(defun js-import-edit-buffer-imports()
-  "Find all imported symbols in current buffer and propose to jump or edit them"
-  (interactive)
-  (helm
-   :preselect (js-import-get-unreserved-word-at-point)
-   :sources (append
-             (mapcar (lambda(sublist) (let ((path (car sublist))
-                                       (items (cdr sublist)))
-                                   (helm-build-sync-source (format "imported from %s" path)
-                                     :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
-                                                                                         :real-path (js-import-path-to-real path)
-                                                                                         :display-path path))
-                                     :candidate-transformer 'js-import-imports-transformer
-                                     :candidates items
-                                     :persistent-action 'js-import-action--goto-persistent
-                                     :action '(("Go" . js-import-action--goto-export)
-                                               ("Rename" . js-import-action--rename-import)
-                                               ("Add more imports" . js-import-action--add-to-import)
-                                               ("Delete" . js-import-action--delete-import)
-                                               ("Delete whole import" . js-import-action--delete-whole-import)))))
-                     (js-import-find-all-buffer-imports)))))
 
+(defvar js-import-imported-items-actions
+  (helm-make-actions
+   "Go" 'js-import-action--goto-export
+   "Rename" 'js-import-action--rename-import
+   "Add more imports" 'js-import-action--add-to-import
+   "Delete" 'js-import-action--delete-import
+   "Delete whole import" 'js-import-action--delete-whole-import))
 
-(defclass js-import-dependency-source (helm-source-sync)
-  ((candidates :initform 'js-import-get-all-dependencies)
-   (candidate-number-limit :initform 60)
-   (nomark :initform nil)
-   (action :initform '(("Show exported symbols" . js-import-select-dependency-action)
-                       ("Select from subdirectory" . js-import-select-subdir)))
-   (persistent-action :initform 'js-import-ff-persistent-action)
-   (group :initform 'js-import)))
-
-
-(defclass js-import-alias-source (helm-source-sync)
-  ((header-name :initform 'js-import-alias-header-name)
-   (init :initform (lambda()
-                     (unless js-import-aliases
-                       (setq js-import-aliases (append (js-import-get-aliases))))
-                     (unless (and js-import-current-alias (not js-import-relative-transformer))
-                       (setq js-import-current-alias (car js-import-aliases)))))
-   (candidates :initform 'projectile-current-project-files)
-   (candidate-number-limit :initform 40)
-   (persistent-action :initform 'js-import-ff-persistent-action)
-   (candidate-transformer :initform 'js-import-project-files-transformer)
-   (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
-   (nomark :initform nil)
-   (keymap :initform js-import-alias-keymap)
-   (action :initform `(("Show exported symbols" . js-import-select-file-action)
-                       (,(substitute-command-keys "Switch to next alias \\<js-import-alias-keymap>`\\[js-import-switch-to-next-alias]'")
-                        . js-import-switch-to-next-alias)
-                       (,(substitute-command-keys "Switch to previous alias \\<js-import-alias-keymap>`\\[js-import-switch-to-prev-alias]'")
-                        . js-import-switch-to-prev-alias)
-                       (,(substitute-command-keys "Switch to relative \\<js-import-alias-keymap>`\\[js-import-switch-to-relative]'")
-                        . js-import-switch-to-relative)))
-   (group :initform 'js-import)))
+(defvar js-import-export-items-actions
+  (helm-make-actions
+   "Import" 'js-import-action--import-candidate
+   "Import as " 'js-import-action--import-as
+   "Go" 'js-import-action--goto-export))
 
 
 (defun js-import-from-path(normalized-path &optional path)
@@ -222,18 +210,14 @@ Each car is a regexp match pattern of the imenu type string."
                                                                   :display-path display-path))
                           :candidate-transformer 'js-import-imports-transformer
                           :candidates import-alist
-                          :persistent-action 'js-import-action--goto-export
-                          :action '(("Go" . js-import-action--goto-export)
-                                    ("Rename" . js-import-action--rename-import)
-                                    ("Add more imports" . js-import-action--add-to-import)
-                                    ("Delete" . js-import-action--delete-import)
-                                    ("Delete whole import" . js-import-action--delete-whole-import))))
+                          :persistent-action 'js-import-action--goto-persistent
+                          :action 'js-import-imported-items-actions))
          (export-source (helm-build-sync-source (format "Exports from %s" normalized-path)
                           :candidates (-filter (lambda(it)
                                                  (pcase (cdr it)
-                                                     (1 (not (rassoc 1 import-alist)))
-                                                     (4 (not (-contains? import-reals (car it))))
-                                                     (16 (not (rassoc 16 import-alist)))))
+                                                   (1 (not (rassoc 1 import-alist)))
+                                                   (4 (not (-contains? import-reals (car it))))
+                                                   (16 (not (rassoc 16 import-alist)))))
                                                all-exports-alist)
                           :candidate-transformer 'js-import-imports-transformer
                           :persistent-action 'js-import-action--goto-persistent
@@ -243,25 +227,107 @@ Each car is a regexp match pattern of the imenu type string."
                                                                   :cell (assoc candidate all-exports-alist)
                                                                   :display-path display-path))
 
-                          :action '(("Import" . js-import-action--import-candidate)
-                                    ("Import as " . js-import-action--import-as)
-                                    ("Go" . js-import-action--goto-export)))))
+                          :action 'js-import-export-items-actions)))
 
     (helm :sources (list export-source import-source))))
 
 
-(defun js-import-select-subdir(dependency)
-  (with-helm-quittable
-    (when-let ((subfiles (js-import-find-interfaces dependency)))
-      (push dependency subfiles)
-      (let ((module (completing-read "Select: " subfiles nil t dependency)))
-        (js-import-from-path module)))))
+;;;###autoload
+(defun js-import-edit-buffer-imports()
+  "Find all imported symbols in current buffer and propose to jump or edit them"
+  (interactive)
+  (save-excursion
+    (helm
+     :preselect (js-import-get-unreserved-word-at-point)
+     :sources (append
+               (mapcar (lambda(sublist) (let ((path (car sublist))
+                                         (items (cdr sublist)))
+                                     (helm-build-sync-source (format "imported from %s" path)
+                                       :display-to-real (lambda(candidate) (js-import-make-item (js-import-strip-text-props candidate)
+                                                                                           :real-path (js-import-path-to-real path)
+                                                                                           :display-path path))
+                                       :candidate-transformer 'js-import-imports-transformer
+                                       :candidates items
+                                       :persistent-action 'js-import-action--goto-persistent
+                                       :action 'js-import-imported-items-actions)))
+                       (js-import-find-all-buffer-imports))))))
 
-(defun js-import-select-dependency-action(&optional _file)
-  (mapc
-   'js-import-from-path
-   (helm-marked-candidates)))
 
+
+(defun js-import-find-file(file)
+  "Transform FILE to real and open it"
+  (find-file (js-import-path-to-real file)))
+
+(defun js-import-find-file-other-window(file)
+  "Transform FILE to real and open it in other window"
+  (find-file (js-import-path-to-real file)))
+
+(defvar js-import-files-actions
+  (helm-make-actions "Import from file" 'js-import-select-file-action
+                     "Find file" 'js-import-find-file
+                     "Find file other window" 'js-import-find-file-other-window))
+
+(defclass js-import-buffer-source(helm-source-in-buffer)
+  ((init :initform (lambda() (with-current-buffer (helm-candidate-buffer 'global)
+                          (let ((items (with-helm-current-buffer (buffer-substring-no-properties
+                                                                  (point-min) (js-import-goto-last-import)))))
+                            (setq items (mapcar (lambda(name) (car (last name))) (s-match-strings-all js-import-import-regexp items)))
+                            (mapc (lambda(name) (insert name) (newline-and-indent)) items))
+                          (goto-char (point-min)))))
+   (action :initform 'js-import-files-actions)
+   (header-name :initform (lambda(name) (with-helm-current-buffer
+                                     (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
+   (persistent-action :initform 'js-import-ff-persistent-action)
+   (action-transformer :initform 'js-import-files-actions-transformer)
+   (mode-line :initform (list "Imports"))
+   (keymap :initform js-import-files-keymap)
+   (get-line :initform #'buffer-substring)))
+
+
+(defclass js-import-dependency-source (helm-source-sync)
+  ((candidates :initform 'js-import-get-all-dependencies)
+   (candidate-number-limit :initform js-import-dependencies-number-limit)
+   (nomark :initform nil)
+   (action :initform 'js-import-files-actions)
+   (mode-line :initform (list "Dependencies"))
+   (keymap :initform js-import-files-keymap)
+   (action-transformer :initform 'js-import-files-actions-transformer)
+   (persistent-action :initform 'js-import-ff-persistent-action)
+   (group :initform 'js-import)))
+
+
+(defun js-import-alias-init()
+  "Init project files."
+  (with-current-buffer helm-current-buffer
+    (setq js-import-aliases (js-import-get-aliases))
+    (unless (and js-import-current-alias (not js-import-relative-transformer))
+      (setq js-import-current-alias (car js-import-aliases)))))
+
+
+(defclass js-import-alias-source (helm-source-sync)
+  ((header-name :initform 'js-import-alias-header-name)
+   (init :initform 'js-import-alias-init)
+   (candidates :initform 'projectile-current-project-files)
+   (candidate-number-limit :initform js-import-files-number-limit)
+   (persistent-action :initform 'js-import-ff-persistent-action)
+   (candidate-transformer :initform 'js-import-project-files-transformer)
+   (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
+   (mode-line :initform (list "File(s)"))
+   (keymap :initform js-import-files-keymap)
+   (action-transformer :initform 'js-import-files-actions-transformer)
+   (action :initform 'js-import-files-actions)
+   (group :initform 'js-import)))
+
+
+(defun js-import-files-actions-transformer(actions candidate)
+  "Actions"
+  (let* ((marked (helm-marked-candidates))
+         (source (helm-attr 'name (helm-get-current-source)))
+         (actions (cond ((js-import-is-dependency? candidate)
+                         (helm-append-at-nth actions
+                                             '(("Expand" . 'js-import-select-subdir)) 1))
+                        (t actions))))
+    actions))
 
 (defun js-import-relative-one-by-one(path)
   "Transform relative to `projectile-project-root' PATH into relative to the current `buffer-file-name'"
@@ -274,61 +340,82 @@ Each car is a regexp match pattern of the imenu type string."
           (setq relative-path (concat "./" relative-path)))
         relative-path))))
 
-(defun js-import-filter-files-by-alias(files)
-  "A function used to filter FILES based on buffer local `js-import-current-alias'. FILES supposed to be `projectile-current-project-files'"
-  (let ((project-dir (projectile-project-root))
-        (alias-path (js-import-get-alias-path js-import-current-alias)))
-    (--filter (and (js-import-filter-pred it) (f-ancestor-of-p alias-path (f-join project-dir it))) files)))
 
 (defun js-import-project-files-transformer(files &optional _source)
   "Filter FILES by extension and one of the aliases, if present."
   (with-current-buffer helm-current-buffer
-    (cond
-     (js-import-current-alias
-      (js-import-filter-files-by-alias files))
-     (t (--filter (js-import-filter-pred it) files)))))
+    (let ((alias-filter (when js-import-current-alias (concat "^" (lax-plist-get js-import-alias-map js-import-current-alias)))))
+      (if (and alias-filter (not js-import-relative-transformer))
+          (--filter (and (js-import-filter-pred it) (s-matches? alias-filter it)) files)
+        (--filter (js-import-filter-pred it) files)))))
+
+
+(defun js-import-slash(str)
+  "Append slash to non-empty STR unless one already."
+  (if (or (s-matches? "/$" str) (s-blank? str))
+      str
+    (concat str "/")))
 
 (defun js-import-project-files-filter-one-by-one(path)
   "Transform relative to the project root PATH into aliased one or relative to the current `buffer-file-name'"
   (with-current-buffer helm-current-buffer
-    (cond
-     (js-import-current-alias
-      (js-import-real-path-to-alias (f-join (projectile-project-root) path) js-import-current-alias))
-     (t (js-import-relative-one-by-one path)))))
+    (if (and js-import-current-alias (not js-import-relative-transformer))
+        (progn
+          (let ((regexp (concat "^" (lax-plist-get js-import-alias-map js-import-current-alias) "/")))
+            (s-replace-regexp regexp (js-import-slash js-import-current-alias) path)))
+
+      (js-import-relative-one-by-one path))))
 
 
 (defun js-import-switch-to-relative(&optional _cand)
   "Toggle displaying aliased files to relative."
   (interactive)
   (with-current-buffer helm-current-buffer
-    (if js-import-current-alias
+    (if js-import-relative-transformer
         (progn
-          (setq js-import-relative-transformer 'js-import-relative-one-by-one)
-          (setq js-import-current-alias nil)
+          (setq js-import-relative-transformer nil)
+          (when (and (not js-import-current-alias) (car js-import-aliases))
+            (setq js-import-current-alias (car js-import-aliases)))
           (helm-refresh))
       (progn
-        (setq js-import-relative-transformer nil)
-        (setq js-import-current-alias (car (js-import-get-aliases)))
+        (setq js-import-relative-transformer 'js-import-relative-one-by-one)
         (helm-refresh)))))
+
 
 (defun js-import-switch-to-next-alias(&optional _cand)
   "Switch to next alias in `js-import-aliases' list"
   (interactive)
   (with-current-buffer helm-current-buffer
-    (when js-import-current-alias
-      (setq js-import-current-alias (or (car (cdr (member js-import-current-alias js-import-aliases)))
-                                        (car js-import-aliases)))
-
+    (let ((default-alias (car js-import-aliases))
+          (next-alias (car (cdr (member js-import-current-alias js-import-aliases)))))
+      (setq js-import-current-alias (or next-alias default-alias))
+      (setq js-import-relative-transformer nil)
       (helm-refresh))))
+
 
 (defun js-import-switch-to-prev-alias(&optional _cand)
   "Switch to previous alias in `js-import-aliases' list"
   (interactive)
   (with-current-buffer helm-current-buffer
-    (when js-import-current-alias
-      (setq js-import-current-alias (or (car (cdr (member js-import-current-alias (reverse js-import-aliases))))
-                                        (car (reverse js-import-aliases))))
+    (let ((default-alias (car (reverse js-import-aliases)))
+          (next-alias (car (cdr (member js-import-current-alias (reverse js-import-aliases))))))
+      (setq js-import-current-alias (or next-alias default-alias))
+      (setq js-import-relative-transformer nil)
       (helm-refresh))))
+
+(defun js-import-alias-pattern-transformer(pattern)
+  "Expand PATTERN if it starts with relative prefix"
+  (with-current-buffer helm-current-buffer
+    (cond ((s-matches? "^\\.+/" pattern)
+           (s-replace-regexp (projectile-project-root) "" (f-expand pattern default-directory)))
+          (t (or pattern "")))))
+
+(defun js-import-make-alias-pattern(alias)
+  "Transform alias to path"
+  (when-let ((path (lax-plist-get js-import-alias-map alias)))
+    (unless (and (s-matches? "/$" path) )
+      (setq path (concat "" path "/"))
+      (concat path))))
 
 
 (defun js-import-select-file-action(&optional _file)
@@ -336,6 +423,14 @@ Each car is a regexp match pattern of the imenu type string."
     (mapc
      'js-import-from-path
      (helm-marked-candidates))))
+
+(defun js-import-select-subdir(dependency)
+  "Action which checks if DEPENDENCY has nested dirs with exports and propose to select it"
+  (with-helm-quittable
+    (when-let ((subfiles (js-import-find-interfaces dependency)))
+      (push dependency subfiles)
+      (let ((module (completing-read "Select: " subfiles nil t dependency)))
+        (js-import-from-path module)))))
 
 
 (defun js-import-alias-header-name(project-name)
@@ -350,8 +445,6 @@ Each car is a regexp match pattern of the imenu type string."
 
 (defun js-import-ff-persistent-action (candidate)
   "Preview the contents of a file in a temporary buffer."
-
-  (print candidate)
   (setq candidate (js-import-path-to-real candidate))
 
   (when-let ((str (stringp candidate))
@@ -397,8 +490,7 @@ Each car is a regexp match pattern of the imenu type string."
         (setq real-path (js-import-path-to-real candidate)))
       (when (and real-path (f-exists? real-path))
 
-        (js-import-ff-persistent-action real-path)
-        ))))
+        (js-import-ff-persistent-action real-path)))))
 
 (defun js-import-action--goto-export(candidate)
   (with-helm-quittable
