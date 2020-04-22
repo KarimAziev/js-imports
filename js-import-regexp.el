@@ -40,7 +40,7 @@
   "^import[ \t\\n]+\\([a-zZ-A0-9_$]+\\|*[\t\n\s]+as[\t\n\s][a-zZ-A0-9_$]\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']\\([^['\"]*\\)")
 
 (defvar js-import-regexp-export-all-from
-  "^export[ \s\t\n]+\\*+[ \s\t\n]+from[ \t]+['\"']\\([^['\"]*\\)")
+  "^export[ \s\t\n]+[*][ \s\t]+from[ \s\t]+['\"']\\([^['\"]*\\)")
 
 (defvar js-import-exclude-regexp
   "^export[ \t]\\([ \t]default[ \t]\\)?\\|[ \t]import[ \t]\\|const[ \t]\\|let[ \t]\\|var[ \t]\\|type[ \t]\\|interface[ \t]\\|function[\\*]\\|class[ \t]?[ \t]\\|function*[ \t]\\|[ \t]class[ \t]\\|[ \t]let[ \t]\\||[ \t]var[ \t]\\|[ \t]type[ \t]\\|[ \t]interface[ \t]\\|[,\f\t\n\r\v}{]\\|[ \t]from[ \t]")
@@ -62,7 +62,7 @@
   "Case-sensitive regexps for detecting JS variables in JavaScript buffers. ")
 
 (defvar js-import-export-regexp
-  "^export[ \s\t\n]+\\(const\\|let\\|var\\|type\\|interface\\|function[*]?\\|class\\)[\t\s\n]+\\([a-zZ-A0-9_$,]+\\)?\\|export[ \s\t\n]+{\\([^}]+\\)\\|export[ \s\t\n]+\\(default\\)[ \s\t\n]"
+  "\\(^\\| +\\)\\export[ \s\t]+\\(const\\|let\\|var\\|type\\|interface\\|function[*]?\\|class\\)[\t\s\n]+\\([a-zZ-A0-9_$,]+\\)?\\|export[ \s\t]+{\\([^}]+\\)\\|export[ \s\t]+\\(default\\)[ \s\t\n]"
   "Regexp for searching export declarations")
 
 (defvar js-import-import-regexp
@@ -80,18 +80,36 @@
 (defvar js-import-file-index-regexp
   "\\(/\\|^\\)\\index\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)?$")
 
+(defvar js-import-var-types
+  "\\(const\\|let\\|var\\|type\\|interface\\|function[*]?\\|class\\)")
+
+(defun js-import-regexp-make-var(name)
+  "Return regexp of variable or function declaration of NAME. By default NAME matches any js word"
+  (concat "\\(^\\| +\\)\\(const\\|let\\|type\\|var\\|function[*]?\\|interface\\|class\\)[ \s\t]" (format "%s" name) "[ \s\t=<(:,]"))
+
+
+(defvar js-import-regexp-default-export "^export[ \s\t\n]+\\(default\\)[ \s\t\n]+([[:word:]]+)?")
+(defvar js-import-regexp-export-literal
+  "^export[ \s\t]+{\\([^}]+\\)")
+
+(defvar js-import-regexp-exports-vars
+  "^export[ \s\t\n]+\\(const\\|let\\|var\\|type\\|interface\\|function[*]?\\|class\\)[\t\s\n]+\\([a-zZ-A0-9_$,]+\\)")
+
+(defvar js-import-regexp-export-all-as
+  "^export[ \s\t\n]+\\*[ \s\t]+as[ \s\t]\\([a-zZ-A0-9_$,]+\\)")
+
 (defconst js-import-reserved-words
   '("abstract"
     "as"
     "arguments"
-    "await*"
+    "await"
     "boolean"
     "break"
     "byte"
     "case"
     "catch"
     "char"
-    "class*"
+    "class"
     "const"
     "continue"
     "debugger"
@@ -101,16 +119,17 @@
     "double"
     "export",
     "else"
-    "enum*"
+    "enum"
     "eval"
-    "export*"
-    "extends*"
+    "export"
+    "extends"
     "false"
     "final"
     "finally"
     "float"
     "for"
     "function"
+    "function*"
     "goto"
     "if"
     "implements"
@@ -119,7 +138,7 @@
     "instanceof"
     "int"
     "interface"
-    "let*"
+    "let"
     "long"
     "native"
     "new"
@@ -131,7 +150,7 @@
     "return"
     "short"
     "static"
-    "super*"
+    "super"
     "switch"
     "synchronized"
     "this"
@@ -149,10 +168,11 @@
     "yield")
   "List of reserved words in javascript")
 
-(defun js-import-word-reserved?(str)
+(defun js-import-word-reserved?(str &optional reserved-list)
   "Check if STR is js reserved word"
+  (unless reserved-list (setq reserved-list js-import-reserved-words))
   (when (stringp str)
-    (member str js-import-reserved-words)))
+    (member str reserved-list)))
 
 (provide 'js-import-regexp)
 ;;; js-import-regexp.el ends here

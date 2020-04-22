@@ -94,4 +94,21 @@
   (should (equal (js-import-is-ext-enabled? "indd.ex") nil))
   (should (equal (js-import-is-ext-enabled? "indd.jsjs") nil)))
 
+
+(ert-deftest js-import-test-is-ext-enabled?()
+  "Test to check if file should included in sources"
+  (should (equal (js-import-is-ext-enabled? "./index.jsx") t))
+  (should (equal (js-import-is-ext-enabled? "index.d.tsx") t))
+  (should (equal (js-import-is-ext-enabled? "index.d.ts") t))
+  (should (equal (js-import-is-ext-enabled? "/home/user/repos/App.ts") t))
+  (should (equal (js-import-is-ext-enabled? "indd.ex.ts") t))
+  (should (equal (js-import-is-ext-enabled? "/home/user/repos/App.tsx") t))
+  (should (equal (js-import-is-ext-enabled? "/home/user/repos/App.js") t))
+  (should (equal (js-import-is-ext-enabled? "app.ts/App.js") t))
+
+  (should (equal (js-import-is-ext-enabled? "App") nil))
+  (should (equal (js-import-is-ext-enabled? "App.jx") nil))
+  (should (equal (js-import-is-ext-enabled? "indd.ex") nil))
+  (should (equal (js-import-is-ext-enabled? "indd.jsjs") nil)))
+
 ;;; js-import-test.el ends here

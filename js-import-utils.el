@@ -123,7 +123,6 @@ the arguments (right-to-left)."
       (widen))))
 
 
-
 (defun js-import-strip-text-props(str)
   "Remove all text properties from string or stringifies symbol"
   (cond ((stringp str)
@@ -160,66 +159,11 @@ ITEM is not string."
       (get-text-property 0 property item)))
 
 
-(defun js-import-find-current-imports(display-path)
-  (let* ((matches (s-match (js-import-make-import-regexp-from-path display-path) (buffer-substring-no-properties (point-min) (js-import-goto-last-import))))
-         (default-import-name (nth 1 matches))
-         (named-exports (js-import-cut-names (nth 2 matches) ",\\|}\\|{"))
-         (alist '()))
-    (when named-exports
-      (mapc (lambda (n) (push (cons n (. 4)) alist)) named-exports))
-
-    (when default-import-name
-      (push (cons default-import-name (. 1)) alist))
-    alist))
-
-(defun js-import-find-all-buffer-imports()
-  (save-excursion
-    (let* ((content (buffer-substring-no-properties (point-min) (js-import-goto-last-import)))
-           (all-matches (s-match-strings-all js-import-import-regexp content))
-           (result (mapcar (lambda (sublist)
-                             (let* ((path (car (last sublist)))
-                                    (imports (js-import-cut-names (car sublist) js-import-import-regexp-exclude))
-                                    (imports-list (mapcar (lambda(str)
-                                                            (cond
-                                                             ((s-contains? "}" str) (--map (cons (s-trim it) 4) (split-string str ",\\|}\\|{" t)))
-                                                             ((s-contains? "*" str) (cons str 16))
-
-                                                             (t (cons str 1))))
-                                                          imports)))
-
-                               (cons path (-flatten imports-list))))
-                           all-matches)))
-
-
-      result)))
-
-
 (defun js-import-filter-pred(filename)
   (and (not (string-equal (s-replace (projectile-project-root) "" buffer-file-name) filename))
        (js-import-is-ext-enabled? filename)
        (not (s-matches? js-import-unsaved-file-regexp filename))
        (not (s-matches? js-import-test-file-regexp filename))))
-
-
-(defun js-import-get-export-type(str)
-  (cond
-   ((s-equals? "*" str) 16)
-   ((s-matches? "{[ \t\s\n]?\\(default\\)[ \\s\\t]+as[^a-zZ-A0-9_$]" str) 4)
-   ((s-matches? "[ \t\s\n]default\\([ \\b$]\\|$\\)" str) 1)
-   (t 4)))
-
-(defun js-import-map-matches(matches &optional regexp-exclude)
-  (let ((export-list '(("*" . 16)))
-        (regexp (or regexp-exclude js-import-regexp-export-exclude-regexp)))
-    (mapc (lambda (content) (let* ((item (s-trim (car content)))
-                              (names (js-import-cut-names item regexp))
-                              (export-type (js-import-get-export-type item))
-                              (default-cons (when (equal export-type 1) (list (cons "default" (. export-type)))))
-                              (consed-items (or default-cons (--map (cons it (. export-type))
-                                                                    names))))
-                         (setq export-list (append export-list consed-items))))
-          matches)
-    export-list))
 
 
 (defun js-import-generate-name-from-path(path)
@@ -269,7 +213,6 @@ ITEM is not string."
 (defun js-import-remove-double-slashes (path)
   (replace-regexp-in-string "//"  "/" path))
 
-
 (defun js-import-get-node-modules-path (&optional project-dir)
   "Return the path to node-modules."
   (f-join (or project-dir (projectile-project-root)) "node_modules"))
@@ -300,8 +243,10 @@ ITEM is not string."
 
 (defun js-import-is-index-trimmable?(path)
   "Check if PATH index can be trimmed"
-  (and (js-import-is-index-file? path)
-       (< 1 (s-count-matches "/" path))))
+  (if (js-import-is-relative? path)
+      (and (js-import-is-index-file? path)
+           (< 1 (s-count-matches "/" path)))
+    (js-import-is-index-file? path)))
 
 (defun js-import-get-package-json-path ()
   "Return the path to package.json."
@@ -362,28 +307,6 @@ ITEM is not string."
                                   (-contains? (list "index.d" "index") (f-base file)))
                              (equal "package.json" (f-filename file))))))
 
-(defun js-import-process-file (fPath)
-  "Process the file at fullpath FPATH.
-Write result to buffer DESTBUFF."
-  (with-temp-buffer
-    (goto-char 1)
-    (with-output-to-temp-buffer fPath
-      (insert-file-contents fPath)
-      (print (js-import-find-exports fPath))
-      (print (js-import-find-all-buffer-imports)))))
-
-
-(defun js-import-collect-deep-exports(path)
-  (when-let (content (f-read path))
-    (when-let ((deep-exports (s-match-strings-all js-import-regexp-export-all-from content)))
-      (--map (car (last it)) deep-exports))))
-
-
-(defun js-import-find-exports (&optional path)
-  (when-let (content (f-read path))
-    (let ((all-matches (s-match-strings-all js-import-export-regexp content)))
-      (js-import-map-matches all-matches js-import-regexp-export-exclude-regexp))))
-
 
 (defun js-import-find-index-files-in-path(path)
   (cond
@@ -403,6 +326,7 @@ Write result to buffer DESTBUFF."
         (js-import-traverse-down filepath)
       path)))
 
+
 (defun js-import-maybe-expand-dependency(display-path &optional $real-path)
   (let ((real-path (or $real-path (js-import-expand-node-modules display-path))))
     (unless (f-ext real-path)
@@ -420,6 +344,7 @@ Write result to buffer DESTBUFF."
     filepath))
 
 
+
 (defun js-import-which-word ()
   "Find closest to point whole word."
   (interactive)
@@ -430,10 +355,10 @@ Write result to buffer DESTBUFF."
             (setq $p1 (region-beginning))
             (setq $p2 (region-end)))
         (save-excursion
-          (skip-chars-backward "_A-Za-z0-9")
+          (skip-chars-backward "_A-Za-z0-9-$")
           (setq $p1 (point))
           (right-char)
-          (skip-chars-forward "_A-Za-z0-9")
+          (skip-chars-forward "_A-Za-z0-9-$")
           (setq $p2 (point))))
       (setq mark-active nil)
       (when (< $p1 (point))
@@ -443,19 +368,36 @@ Write result to buffer DESTBUFF."
 
 (defun js-import-get-path-at-point()
   (interactive)
-  (let* (($inputStr (if (use-region-p)
-                        (buffer-substring-no-properties (region-beginning) (region-end))
-                      (let ($p0 $p1 $p2
-                                ($pathStops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\"))
-                        (setq $p0 (point))
-                        (skip-chars-backward $pathStops)
-                        (setq $p1 (point))
-                        (goto-char $p0)
-                        (skip-chars-forward $pathStops)
-                        (setq $p2 (point))
-                        (goto-char $p0)
-                        (buffer-substring-no-properties $p1 $p2)))))
-    $inputStr))
+  (save-excursion
+    (when (looking-at-p "import\\|export[ \s\t\n]")
+      (search-forward-regexp "[ \s\t\n]+from[ \s\t\n]+['\"]"))
+    (let* (($inputStr (if (use-region-p)
+                          (buffer-substring-no-properties (region-beginning) (region-end))
+                        (let ($p0 $p1 $p2
+                                  ($pathStops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\"))
+                          (setq $p0 (point))
+                          (skip-chars-backward $pathStops)
+                          (setq $p1 (point))
+                          (goto-char $p0)
+                          (skip-chars-forward $pathStops)
+                          (setq $p2 (point))
+                          (goto-char $p0)
+                          (buffer-substring-no-properties $p1 $p2)))))
+
+      $inputStr)))
+
+(defun js-import-inside-string-q ()
+  "Returns non-nil if inside string, else nil.
+Result depends on syntax table's string quote character."
+  (interactive)
+  (let ((result (nth 3 (syntax-ppss))))
+
+    result))
+
+(defun js-import-inside-comment? ()
+  "Returns value of comment character in syntax table's or nil otherwise"
+  (interactive)
+  (nth 4 (syntax-ppss)))
 
 (defun js-import-get-unreserved-word-at-point()
   "Returns camelCased word at point unless it is javascript reserved."
@@ -465,6 +407,44 @@ Write result to buffer DESTBUFF."
                 (is-enabled (and (not (js-import-word-reserved? whole-word))
                                  (s-matches? js-import-word-chars-regexp whole-word))))
       whole-word)))
+
+
+(defun js-import-build-help-buffer (feature body)
+  (with-current-buffer (get-buffer-create (concat "*js-import-" feature "*"))
+    (setq buffer-read-only t)
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (when body
+        (save-excursion
+          (insert body))))
+    (local-set-key (kbd "q") #'quit-window)
+    (current-buffer)))
+
+
+(defmacro js-import-with-help-buffer(buf &rest forms)
+  `(let ((buffer (with-current-buffer (get-buffer-create ,buf)
+                   (setq buffer-read-only t)
+                   (let ((inhibit-read-only t))
+                     (erase-buffer)
+                     (progn ,@forms))
+                   (local-set-key (kbd "q") #'quit-window)
+                   (current-buffer))))
+     (display-buffer buffer t)
+     (if help-window-select
+         (progn
+           (pop-to-buffer buffer)
+           (message "Type \"q\" to restore previous buffer"))
+       (message (concat "Type \"q\" in the to close it")))))
+
+
+(defun js-import-show-help-buffer (feature body)
+  (let ((buffer (js-import-build-help-buffer feature body)))
+    (display-buffer buffer t)
+    (if help-window-select
+        (progn
+          (pop-to-buffer buffer)
+          (message "Type \"q\" to restore previous buffer"))
+      (message (concat "Type \"q\" in the " feature " buffer to close it")))))
 
 
 (provide 'js-import-utils)
