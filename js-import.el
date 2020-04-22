@@ -186,6 +186,8 @@
    "Go" 'js-import-jump-to-item-other-window))
 
 
+
+
 (defvar js-import-symbols-actions
   (helm-make-actions
    "Go" 'js-import-jump-to-item-other-window))
@@ -195,7 +197,11 @@
                      "Find file" 'js-import-find-file
                      "Find file other window" 'js-import-find-file-other-window))
 
-
+(defvar js-import-dependency-action
+  (helm-make-actions "Import from file" 'js-import-select-file-action
+                     "Find nested imports" 'js-import-select-subdir
+                     "Find file" 'js-import-find-file
+                     "Find file other window" 'js-import-find-file-other-window))
 
 (defvar js-import-current-export-path nil)
 (make-variable-buffer-local 'js-import-current-export-path)
@@ -238,7 +244,7 @@
 
 (defmacro js-import-filter-plist(prop-symbol test-form plist)
   `(seq-filter (lambda(str) (let ((it (js-import-get-prop str ,prop-symbol)))
-                              ,test-form))
+                         ,test-form))
                ,plist))
 
 (defun js-import-exported-candidates-transformer(candidates)
@@ -247,10 +253,10 @@
     (let* ((imports (js-import-imported-candidates-in-buffer helm-current-buffer)))
       (if imports
           (seq-remove (lambda(elt) (pcase (js-import-get-prop elt 'type)
-                                     (1 (seq-find (lambda(imp) (eq 1 (js-import-get-prop imp 'type))) imports))
-                                     (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
-                                                                        (js-import-get-prop imp 'real-name)))
-                                                  imports))))
+                                (1 (seq-find (lambda(imp) (eq 1 (js-import-get-prop imp 'type))) imports))
+                                (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
+                                                              (js-import-get-prop imp 'real-name)))
+                                             imports))))
                       candidates)
         candidates))))
 
@@ -316,7 +322,7 @@
   ((init :initform 'js-import-find-imported-files-in-buffer)
    (action :initform 'js-import-files-actions)
    (header-name :initform (lambda(name) (with-helm-current-buffer
-                                          (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
+                                     (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
    (persistent-action :initform 'js-import-ff-persistent-action)
    (action-transformer :initform 'js-import-files-actions-transformer)
    (mode-line :initform (list "Imports"))
@@ -328,10 +334,9 @@
   ((candidates :initform 'js-import-get-all-dependencies)
    (candidate-number-limit :initform js-import-dependencies-number-limit)
    (nomark :initform nil)
-   (action :initform 'js-import-files-actions)
+   (action :initform 'js-import-dependency-action)
    (mode-line :initform (list "Dependencies"))
    (keymap :initform js-import-files-keymap)
-   (action-transformer :initform 'js-import-files-actions-transformer)
    (persistent-action :initform 'js-import-ff-persistent-action)
    (group :initform 'js-import)))
 
@@ -362,8 +367,7 @@
 (defun js-import-files-actions-transformer(actions candidate)
   "Actions"
   (let* ((actions (cond ((js-import-is-dependency? candidate)
-                         (helm-append-at-nth actions
-                                             '(("Expand" . 'js-import-select-subdir)) 1))
+                         (helm-append-at-nth actions '(("Expand" . 'js-import-select-subdir)) 1))
                         (t actions))))
     actions))
 
@@ -464,11 +468,10 @@
 
 (defun js-import-select-subdir(dependency)
   "Action which checks if DEPENDENCY has nested dirs with exports and propose to select it"
-  (with-helm-quittable
-    (when-let ((subfiles (js-import-find-interfaces dependency)))
-      (push dependency subfiles)
-      (let ((module (completing-read "Select: " subfiles nil t dependency)))
-        (js-import-from-path module)))))
+  (when-let ((subfiles (js-import-find-interfaces dependency)))
+    (push dependency subfiles)
+    (let ((module (completing-read "Select: " subfiles nil t dependency)))
+      (js-import-from-path module))))
 
 
 (defun js-import-alias-header-name(project-name)
