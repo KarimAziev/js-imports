@@ -279,13 +279,15 @@
 (defun js-import-exports-cleanup()
   "Reset filter for imported candidates"
   (with-helm-current-buffer
-    (setq js-import-current-export-path js-import-current-export-path)))
+    (setq js-import-current-export-path nil)))
 
 
 (defclass js-import-exports-source(helm-source-sync)
   ((candidates :initform 'js-import-init-exports-candidates)
+   (cleanup :initform 'js-import-exports-cleanup)
    (marked-with-props :initform 'withprop)
-   (persistent-action :initform 'js-import-jump-to-item-persistent)
+   (persistent-action :initform (lambda(c) (js-import-jump-to-item-persistent
+                                       (js-import-display-to-real-imports c))))
    (action :initform 'js-import-export-items-actions)
    (candidate-transformer :initform 'js-import-exported-candidates-transformer)))
 
@@ -322,7 +324,7 @@
   ((init :initform 'js-import-find-imported-files-in-buffer)
    (action :initform 'js-import-files-actions)
    (header-name :initform (lambda(name) (with-helm-current-buffer
-                                     (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
+                                          (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
    (persistent-action :initform 'js-import-ff-persistent-action)
    (mode-line :initform (list "Imports"))
    (keymap :initform js-import-files-keymap)
@@ -843,13 +845,13 @@
                 (setq named-imports
                       (append named-imports
                               (mapcar (lambda(it) (js-import-make-index-item it
-                                                                             :type 4
-                                                                             :import-type 4
-                                                                             :display-part it
-                                                                             :var-type "import"
-                                                                             :real-name (car (split-string it))
-                                                                             :marker (point)
-                                                                             :display-path path))
+                                                                        :type 4
+                                                                        :import-type 4
+                                                                        :display-part it
+                                                                        :var-type "import"
+                                                                        :real-name (car (split-string it))
+                                                                        :marker (point)
+                                                                        :display-path path))
                                       (js-import-cut-names (buffer-substring-no-properties p1 p2) ",\\|}\\|{"))))))
 
             (setq symbols (append symbols named-imports)))
@@ -865,7 +867,8 @@
         (item-path (or (js-import-get-prop item 'real-path) (js-import-path-to-real (js-import-get-prop item 'display-path)))))
 
 
-    (if (and buffer-file-name (string= item-path buffer-file-name))
+
+    (if (and m buffer-file-name (string= item-path buffer-file-name))
 
         (progn
           (goto-char m)
