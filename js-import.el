@@ -324,7 +324,6 @@
    (header-name :initform (lambda(name) (with-helm-current-buffer
                                      (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
    (persistent-action :initform 'js-import-ff-persistent-action)
-   (action-transformer :initform 'js-import-files-actions-transformer)
    (mode-line :initform (list "Imports"))
    (keymap :initform js-import-files-keymap)
    (get-line :initform #'buffer-substring)))
@@ -358,18 +357,10 @@
    (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
    (mode-line :initform (list "File(s)"))
    (keymap :initform js-import-files-keymap)
-   (action-transformer :initform 'js-import-files-actions-transformer)
    (action :initform 'js-import-files-actions)
    (group :initform 'js-import)))
 
 
-
-(defun js-import-files-actions-transformer(actions candidate)
-  "Actions"
-  (let* ((actions (cond ((js-import-is-dependency? candidate)
-                         (helm-append-at-nth actions '(("Expand" . 'js-import-select-subdir)) 1))
-                        (t actions))))
-    actions))
 
 (defun js-import-relative-one-by-one(path)
   "Transform relative to `projectile-project-root' PATH into relative to the current `buffer-file-name'"
