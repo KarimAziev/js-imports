@@ -447,5 +447,13 @@ Result depends on syntax table's string quote character."
       (message (concat "Type \"q\" in the " feature " buffer to close it")))))
 
 
+(defun js-import-strip-duplicates (list)
+  (let ((new-list nil))
+    (while list
+      (when (and (car list) (not (member (car list) new-list)))
+        (setq new-list (cons (car list) new-list)))
+      (setq list (cdr list)))
+    (nreverse new-list)))
+
 (provide 'js-import-utils)
 ;;; js-import-utils.el ends here
