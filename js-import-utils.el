@@ -304,8 +304,8 @@ ITEM is not string."
 
 (defun js-import-find-index-files(path)
   (f-files path (lambda(file) (or (and (js-import-is-ext-enabled? file)
-                                  (-contains? (list "index.d" "index") (f-base file)))
-                             (equal "package.json" (f-filename file))))))
+                                       (-contains? (list "index.d" "index") (f-base file)))
+                                  (equal "package.json" (f-filename file))))))
 
 
 (defun js-import-find-index-files-in-path(path)
@@ -371,20 +371,23 @@ ITEM is not string."
   (save-excursion
     (when (looking-at-p "import\\|export[ \s\t\n]")
       (search-forward-regexp "[ \s\t\n]+from[ \s\t\n]+['\"]"))
-    (let* (($inputStr (if (use-region-p)
-                          (buffer-substring-no-properties (region-beginning) (region-end))
-                        (let ($p0 $p1 $p2
-                                  ($pathStops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\"))
-                          (setq $p0 (point))
-                          (skip-chars-backward $pathStops)
-                          (setq $p1 (point))
-                          (goto-char $p0)
-                          (skip-chars-forward $pathStops)
-                          (setq $p2 (point))
-                          (goto-char $p0)
-                          (buffer-substring-no-properties $p1 $p2)))))
+    (when (js-import-inside-string-q)
+      (let* (($inputStr (if (use-region-p)
+                            (buffer-substring-no-properties (region-beginning) (region-end))
+                          (let ($p0 $p1 $p2
+                                    ($pathStops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\"))
+                            (setq $p0 (point))
+                            (skip-chars-backward $pathStops)
+                            (setq $p1 (point))
+                            (goto-char $p0)
+                            (skip-chars-forward $pathStops)
+                            (setq $p2 (point))
+                            (goto-char $p0)
+                            (buffer-substring-no-properties $p1 $p2)))))
 
-      $inputStr)))
+        $inputStr)
+      )
+    ))
 
 (defun js-import-inside-string-q ()
   "Returns non-nil if inside string, else nil.
