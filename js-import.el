@@ -92,7 +92,7 @@
     (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
     (define-key map (kbd "C-c C-d") 'js-import-dependency)
     (define-key map (kbd "C-c C-a") 'js-import-alias)
-    (define-key map (kbd "C-." 'js-import-find-file-at-point))
+    (define-key map (kbd "C-.") 'js-import-find-file-at-point)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
@@ -137,6 +137,8 @@
 (defvar js-import-dependency-source-name "node modules")
 (defvar js-import-buffer-source-name "imports in buffer")
 
+(defvar js-import-last-export-path nil)
+(make-variable-buffer-local 'js-import-last-export-path)
 
 ;;;###autoload
 (defun js-import ()
@@ -149,7 +151,8 @@
                             (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))
      :buffer "js import"
      :preselect (or (js-import-get-path-at-point)
-                    (with-helm-current-buffer js-import-last-export-path))
+                    js-import-last-export-path
+                    "")
      :prompt "Select file: ")))
 
 
@@ -224,8 +227,6 @@
 (defvar js-import-symbols-in-buffer-tick nil)
 (make-variable-buffer-local 'js-import-symbols-in-buffer-tick)
 
-(defvar js-import-last-export-path nil)
-(make-variable-buffer-local 'js-import-last-export-path)
 
 
 
@@ -246,17 +247,17 @@
 
 (defmacro js-import-filter-plist(prop-symbol test-form plist)
   `(seq-filter (lambda(str) (let ((it (js-import-get-prop str ,prop-symbol)))
-                              ,test-form))
+                         ,test-form))
                ,plist))
 
 
 (defun js-import-filter-exports(exports imports)
   "Returns filtered EXPORTS plist with only those members that are not in IMPORTS plist. For named exports (with property `type' 4) the test for equality is done by `real-name' and for default export by `type'."
   (seq-remove (lambda(elt) (pcase (js-import-get-prop elt 'type)
-                             (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
-                             (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
-                                                                (js-import-get-prop imp 'real-name)))
-                                          imports))))
+                        (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
+                        (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
+                                                      (js-import-get-prop imp 'real-name)))
+                                     imports))))
               exports))
 
 
@@ -305,7 +306,7 @@
    (persistent-help :initform "Show symbol")
    (display-to-real :initform 'js-import-display-to-real-imports)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
-                                       (js-import-display-to-real-imports c))))
+                                            (js-import-display-to-real-imports c))))
    (action :initform 'js-import-imported-items-actions)))
 
 
@@ -367,7 +368,7 @@
   ((init :initform 'js-import-find-imported-files-in-buffer)
    (action :initform 'js-import-files-actions)
    (header-name :initform (lambda(name) (with-helm-current-buffer
-                                          (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
+                                     (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
    (persistent-action :initform 'js-import-ff-persistent-action)
    (mode-line :initform (list "Imports"))
    (keymap :initform js-import-files-keymap)
