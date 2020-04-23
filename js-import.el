@@ -225,11 +225,9 @@
     (let ((tick (buffer-modified-tick)))
       (if (eq js-import-cached-imports-in-buffer-tick tick)
           (progn
-            (setq js-import-cached-imports-in-buffer-tick tick)
-            (setq js-import-cached-imports-in-buffer (save-excursion (js-import-extracts-imports)))
-            (when js-import-current-export-path
-              (setq js-import-cached-imports-in-buffer (js-import-filter-by-prop js-import-current-export-path 'display-path js-import-cached-imports-in-buffer)))
-            js-import-cached-imports-in-buffer)
+            (if js-import-current-export-path
+                (setq js-import-cached-imports-in-buffer (js-import-filter-by-prop 'display-path js-import-current-export-path js-import-cached-imports-in-buffer))
+              js-import-cached-imports-in-buffer))
         (progn
           (setq js-import-cached-imports-in-buffer-tick tick)
           (setq js-import-cached-imports-in-buffer (save-excursion (js-import-extracts-imports)))
@@ -273,7 +271,8 @@
    (marked-with-props :initform 'withprop)
    (persistent-help :initform "Show symbol")
    (display-to-real :initform 'js-import-display-to-real-imports)
-   (persistent-action :initform 'js-import-jump-to-item-persistent)
+   (persistent-action :initform (lambda(c) (js-import-jump-to-item-persistent
+                                       (js-import-display-to-real-imports c))))
    (action :initform 'js-import-symbols-actions)))
 
 (defun js-import-exports-cleanup()
@@ -324,7 +323,7 @@
   ((init :initform 'js-import-find-imported-files-in-buffer)
    (action :initform 'js-import-files-actions)
    (header-name :initform (lambda(name) (with-helm-current-buffer
-                                          (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
+                                     (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
    (persistent-action :initform 'js-import-ff-persistent-action)
    (mode-line :initform (list "Imports"))
    (keymap :initform js-import-files-keymap)
@@ -580,16 +579,16 @@
 
 (defun js-import-action--import-as(_candidate)
   (mapc (lambda(c) (let* ((type (js-import-get-prop c 'type))
-                          (normalized-path (js-import-get-prop c 'display-path))
-                          (real-name (js-import-get-prop c 'real-name))
-                          (renamed-name (s-trim (read-string
-                                                 (format "import %s as " real-name)
-                                                 nil nil)))
-                          (full-name (concat real-name " as " renamed-name)))
-                     (pcase type
-                       (1 (js-import-insert-exports renamed-name nil normalized-path))
-                       (4 (js-import-insert-exports nil full-name normalized-path))
-                       (16 (js-import-insert-exports full-name nil normalized-path)))))
+                     (normalized-path (js-import-get-prop c 'display-path))
+                     (real-name (js-import-get-prop c 'real-name))
+                     (renamed-name (s-trim (read-string
+                                            (format "import %s as " real-name)
+                                            nil nil)))
+                     (full-name (concat real-name " as " renamed-name)))
+                (pcase type
+                  (1 (js-import-insert-exports renamed-name nil normalized-path))
+                  (4 (js-import-insert-exports nil full-name normalized-path))
+                  (16 (js-import-insert-exports full-name nil normalized-path)))))
         (helm-marked-candidates)))
 
 
@@ -738,17 +737,17 @@
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                              (real-name (car (last parts)))
-                                              (type (if (string= "default" real-name) 1 4)))
-                                         (push (js-import-make-index-item real-name
-                                                                          :type type
-                                                                          :export-type type
-                                                                          :display-part it
-                                                                          :var-type "export"
-                                                                          :real-name real-name
-                                                                          :marker (point)
-                                                                          :display-path path)
-                                               exports)))
+                                         (real-name (car (last parts)))
+                                         (type (if (string= "default" real-name) 1 4)))
+                                    (push (js-import-make-index-item real-name
+                                                                     :type type
+                                                                     :export-type type
+                                                                     :display-part it
+                                                                     :var-type "export"
+                                                                     :real-name real-name
+                                                                     :marker (point)
+                                                                     :display-path path)
+                                          exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))
