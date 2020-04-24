@@ -64,8 +64,6 @@
   :group 'js-import
   :type 'number)
 
-
-
 (defcustom js-import-symbols-faces
   '(("^\\(type\\|interface\\)$" . font-lock-type-face)
     ("^\\(function\\|function*\\)$" . font-lock-function-name-face)
@@ -83,7 +81,6 @@
   "Node modules path"
   :group 'js-import
   :type 'string)
-
 
 
 (defvar js-import-command-map
@@ -133,12 +130,58 @@
 (make-variable-buffer-local 'js-import-relative-transformer)
 
 (defvar js-import-dependencies-cache-plist '())
-
 (defvar js-import-dependency-source-name "node modules")
 (defvar js-import-buffer-source-name "imports in buffer")
 
+(defvar js-import-current-export-path nil)
+(make-variable-buffer-local 'js-import-current-export-path)
+(defvar js-import-current-export-real-path nil)
+(make-variable-buffer-local 'js-import-current-export-real-path)
+(defvar js-import-export-candidates-in-path nil)
+(make-variable-buffer-local 'js-import-export-candidates-in-path)
+
+(defvar js-import-cached-imports-in-buffer nil)
+(make-variable-buffer-local 'js-import-cached-imports-in-buffer)
+(defvar js-import-cached-imports-in-buffer-tick nil)
+(make-variable-buffer-local 'js-import-cached-imports-in-buffer-tick)
+
+(defvar js-import-symbols-in-buffer nil)
+(make-variable-buffer-local 'js-import-symbols-in-buffer)
+(defvar js-import-symbols-in-buffer-tick nil)
+(make-variable-buffer-local 'js-import-symbols-in-buffer-tick)
+
 (defvar js-import-last-export-path nil)
 (make-variable-buffer-local 'js-import-last-export-path)
+
+
+(defvar js-import-files-actions
+  (helm-make-actions "Import from file" (js-import-with-marked-candidates 'js-import-from-path)
+                     "Find file" 'js-import-find-file
+                     "Find file other window" 'js-import-find-file-other-window))
+
+(defvar js-import-dependency-action
+  (helm-make-actions "Import from file" (js-import-with-marked-candidates 'js-import-from-path)
+                     "Find nested imports" 'js-import-select-subdir
+                     "Find file" 'js-import-find-file
+                     "Find file other window" 'js-import-find-file-other-window)
+  "File actions for dependencies. Dependencies should be specified into package json and installed into node_modules")
+
+
+(defvar js-import-imported-items-actions
+  (helm-make-actions
+   "Go" 'js-import-jump-to-item-in-buffer
+   "Rename" (js-import-with-marked-candidates 'js-import-rename-import)
+   "Add more imports" (js-import-call-with-marked-candidates-prop 'js-import-from-path 'display-path)
+   "Delete" (js-import-with-marked-candidates 'js-import-delete-imported-item)
+   "Delete whole import" (js-import-call-with-marked-candidates-prop 'js-import-delete-whole-import 'display-path))
+  "Actions for editing imported symbols in buffer")
+
+(defvar js-import-export-items-actions
+  (helm-make-actions
+   "Import" (js-import-with-marked-candidates 'js-import-insert-import)
+   "Import as " (js-import-with-marked-candidates 'js-import-insert-import-as)
+   "Go" 'js-import-jump-to-item-other-window)
+  "Actions for generating and inserting imports statements for exported symbols from some path into current buffer imports")
 
 ;;;###autoload
 (defun js-import ()
@@ -153,7 +196,7 @@
      :preselect (or (js-import-get-path-at-point)
                     js-import-last-export-path
                     "")
-     :prompt "Select file: ")))
+     :prompt "Select a file: ")))
 
 
 ;;;###autoload
@@ -176,104 +219,93 @@
 
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
-  "Helm menu of javascript variables, declarations and interfaces from current buffer"
+  "Show imported symbols from current buffer. Available actions includes jumping to item in buffer, renaming, adding more imports from current paths and deleting a symbol or whole import."
   (interactive)
   (helm :sources (helm-make-source "*js symbols*" 'js-import-buffer-imports-source)))
 
-(defvar js-import-imported-items-actions
-  (helm-make-actions
-   "Go" 'js-import-jump-to-item-in-buffer
-   "Rename" 'js-import-action--rename-import
-   "Add more imports" 'js-import-action--add-to-import
-   "Delete" 'js-import-action--delete-import
-   "Delete whole import" 'js-import-action--delete-whole-import))
 
-(defvar js-import-export-items-actions
-  (helm-make-actions
-   "Import" 'js-import-action--import-candidate
-   "Import as " 'js-import-action--import-as
-   "Go" 'js-import-jump-to-item-other-window))
-
-
-(defvar js-import-symbols-actions
-  (helm-make-actions
-   "Go" 'js-import-jump-to-item-other-window))
-
-(defvar js-import-files-actions
-  (helm-make-actions "Import from file" 'js-import-select-file-action
-                     "Find file" 'js-import-find-file
-                     "Find file other window" 'js-import-find-file-other-window))
-
-(defvar js-import-dependency-action
-  (helm-make-actions "Import from file" 'js-import-select-file-action
-                     "Find nested imports" 'js-import-select-subdir
-                     "Find file" 'js-import-find-file
-                     "Find file other window" 'js-import-find-file-other-window))
-
-(defvar js-import-current-export-path nil)
-(make-variable-buffer-local 'js-import-current-export-path)
-(defvar js-import-current-export-real-path nil)
-(make-variable-buffer-local 'js-import-current-export-real-path)
-(defvar js-import-export-candidates-in-path nil)
-(make-variable-buffer-local 'js-import-export-candidates-in-path)
-
-(defvar js-import-cached-imports-in-buffer nil)
-(make-variable-buffer-local 'js-import-cached-imports-in-buffer)
-(defvar js-import-cached-imports-in-buffer-tick nil)
-(make-variable-buffer-local 'js-import-cached-imports-in-buffer-tick)
-
-(defvar js-import-symbols-in-buffer nil)
-(make-variable-buffer-local 'js-import-symbols-in-buffer)
-(defvar js-import-symbols-in-buffer-tick nil)
-(make-variable-buffer-local 'js-import-symbols-in-buffer-tick)
-
-
-
-
-(defun js-import-imported-candidates-in-buffer(&optional buffer)
-  (with-current-buffer (or buffer helm-current-buffer)
-    (let ((tick (buffer-modified-tick)))
-      (if (eq js-import-cached-imports-in-buffer-tick tick)
-          js-import-cached-imports-in-buffer
-        (progn
-          (setq js-import-cached-imports-in-buffer-tick tick)
-          (setq js-import-cached-imports-in-buffer (save-excursion (with-syntax-table (syntax-table) (js-import-extracts-imports))))
-          js-import-cached-imports-in-buffer)))))
-
-
-(defun js-import-filter-by-prop(value prop-symbol plist)
-  "Filter PLIST by diffing "
-  (seq-filter (lambda(str) (string= value (js-import-get-prop str prop-symbol))) plist))
-
-(defmacro js-import-filter-plist(prop-symbol test-form plist)
-  `(seq-filter (lambda(str) (let ((it (js-import-get-prop str ,prop-symbol)))
-                         ,test-form))
-               ,plist))
-
-
-(defun js-import-filter-exports(exports imports)
-  "Returns filtered EXPORTS plist with only those members that are not in IMPORTS plist. For named exports (with property `type' 4) the test for equality is done by `real-name' and for default export by `type'."
-  (seq-remove (lambda(elt) (pcase (js-import-get-prop elt 'type)
-                        (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
-                        (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
-                                                      (js-import-get-prop imp 'real-name)))
-                                     imports))))
-              exports))
-
-
-(defun js-import-exported-candidates-transformer(candidates)
-  "Removes duplicates and imported members from from CANDIDATES plist."
+(defun js-import-from-path(path)
+  "Extract and propose to make import from PATH "
+  (interactive)
   (with-current-buffer helm-current-buffer
-    (let (imports exports)
-      (setq imports (js-import-imported-candidates-in-buffer helm-current-buffer))
-      (setq imports (js-import-filter-plist 'display-path (string= js-import-current-export-path it) imports))
-      (setq exports (if imports (js-import-filter-exports candidates imports) candidates))
-      (setq exports (js-import-strip-duplicates exports))
-      (setq exports (mapcar (lambda(c) (js-import-propertize c 'display-path js-import-current-export-path)) exports)))))
+    (setq js-import-current-export-path path)
+    (setq js-import-last-export-path path)
+    (setq js-import-current-export-real-path (js-import-path-to-real path default-directory)))
 
+  (helm :sources (append (list (helm-make-source "exports in" 'js-import-exports-source)
+                               (helm-make-source "imported" 'js-import-buffer-imports-source)))))
+
+
+
+(defclass js-import-imported-files-source(helm-source-in-buffer)
+  ((init :initform 'js-import-find-imported-files-in-buffer)
+   (action :initform 'js-import-files-actions)
+   (header-name :initform (lambda(name) (with-helm-current-buffer
+                                     (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
+   (persistent-action :initform 'js-import-ff-persistent-action)
+   (mode-line :initform (list "Imports"))
+   (keymap :initform js-import-files-keymap)
+   (get-line :initform #'buffer-substring)))
+
+
+(defclass js-import-alias-source (helm-source-sync)
+  ((header-name :initform 'js-import-alias-header-name)
+   (init :initform 'js-import-alias-init)
+   (candidates :initform 'projectile-current-project-files)
+   (candidate-number-limit :initform js-import-files-number-limit)
+   (persistent-action :initform 'js-import-ff-persistent-action)
+   (candidate-transformer :initform 'js-import-project-files-transformer)
+   (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
+   (mode-line :initform (list "File(s)"))
+   (keymap :initform js-import-files-keymap)
+   (action :initform 'js-import-files-actions)
+   (group :initform 'js-import)))
+
+(defclass js-import-dependency-source (helm-source-sync)
+  ((candidates :initform 'js-import-get-all-dependencies)
+   (candidate-number-limit :initform js-import-dependencies-number-limit)
+   (nomark :initform nil)
+   (action :initform 'js-import-dependency-action)
+   (mode-line :initform (list "Dependencies"))
+   (keymap :initform js-import-files-keymap)
+   (persistent-action :initform 'js-import-ff-persistent-action)
+   (group :initform 'js-import)))
+
+
+(defclass js-import-buffer-imports-source(helm-source-sync)
+  ((candidates :initform 'js-import-imported-candidates-in-buffer)
+   (candidate-transformer :initform (lambda(candidates) (with-helm-current-buffer
+                                                     (if js-import-current-export-path
+                                                         (js-import-filter-plist 'display-path
+                                                                                 (equal js-import-current-export-path it)
+                                                                                 candidates)
+                                                       candidates))))
+   (marked-with-props :initform 'withprop)
+   (persistent-help :initform "Show symbol")
+   (display-to-real :initform 'js-import-display-to-real-imports)
+   (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
+                                       (js-import-display-to-real-imports c))))
+   (action :initform 'js-import-imported-items-actions)))
+
+
+(defclass js-import-exports-source(helm-source-sync)
+  ((candidates :initform 'js-import-init-exports-candidates)
+   (cleanup :initform 'js-import-exports-cleanup)
+   (marked-with-props :initform 'withprop)
+   (persistent-action :initform (lambda(c) (js-import-jump-to-item-persistent
+                                       (js-import-display-to-real-exports c))))
+   (action :initform 'js-import-export-items-actions)
+   (candidate-transformer :initform 'js-import-exported-candidates-transformer)))
+
+
+(defun js-import-exports-cleanup()
+  "Reset filter for imported candidates"
+  (with-helm-current-buffer
+    (setq js-import-current-export-path nil)
+    (setq js-import-current-export-real-path nil)))
 
 (defun js-import-display-to-real-exports(it)
-  "Search for texport item"
+  "Search for export item"
   (with-helm-current-buffer
     (let (export-item)
       (setq export-item (seq-find (lambda(elt) (string= (js-import-get-prop elt 'real-name) it)) js-import-export-candidates-in-path)))))
@@ -293,64 +325,38 @@
     (helm-highlight-current-line)
     item))
 
+(defun js-import-imported-candidates-in-buffer(&optional buffer)
+  "Returns imported symbols in BUFFER. Symbols are cached and are stored in a buffer local variable `js-import-cached-imports-in-buffer'.
+   Cache are invalidated when `buffer-modified-tick' changes."
+  (with-current-buffer (or buffer helm-current-buffer)
+    (let ((tick (buffer-modified-tick)))
+      (if (eq js-import-cached-imports-in-buffer-tick tick)
+          js-import-cached-imports-in-buffer
+        (progn
+          (setq js-import-cached-imports-in-buffer-tick tick)
+          (setq js-import-cached-imports-in-buffer (save-excursion (with-syntax-table (syntax-table) (js-import-extracts-imports))))
+          js-import-cached-imports-in-buffer)))))
 
-(defclass js-import-buffer-imports-source(helm-source-sync)
-  ((candidates :initform 'js-import-imported-candidates-in-buffer)
-   (candidate-transformer :initform (lambda(candidates) (with-helm-current-buffer
-                                                     (if js-import-current-export-path
-                                                         (js-import-filter-plist 'display-path
-                                                                                 (equal js-import-current-export-path it)
-                                                                                 candidates)
-                                                       candidates))))
-   (marked-with-props :initform 'withprop)
-   (persistent-help :initform "Show symbol")
-   (display-to-real :initform 'js-import-display-to-real-imports)
-   (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
-                                            (js-import-display-to-real-imports c))))
-   (action :initform 'js-import-imported-items-actions)))
-
-
-(defclass js-import-exports-source(helm-source-sync)
-  ((candidates :initform 'js-import-init-exports-candidates)
-   (cleanup :initform 'js-import-exports-cleanup)
-   (marked-with-props :initform 'withprop)
-   (persistent-action :initform (lambda(c) (js-import-jump-to-item-persistent
-                                            (js-import-display-to-real-exports c))))
-   (action :initform 'js-import-export-items-actions)
-   (candidate-transformer :initform 'js-import-exported-candidates-transformer)))
-
-
-(defun js-import-exports-cleanup()
-  "Reset filter for imported candidates"
-  (with-helm-current-buffer
-    (setq js-import-current-export-path nil)
-    (setq js-import-current-export-real-path nil)))
-
-(defun js-import-from-path(path)
-  "Extract and propose to make import from PATH "
-  (interactive)
+(defun js-import-exported-candidates-transformer(candidates)
+  "Removes duplicates and imported members from from CANDIDATES plist."
   (with-current-buffer helm-current-buffer
-    (setq js-import-current-export-path path)
-    (setq js-import-last-export-path path)
-    (setq js-import-current-export-real-path (js-import-path-to-real path default-directory)))
+    (let (imports exports)
+      (setq imports (js-import-imported-candidates-in-buffer helm-current-buffer))
+      (setq imports (js-import-filter-plist 'display-path (string= js-import-current-export-path it) imports))
+      (setq exports (if imports (js-import-filter-exports candidates imports) candidates))
+      (setq exports (js-import-strip-duplicates exports))
+      (setq exports (mapcar (lambda(c) (js-import-propertize c 'display-path js-import-current-export-path)) exports)))))
 
-  (helm :sources (append (list (helm-make-source "exports in" 'js-import-exports-source)
-                               (helm-make-source "imported" 'js-import-buffer-imports-source)))))
 
 
-(defun js-import-find-file-at-point()
-  (interactive)
-  (when-let ((in-string (js-import-inside-string-q))
-             (path (js-import-get-path-at-point)))
-    (js-import-find-file path)))
-
-(defun js-import-find-file(file)
-  "Transform FILE to real and open it"
-  (find-file (js-import-path-to-real file)))
-
-(defun js-import-find-file-other-window(file)
-  "Transform FILE to real and open it in other window"
-  (find-file-other-window (js-import-path-to-real file)))
+(defun js-import-filter-exports(exports imports)
+  "Returns filtered EXPORTS plist with only those members that are not in IMPORTS plist. For named exports (with property `type' 4) the test for equality is done by `real-name' and for default export by `type'."
+  (seq-remove (lambda(elt) (pcase (js-import-get-prop elt 'type)
+                        (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
+                        (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
+                                                      (js-import-get-prop imp 'real-name)))
+                                     imports))))
+              exports))
 
 
 (defun js-import-find-imported-files-in-buffer()
@@ -363,50 +369,12 @@
       (mapc (lambda(name) (insert name) (newline-and-indent)) items))
     (goto-char (point-min))))
 
-
-(defclass js-import-imported-files-source(helm-source-in-buffer)
-  ((init :initform 'js-import-find-imported-files-in-buffer)
-   (action :initform 'js-import-files-actions)
-   (header-name :initform (lambda(name) (with-helm-current-buffer
-                                     (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
-   (persistent-action :initform 'js-import-ff-persistent-action)
-   (mode-line :initform (list "Imports"))
-   (keymap :initform js-import-files-keymap)
-   (get-line :initform #'buffer-substring)))
-
-
-(defclass js-import-dependency-source (helm-source-sync)
-  ((candidates :initform 'js-import-get-all-dependencies)
-   (candidate-number-limit :initform js-import-dependencies-number-limit)
-   (nomark :initform nil)
-   (action :initform 'js-import-dependency-action)
-   (mode-line :initform (list "Dependencies"))
-   (keymap :initform js-import-files-keymap)
-   (persistent-action :initform 'js-import-ff-persistent-action)
-   (group :initform 'js-import)))
-
-
 (defun js-import-alias-init()
   "Init project files."
   (with-current-buffer helm-current-buffer
     (setq js-import-aliases (js-import-get-aliases))
     (unless (and js-import-current-alias (not js-import-relative-transformer))
       (setq js-import-current-alias (car js-import-aliases)))))
-
-(defclass js-import-alias-source (helm-source-sync)
-  ((header-name :initform 'js-import-alias-header-name)
-   (init :initform 'js-import-alias-init)
-   (candidates :initform 'projectile-current-project-files)
-   (candidate-number-limit :initform js-import-files-number-limit)
-   (persistent-action :initform 'js-import-ff-persistent-action)
-   (candidate-transformer :initform 'js-import-project-files-transformer)
-   (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
-   (mode-line :initform (list "File(s)"))
-   (keymap :initform js-import-files-keymap)
-   (action :initform 'js-import-files-actions)
-   (group :initform 'js-import)))
-
-
 
 (defun js-import-relative-one-by-one(path)
   "Transform relative to `projectile-project-root' PATH into relative to the current `buffer-file-name'"
@@ -497,11 +465,34 @@
       (concat path))))
 
 
-(defun js-import-select-file-action(&optional _file)
-  (with-current-buffer helm-current-buffer
-    (mapc
-     'js-import-from-path
-     (helm-marked-candidates))))
+(defun js-import-alias-header-name(project-name)
+  "A function for display header name for project files. Concatenates `js-import-current-alias' and PROJECT-NAME"
+  (with-helm-current-buffer
+    (cond
+     (js-import-current-alias
+      (concat
+       (propertize js-import-current-alias 'face 'font-lock-function-name-face)
+       "\s" project-name "/"
+       (lax-plist-get js-import-alias-map js-import-current-alias)))
+     (js-import-relative-transformer
+      (format "%s" project-name))
+     (t project-name))))
+
+
+(defun js-import-find-file-at-point()
+  "Find a file when cursor are placed under stringified path."
+  (interactive)
+  (when-let ((in-string (js-import-inside-string-q))
+             (path (js-import-get-path-at-point)))
+    (js-import-find-file path)))
+
+(defun js-import-find-file(file)
+  "Transform FILE to real and open it"
+  (find-file (js-import-path-to-real file)))
+
+(defun js-import-find-file-other-window(file)
+  "Transform FILE to real and open it in other window"
+  (find-file-other-window (js-import-path-to-real file)))
 
 (defun js-import-select-subdir(dependency)
   "Action which checks if DEPENDENCY has nested dirs with exports and propose to select it"
@@ -510,21 +501,9 @@
     (let ((module (completing-read "Select: " subfiles nil t dependency)))
       (js-import-from-path module))))
 
-
-(defun js-import-alias-header-name(project-name)
-  "A function for display header name. Concatenates `js-import-current-alias' and PROJECT-NAME"
-  (with-helm-current-buffer helm-current-buffer
-                            (cond
-                             (js-import-current-alias
-                              (concat (propertize js-import-current-alias 'face 'font-lock-function-name-face) "\s" project-name "/" (lax-plist-get js-import-alias-map js-import-current-alias)))
-                             (js-import-relative-transformer
-                              (format "%s" project-name))
-                             (t project-name))))
-
 (defun js-import-ff-persistent-action (candidate)
   "Preview the contents of a file in a temporary buffer."
   (setq candidate (js-import-path-to-real candidate))
-
   (when-let ((str (stringp candidate))
              (buf (get-buffer-create " *js-import persistent*")))
     (cl-flet ((preview (candidate)
@@ -546,91 +525,140 @@
     (helm-attrset 'current-candidate candidate)))
 
 
-(defun js-import-action--delete-import(_cand)
-  (mapc
-   (lambda(candidate)
-     (let ((type (js-import-get-prop candidate 'type))
-           (fullname (js-import-get-prop candidate 'display-name))
-           (display-path (js-import-get-prop candidate 'display-path)))
-       (if (equal type 16)
-           (js-import-delete-whole-import display-path)
-         (js-import-delete-imported-name fullname display-path))))
-   (helm-marked-candidates)))
+(defun js-import-jump-to-item-persistent(item)
+  "Jumps to ITEM in buffer. ITEM must be propertized with prop 'marker"
+  (let ((m (js-import-get-prop item 'marker))
+        (js-buffer "*js-import persistent")
+        (item-path (or (js-import-get-prop item 'real-path) (js-import-path-to-real (js-import-get-prop item 'display-path) default-directory))))
+    (if (and m buffer-file-name (string= item-path buffer-file-name))
+        (progn
+          (goto-char m)
+          (recenter-top-bottom)
+          (helm-highlight-current-line))
+      (cl-flet ((preview (item-path)
+                         (switch-to-buffer-other-window js-buffer)
+                         (setq inhibit-read-only t)
+                         (erase-buffer)
+                         (insert-file-contents item-path)
+                         (let ((buffer-file-name item-path))
+                           (set-auto-mode))
+                         (font-lock-ensure)
+                         (setq inhibit-read-only nil)))
+        (if (and (helm-attr 'previewp)
+                 (string= item-path (helm-attr 'current-candidate)))
+            (progn
+              (kill-buffer js-buffer)
+              (helm-attrset 'previewp nil))
+          (preview item-path)
+          (helm-attrset 'previewp t)
+          (goto-char m)
+          (recenter-top-bottom)
+          (helm-highlight-current-line))))
 
-(defun js-import-action--delete-whole-import(_cand)
-  (mapc
-   (lambda(candidate)
-     (let ((display-path (js-import-get-prop candidate 'display-path)))
-       (js-import-delete-whole-import display-path)))
-   (helm-marked-candidates)))
+    item))
 
-(defun js-import-action--add-to-import(_cand)
-  (mapc
-   (lambda(candidate)
-     (let ((display-path (js-import-get-prop candidate 'display-path)))
-       (js-import-from-path display-path)))
-   (helm-marked-candidates)))
 
-(defun js-import-action--rename-import(_cand)
-  (mapc
-   (lambda(candidate)
-     (let* ((real-name (js-import-get-prop candidate 'real-name))
-            (renamed-name (js-import-get-prop candidate 'renamed-name))
-            (display-path (js-import-get-prop candidate 'display-path))
-            (prompt (if renamed-name (format "Rename %s as (%s) " real-name renamed-name)
-                      (format "Rename %s as " real-name)))
-            (new-name (s-trim (read-string
-                               prompt
-                               (or renamed-name real-name)
-                               nil
-                               renamed-name))))
+(defun js-import-delete-imported-item(candidate)
+  "Remove CANDIDATE from import statement in buffer."
+  (let ((type (js-import-get-prop candidate 'type))
+        (fullname (js-import-get-prop candidate 'display-name))
+        (display-path (js-import-get-prop candidate 'display-path)))
+    (if (equal type 16)
+        (js-import-delete-whole-import display-path)
+      (js-import-delete-imported-name fullname display-path))))
 
-       (when (and new-name
-                  (<= 1 (length new-name))
-                  (not (string= new-name real-name)))
-         (save-excursion
-           (save-restriction
-             (js-import-narrow-to-import display-path)
-             (let ((case-fold-search nil))
-               (if renamed-name
-                   (progn (re-search-forward (concat real-name "[_\s\n]+as[_\s\n]") nil t 1)
-                          (re-search-forward renamed-name nil t 1)
-                          (replace-match new-name)
-                          (widen)
-                          (query-replace-regexp (concat "\\_<" renamed-name "\\_>") new-name))
-                 (progn (re-search-forward (concat real-name "[_\s\n,]+") nil t 1)
-                        (skip-chars-backward "[_\s\n,]")
-                        (insert (concat " as " new-name))
-                        (widen))))
-             )))))
-   (helm-marked-candidates)))
 
-(defun js-import-action--import-candidate(_candidate)
-  (mapc (lambda(c)
-          (save-excursion
-            (let ((type (js-import-get-prop c 'type))
-                  (name (js-import-get-prop c 'display-name))
-                  (renamed-name (js-import-get-prop c 'display-name))
-                  (normalized-path (js-import-get-prop c 'display-path)))
-              (pcase type
-                (1 (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))
-                (4 (js-import-insert-exports nil name normalized-path))
-                (16 (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))))))
-        (helm-marked-candidates)))
+(defun js-import-rename-import(candidate)
+  "Rename imported CANDIDATE in buffer."
+  (let* ((real-name (js-import-get-prop candidate 'real-name))
+         (renamed-name (js-import-get-prop candidate 'renamed-name))
+         (display-path (js-import-get-prop candidate 'display-path))
+         (prompt (if renamed-name (format "Rename %s as (%s) " real-name renamed-name)
+                   (format "Rename %s as " real-name)))
+         (new-name (s-trim (read-string
+                            prompt
+                            (or renamed-name real-name)
+                            nil
+                            renamed-name))))
 
-(defun js-import-action--import-as(_candidate)
-  (mapc (lambda(c) (let* ((type (js-import-get-prop c 'type))
-                          (normalized-path (js-import-get-prop c 'display-path))
-                          (real-name (js-import-get-prop c 'real-name))
-                          (renamed-name (s-trim (read-string
-                                                 (format "import %s as " real-name)
-                                                 nil nil)))
-                          (full-name (concat real-name " as " renamed-name)))
-                     (pcase type
-                       (1 (js-import-insert-exports renamed-name nil normalized-path))
-                       (4 (js-import-insert-exports nil full-name normalized-path))
-                       (16 (js-import-insert-exports full-name nil normalized-path)))))
-        (helm-marked-candidates)))
+    (when (and new-name
+               (<= 1 (length new-name))
+               (not (string= new-name real-name)))
+      (save-excursion
+        (save-restriction
+          (js-import-narrow-to-import display-path)
+          (let ((case-fold-search nil))
+            (if renamed-name
+                (progn (re-search-forward (concat real-name "[_\s\n]+as[_\s\n]") nil t 1)
+                       (re-search-forward renamed-name nil t 1)
+                       (replace-match new-name)
+                       (widen)
+                       (query-replace-regexp (concat "\\_<" renamed-name "\\_>") new-name))
+              (progn (re-search-forward (concat real-name "[_\s\n,]+") nil t 1)
+                     (skip-chars-backward "[_\s\n,]")
+                     (insert (concat " as " new-name))
+                     (widen))))
+          )))))
+
+(defun js-import-insert-import(candidate)
+  "Inserts CANDIDATE into existing or new import statement."
+  (save-excursion
+    (let ((type (js-import-get-prop candidate 'type))
+          (name (js-import-get-prop candidate 'display-name))
+          (renamed-name (js-import-get-prop candidate 'display-name))
+          (normalized-path (js-import-get-prop candidate 'display-path)))
+      (pcase type
+        (1 (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))
+        (4 (js-import-insert-exports nil name normalized-path))
+        (16 (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))))))
+
+(defun js-import-insert-import-as(candidate)
+  "Inserts and renames CANDIDATE into existing or new import statement."
+  (let* ((type (js-import-get-prop candidate 'type))
+         (normalized-path (js-import-get-prop candidate 'display-path))
+         (real-name (js-import-get-prop candidate 'real-name))
+         (renamed-name (s-trim (read-string
+                                (format "import %s as " real-name)
+                                nil nil)))
+         (full-name (concat real-name " as " renamed-name)))
+    (pcase type
+      (1 (js-import-insert-exports renamed-name nil normalized-path))
+      (4 (js-import-insert-exports nil full-name normalized-path))
+      (16 (js-import-insert-exports full-name nil normalized-path)))))
+
+(defun js-import-jump-to-item-other-window(item)
+  "Jumps to ITEM in buffer. ITEM must be propertized with prop 'marker"
+  (when-let ((m (js-import-get-prop item 'marker))
+             (item-path (or (js-import-get-prop item 'real-path) (js-import-path-to-real (js-import-get-prop item 'display-path)))))
+    (unless (and buffer-file-name (string= item-path buffer-file-name))
+      (find-file-other-window item-path))
+    (progn
+      (goto-char m)
+      (recenter-top-bottom)
+      (helm-highlight-current-line))
+    item))
+
+
+(defun js-import-init-exports-candidates()
+  "Extracts all exports from file specified in buffer local variable 'js-import-current-export-path"
+  (with-current-buffer helm-current-buffer
+    (when-let* ((path js-import-current-export-real-path)
+                (syntax (syntax-table))
+                (exist (f-exists? path)))
+
+      (setq js-import-export-candidates-in-path (with-temp-buffer
+                                                  (erase-buffer)
+                                                  (with-syntax-table syntax
+                                                    (js-import-insert-buffer-or-file path)
+                                                    (js-import-extracts-exports path))))
+      js-import-export-candidates-in-path)))
+
+
+(defun js-import-insert-buffer-or-file(path)
+  "A function inserts content either from buffer or file depending whether buffer with the given PATH exists. In both cases the content will be copied without properties"
+  (if (get-file-buffer path)
+      (insert-buffer-substring-no-properties (get-file-buffer path))
+    (insert-file-contents path)))
 
 
 (defun js-import-get-aliases ()
@@ -642,6 +670,17 @@
       (setq pl  (cddr pl)))
     (nreverse vals)))
 
+(defun js-import-path-to-real(path &optional dir)
+  (when (stringp path)
+    (setq path (js-import-strip-text-props path))
+    (cond ((and (f-ext? path) (f-exists? path)
+                (not (js-import-is-relative? path)))
+           path)
+          ((js-import-is-relative? path)
+           (js-import-path-to-relative path dir))
+          ((js-import-is-dependency? path)
+           (js-import-maybe-expand-dependency path))
+          (t (js-import-alias-path-to-real path)))))
 
 (defun js-import-alias-path-to-real(path)
   (let ((aliases (js-import-get-aliases))
@@ -669,18 +708,6 @@
           (setq real-path found-path)
           (setq aliases nil))))
     real-path))
-
-(defun js-import-path-to-real(path &optional dir)
-  (when (stringp path)
-    (setq path (js-import-strip-text-props path))
-    (cond ((and (f-ext? path) (f-exists? path)
-                (not (js-import-is-relative? path)))
-           path)
-          ((js-import-is-relative? path)
-           (js-import-path-to-relative path dir))
-          ((js-import-is-dependency? path)
-           (js-import-maybe-expand-dependency path))
-          (t (js-import-alias-path-to-real path)))))
 
 
 (defun js-import-real-path-to-alias(real-path alias)
@@ -720,6 +747,7 @@
       (insert " " names)
     (insert ", " names)))
 
+
 (defun js-import-add-to-current-imports (default-name names)
   (search-backward "import")
   (forward-word)
@@ -751,6 +779,42 @@
           (js-import-add-to-brackets names)
         (insert "{" names "}")))))
 
+(cl-defun js-import-make-index-item (candidate
+                                     &key
+                                     display-path
+                                     full-name
+                                     p1
+                                     p2
+                                     display-name
+                                     display-part
+                                     type
+                                     export-type
+                                     import-type
+                                     var-type
+                                     real-path
+                                     renamed-name
+                                     real-name
+                                     marker)
+  "Utility function to propertize js symbol. See also
+`js-import-propertize'."
+
+  (setq candidate (js-import-strip-text-props candidate))
+  (js-import-propertize candidate
+                        'real-name real-name
+                        'full-name full-name
+                        'p1 p1
+                        'p2 p2
+                        'renamed-name renamed-name
+                        'display-name (or display-name candidate)
+                        'display-path display-path
+                        'real-path real-path
+                        'type type
+                        'display-part display-part
+                        'export-type export-type
+                        'import-type import-type
+                        'var-type var-type
+                        'marker marker))
+
 (defun js-import-extracts-exports(&optional real-path)
   "Extracts all available exports. REAL-PATH used for resolving relative nested exports - `export * from ...`'"
   (interactive)
@@ -770,7 +834,7 @@
                    (re-search-forward "as[ \s\t\n]+\\([[:word:]]\\)" nil t 1)
 
                    (let ((real-name (js-import-which-word)))
-                     (push (js-import-make-index-item real-name
+                     (push (js-import-make-index-item (format "* as " real-name)
                                                       :type 16
                                                       :export-type 16
                                                       :real-name real-name
@@ -786,18 +850,18 @@
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                              (real-name (car (last parts)))
-                                              (type (if (string= "default" real-name) 1 4)))
-                                         (push (js-import-make-index-item real-name
-                                                                          :type type
-                                                                          :export-type type
-                                                                          :display-part it
-                                                                          :var-type "export"
-                                                                          :real-name real-name
-                                                                          :real-path real-path
-                                                                          :marker (point)
-                                                                          :display-path path)
-                                               exports)))
+                                         (real-name (car (last parts)))
+                                         (type (if (string= "default" real-name) 1 4)))
+                                    (push (js-import-make-index-item real-name
+                                                                     :type type
+                                                                     :export-type type
+                                                                     :display-part it
+                                                                     :var-type "export"
+                                                                     :real-name real-name
+                                                                     :real-path real-path
+                                                                     :marker (point)
+                                                                     :display-path path)
+                                          exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))
@@ -932,114 +996,6 @@
         (forward-line 1))
       symbols)))
 
-
-(defun js-import-jump-to-item-persistent(item)
-  "Jumps to ITEM in buffer. ITEM must be propertized with prop 'marker"
-  (let ((m (js-import-get-prop item 'marker))
-        (js-buffer "*js-import persistent")
-        (item-path (or (js-import-get-prop item 'real-path) (js-import-path-to-real (js-import-get-prop item 'display-path) default-directory))))
-
-
-
-    (if (and m buffer-file-name (string= item-path buffer-file-name))
-        (progn
-          (goto-char m)
-          (recenter-top-bottom)
-          (helm-highlight-current-line))
-      (cl-flet ((preview (item-path)
-                         (switch-to-buffer-other-window js-buffer)
-                         (setq inhibit-read-only t)
-                         (erase-buffer)
-                         (insert-file-contents item-path)
-                         (let ((buffer-file-name item-path))
-                           (set-auto-mode))
-                         (font-lock-ensure)
-                         (setq inhibit-read-only nil)))
-        (if (and (helm-attr 'previewp)
-                 (string= item-path (helm-attr 'current-candidate)))
-            (progn
-              (kill-buffer js-buffer)
-              (helm-attrset 'previewp nil))
-          (preview item-path)
-          (helm-attrset 'previewp t)
-          (goto-char m)
-          (recenter-top-bottom)
-          (helm-highlight-current-line))))
-
-    item))
-
-(defun js-import-jump-to-item-other-window(item)
-  "Jumps to ITEM in buffer. ITEM must be propertized with prop 'marker"
-  (when-let ((m (js-import-get-prop item 'marker))
-             (item-path (or (js-import-get-prop item 'real-path) (js-import-path-to-real (js-import-get-prop item 'display-path)))))
-    (unless (and buffer-file-name (string= item-path buffer-file-name))
-      (find-file-other-window item-path))
-    (progn
-      (goto-char m)
-      (recenter-top-bottom)
-      (helm-highlight-current-line))
-    item))
-
-
-(defun js-import-init-exports-candidates()
-  "Extracts all exports from file specified in buffer local variable 'js-import-current-export-path"
-  (with-current-buffer helm-current-buffer
-    (when-let* ((path js-import-current-export-real-path)
-                (syntax (syntax-table))
-                (exist (f-exists? path)))
-
-      (setq js-import-export-candidates-in-path (with-temp-buffer
-                                                  (erase-buffer)
-                                                  (with-syntax-table syntax
-                                                    (js-import-insert-buffer-or-file path)
-                                                    (js-import-extracts-exports path))))
-
-
-      js-import-export-candidates-in-path)))
-
-
-(defun js-import-insert-buffer-or-file(path)
-  "A function inserts content either from buffer or file depending whether buffer with the given PATH exists. In both cases the content will be copied without properties"
-  (if (get-file-buffer path)
-      (insert-buffer-substring-no-properties (get-file-buffer path))
-    (insert-file-contents path)))
-
-
-(cl-defun js-import-make-index-item (candidate
-                                     &key
-                                     display-path
-                                     full-name
-                                     p1
-                                     p2
-                                     display-name
-                                     display-part
-                                     type
-                                     export-type
-                                     import-type
-                                     var-type
-                                     real-path
-                                     renamed-name
-                                     real-name
-                                     marker)
-  "Utility function to propertize js symbol. See also
-`js-import-propertize'."
-
-  (setq candidate (js-import-strip-text-props candidate))
-  (js-import-propertize candidate
-                        'real-name real-name
-                        'full-name full-name
-                        'p1 p1
-                        'p2 p2
-                        'renamed-name renamed-name
-                        'display-name (or display-name candidate)
-                        'display-path display-path
-                        'real-path real-path
-                        'type type
-                        'display-part display-part
-                        'export-type export-type
-                        'import-type import-type
-                        'var-type var-type
-                        'marker marker))
 
 (provide 'js-import)
 ;;; js-import.el ends here

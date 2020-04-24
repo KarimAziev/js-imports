@@ -46,6 +46,23 @@ the arguments (right-to-left)."
 (defmacro js-import-compose (args &rest funcs)
   `(funcall (-compose ,@funcs) ,args))
 
+(defmacro js-import-call-with-marked-candidates-prop (func prop)
+  "Iter helm-marked-candidates, pluck PROP from every candidate and call FUNC with value of PROP."
+  (declare (indent 2) (debug t))
+  `(lambda(_cand) (mapc
+              (lambda(candidate)
+                (funcall ,func (js-import-get-prop candidate ,prop)))
+              (helm-marked-candidates))))
+
+(defmacro js-import-filter-plist(prop-symbol test-form plist)
+  `(seq-filter (lambda(str) (let ((it (js-import-get-prop str ,prop-symbol)))
+                         ,test-form))
+               ,plist))
+
+(defmacro js-import-with-marked-candidates (func)
+  (declare (indent 2) (debug t))
+  `(lambda(&optional _candidate) (mapc ,func (helm-marked-candidates))))
+
 (defun js-import-cut-names(str reg)
   (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t)))))
 
@@ -304,8 +321,8 @@ ITEM is not string."
 
 (defun js-import-find-index-files(path)
   (f-files path (lambda(file) (or (and (js-import-is-ext-enabled? file)
-                                       (-contains? (list "index.d" "index") (f-base file)))
-                                  (equal "package.json" (f-filename file))))))
+                                  (-contains? (list "index.d" "index") (f-base file)))
+                             (equal "package.json" (f-filename file))))))
 
 
 (defun js-import-find-index-files-in-path(path)
@@ -457,6 +474,10 @@ Result depends on syntax table's string quote character."
         (setq new-list (cons (car list) new-list)))
       (setq list (cdr list)))
     (nreverse new-list)))
+
+(defun js-import-filter-by-prop(value prop-symbol plist)
+  "Filter PLIST by diffing "
+  (seq-filter (lambda(str) (string= value (js-import-get-prop str prop-symbol))) plist))
 
 (provide 'js-import-utils)
 ;;; js-import-utils.el ends here
