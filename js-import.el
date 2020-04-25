@@ -54,12 +54,12 @@
   :type '(choice (const :tag "Double" "\"")
                  (const :tag "Single" "\\'")))
 
-(defcustom js-import-files-number-limit 10
+(defcustom js-import-files-number-limit 30
   "The limit for number of project files displayed. Override `helm-candidate-number-limit'"
   :group 'js-import
   :type 'number)
 
-(defcustom js-import-dependencies-number-limit 50
+(defcustom js-import-dependencies-number-limit 200
   "The limit for number of dependencies files displayed. Override `helm-candidate-number-limit'"
   :group 'js-import
   :type 'number)
@@ -79,6 +79,11 @@
 
 (defcustom js-import-node-modules-dir "node_modules"
   "Node modules path"
+  :group 'js-import
+  :type 'string)
+
+(defcustom js-import-buffer "*js import*"
+  "Name of js-import buffer"
   :group 'js-import
   :type 'string)
 
@@ -121,6 +126,25 @@
   "Keymap for `js-import-alias-source' source.")
 
 
+(defmacro js-import-exit-and-run (func)
+  "Exit and run FUNC"
+  (declare (indent 2) (debug t))
+  `(lambda ()
+     (interactive)
+     (helm-exit-and-execute-action ,func)))
+
+
+(defvar js-import-imported-symbols-keymap
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map helm-map)
+    (define-key map (kbd "M-d") 'js-import-delete-persistent)
+    map)
+
+  "Keymap for symdol sources.")
+
+(put 'js-import-imported-symbols-keymap 'helm-only t)
+
+
 (defvar js-import-current-alias nil)
 
 (make-variable-buffer-local 'js-import-current-alias)
@@ -129,7 +153,7 @@
 (defvar js-import-relative-transformer nil)
 (make-variable-buffer-local 'js-import-relative-transformer)
 
-(defvar js-import-dependencies-cache-plist '())
+(defvar js-import-dependencies-cache-plist nil)
 (defvar js-import-dependency-source-name "node modules")
 (defvar js-import-buffer-source-name "imports in buffer")
 
@@ -144,6 +168,7 @@
 (make-variable-buffer-local 'js-import-cached-imports-in-buffer)
 (defvar js-import-cached-imports-in-buffer-tick nil)
 (make-variable-buffer-local 'js-import-cached-imports-in-buffer-tick)
+
 
 (defvar js-import-symbols-in-buffer nil)
 (make-variable-buffer-local 'js-import-symbols-in-buffer)
@@ -172,7 +197,7 @@
    "Go" 'js-import-jump-to-item-in-buffer
    "Rename" (js-import-with-marked-candidates 'js-import-rename-import)
    "Add more imports" (js-import-call-with-marked-candidates-prop 'js-import-from-path 'display-path)
-   "Delete" (js-import-with-marked-candidates 'js-import-delete-imported-item)
+   "Delete" 'js-import-delete-imported-item
    "Delete whole import" (js-import-call-with-marked-candidates-prop 'js-import-delete-whole-import 'display-path))
   "Actions for editing imported symbols in buffer")
 
@@ -181,18 +206,20 @@
    "Import" (js-import-with-marked-candidates 'js-import-insert-import)
    "Import as " (js-import-with-marked-candidates 'js-import-insert-import-as)
    "Go" 'js-import-jump-to-item-other-window)
-  "Actions for generating and inserting imports statements for exported symbols from some path into current buffer imports")
+  "Actions for generating and inserting imports statements")
+
 
 ;;;###autoload
 (defun js-import ()
   "Init imports from your current project"
   (interactive)
+
   (save-excursion
     (helm
      :sources (append (list (helm-make-source js-import-buffer-source-name 'js-import-imported-files-source)
                             (helm-make-source (or (projectile-project-name) (projectile-project-root)) 'js-import-alias-source)
                             (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))
-     :buffer "js import"
+     :buffer js-import-buffer
      :preselect (or (js-import-get-path-at-point)
                     js-import-last-export-path
                     "")
@@ -241,7 +268,7 @@
   ((init :initform 'js-import-find-imported-files-in-buffer)
    (action :initform 'js-import-files-actions)
    (header-name :initform (lambda(name) (with-helm-current-buffer
-                                     (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
+                                          (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
    (persistent-action :initform 'js-import-ff-persistent-action)
    (mode-line :initform (list "Imports"))
    (keymap :initform js-import-files-keymap)
@@ -264,7 +291,6 @@
 (defclass js-import-dependency-source (helm-source-sync)
   ((candidates :initform 'js-import-get-all-dependencies)
    (candidate-number-limit :initform js-import-dependencies-number-limit)
-   (nomark :initform nil)
    (action :initform 'js-import-dependency-action)
    (mode-line :initform (list "Dependencies"))
    (keymap :initform js-import-files-keymap)
@@ -275,16 +301,17 @@
 (defclass js-import-buffer-imports-source(helm-source-sync)
   ((candidates :initform 'js-import-imported-candidates-in-buffer)
    (candidate-transformer :initform (lambda(candidates) (with-helm-current-buffer
-                                                     (if js-import-current-export-path
-                                                         (js-import-filter-plist 'display-path
-                                                                                 (equal js-import-current-export-path it)
-                                                                                 candidates)
-                                                       candidates))))
+                                                          (if js-import-current-export-path
+                                                              (js-import-filter-plist 'display-path
+                                                                                      (equal js-import-current-export-path it)
+                                                                                      candidates)
+                                                            candidates))))
    (marked-with-props :initform 'withprop)
    (persistent-help :initform "Show symbol")
    (display-to-real :initform 'js-import-display-to-real-imports)
+   (keymap :initform js-import-imported-symbols-keymap)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
-                                       (js-import-display-to-real-imports c))))
+                                            (js-import-display-to-real-imports c))))
    (action :initform 'js-import-imported-items-actions)))
 
 
@@ -293,7 +320,7 @@
    (cleanup :initform 'js-import-exports-cleanup)
    (marked-with-props :initform 'withprop)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-persistent
-                                       (js-import-display-to-real-exports c))))
+                                            (js-import-display-to-real-exports c))))
    (action :initform 'js-import-export-items-actions)
    (candidate-transformer :initform 'js-import-exported-candidates-transformer)))
 
@@ -337,6 +364,7 @@
           (setq js-import-cached-imports-in-buffer (save-excursion (with-syntax-table (syntax-table) (js-import-extracts-imports))))
           js-import-cached-imports-in-buffer)))))
 
+
 (defun js-import-exported-candidates-transformer(candidates)
   "Removes duplicates and imported members from from CANDIDATES plist."
   (with-current-buffer helm-current-buffer
@@ -352,10 +380,10 @@
 (defun js-import-filter-exports(exports imports)
   "Returns filtered EXPORTS plist with only those members that are not in IMPORTS plist. For named exports (with property `type' 4) the test for equality is done by `real-name' and for default export by `type'."
   (seq-remove (lambda(elt) (pcase (js-import-get-prop elt 'type)
-                        (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
-                        (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
-                                                      (js-import-get-prop imp 'real-name)))
-                                     imports))))
+                             (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
+                             (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
+                                                                (js-import-get-prop imp 'real-name)))
+                                          imports))))
               exports))
 
 
@@ -557,6 +585,21 @@
 
     item))
 
+
+
+(defun js-import-delete-persistent (&optional cand)
+  "Bind a new persistent action 'foo-action to foo function.
+foo function is an action function called with one arg candidate."
+  (interactive)
+  (with-helm-alive-p
+    ;; never split means to not split the helm window when executing
+    ;; this persistent action. If your source is using full frame you
+    ;; will want your helm buffer to split to display a buffer for the
+    ;; persistent action (if it needs one to display something).
+    (helm-attrset 'js-import-delete-imported-item '(js-import-delete-imported-item . never-split))
+    (helm-execute-persistent-action 'js-import-delete-imported-item)
+    (js-import-init-exports-candidates)
+    (helm-refresh)))
 
 (defun js-import-delete-imported-item(candidate)
   "Remove CANDIDATE from import statement in buffer."
@@ -850,18 +893,18 @@
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                         (real-name (car (last parts)))
-                                         (type (if (string= "default" real-name) 1 4)))
-                                    (push (js-import-make-index-item real-name
-                                                                     :type type
-                                                                     :export-type type
-                                                                     :display-part it
-                                                                     :var-type "export"
-                                                                     :real-name real-name
-                                                                     :real-path real-path
-                                                                     :marker (point)
-                                                                     :display-path path)
-                                          exports)))
+                                              (real-name (car (last parts)))
+                                              (type (if (string= "default" real-name) 1 4)))
+                                         (push (js-import-make-index-item real-name
+                                                                          :type type
+                                                                          :export-type type
+                                                                          :display-part it
+                                                                          :var-type "export"
+                                                                          :real-name real-name
+                                                                          :real-path real-path
+                                                                          :marker (point)
+                                                                          :display-path path)
+                                               exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))
