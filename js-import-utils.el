@@ -386,8 +386,14 @@ ITEM is not string."
 (defun js-import-get-path-at-point()
   (interactive)
   (save-excursion
-    (when (looking-at-p "import\\|export[ \s\t\n]")
-      (search-forward-regexp "[ \s\t\n]+from[ \s\t\n]+['\"]"))
+    (when-let* ((word (js-import-which-word))
+                (meta-word (or (string= "import" word)
+                               (string= "export" word)
+                               (string= "from" word))))
+      (if (string= word "from")
+          (search-forward-regexp "['\"]" nil t 1)
+        (search-forward-regexp "[ \s\t\n]+from[ \s\t\n]+['\"]" nil t 1)))
+
     (when (js-import-inside-string-q)
       (let* (($inputStr (if (use-region-p)
                             (buffer-substring-no-properties (region-beginning) (region-end))
@@ -402,9 +408,7 @@ ITEM is not string."
                             (goto-char $p0)
                             (buffer-substring-no-properties $p1 $p2)))))
 
-        $inputStr)
-      )
-    ))
+        $inputStr))))
 
 (defun js-import-inside-string-q ()
   "Returns non-nil if inside string, else nil.

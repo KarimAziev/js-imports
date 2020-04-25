@@ -54,7 +54,7 @@
   :type '(choice (const :tag "Double" "\"")
                  (const :tag "Single" "\\'")))
 
-(defcustom js-import-files-number-limit 30
+(defcustom js-import-files-number-limit 20
   "The limit for number of project files displayed. Override `helm-candidate-number-limit'"
   :group 'js-import
   :type 'number)
@@ -155,7 +155,7 @@
 
 (defvar js-import-dependencies-cache-plist nil)
 (defvar js-import-dependency-source-name "node modules")
-(defvar js-import-buffer-source-name "imports in buffer")
+(defvar js-import-buffer-source-name "imported in buffer")
 
 (defvar js-import-current-export-path nil)
 (make-variable-buffer-local 'js-import-current-export-path)
@@ -168,7 +168,6 @@
 (make-variable-buffer-local 'js-import-cached-imports-in-buffer)
 (defvar js-import-cached-imports-in-buffer-tick nil)
 (make-variable-buffer-local 'js-import-cached-imports-in-buffer-tick)
-
 
 (defvar js-import-symbols-in-buffer nil)
 (make-variable-buffer-local 'js-import-symbols-in-buffer)
@@ -208,17 +207,33 @@
    "Go" 'js-import-jump-to-item-other-window)
   "Actions for generating and inserting imports statements")
 
+(defvar js-import-node-modules-source nil)
+(defvar js-import-project-files-source nil)
+(defvar js-import-buffer-files-source nil)
+
+(make-variable-buffer-local 'js-import-buffer-files-source)
 
 ;;;###autoload
 (defun js-import ()
   "Init imports from your current project"
   (interactive)
 
+  (unless js-import-buffer-files-source (setq js-import-buffer-files-source
+                                              (helm-make-source js-import-buffer-source-name 'js-import-imported-files-source)))
+
+  (if js-import-project-files-source
+      (helm-attrset 'candidate-number-limit js-import-files-number-limit js-import-project-files-source)
+    (setq js-import-project-files-source
+          (helm-make-source "js files" 'js-import-alias-source)))
+
+  (unless js-import-node-modules-source (setq js-import-node-modules-source
+                                              (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))
+
   (save-excursion
     (helm
-     :sources (append (list (helm-make-source js-import-buffer-source-name 'js-import-imported-files-source)
-                            (helm-make-source (or (projectile-project-name) (projectile-project-root)) 'js-import-alias-source)
-                            (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))
+     :sources '(js-import-buffer-files-source
+                js-import-project-files-source
+                js-import-node-modules-source)
      :buffer js-import-buffer
      :preselect (or (js-import-get-path-at-point)
                     js-import-last-export-path
@@ -228,20 +243,33 @@
 
 ;;;###autoload
 (defun js-import-alias ()
-  "Import from your current project with alias prefix"
+  "Import from project files without dependencies."
   (interactive)
+  (if js-import-project-files-source
+      (helm-attrset 'candidate-number-limit 150 js-import-project-files-source)
+    (setq js-import-project-files-source
+          (helm-make-source "js files" 'js-import-alias-source)))
+
+
   (save-excursion
     (helm
-     :sources (helm-make-source (or (projectile-project-name) (projectile-project-root)) 'js-import-alias-source))))
+     :sources 'js-import-project-files-source
+     :buffer js-import-buffer
+     :preselect (or (js-import-get-path-at-point)
+                    js-import-last-export-path
+                    "")
+     :prompt "Select a file: ")))
 
 
 ;;;###autoload
 (defun js-import-dependency (&optional dependency)
   "Import from node modules"
   (interactive)
+  (unless js-import-node-modules-source (setq js-import-node-modules-source
+                                              (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))
   (save-excursion
     (when-let ((module (or dependency
-                           (helm :sources (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))))
+                           (helm :sources js-import-node-modules-source))))
       (js-import-from-path module))))
 
 ;;;###autoload
@@ -267,8 +295,6 @@
 (defclass js-import-imported-files-source(helm-source-in-buffer)
   ((init :initform 'js-import-find-imported-files-in-buffer)
    (action :initform 'js-import-files-actions)
-   (header-name :initform (lambda(name) (with-helm-current-buffer
-                                          (concat "imports in " (file-name-nondirectory (buffer-file-name))))))
    (persistent-action :initform 'js-import-ff-persistent-action)
    (mode-line :initform (list "Imports"))
    (keymap :initform js-import-files-keymap)
@@ -279,7 +305,6 @@
   ((header-name :initform 'js-import-alias-header-name)
    (init :initform 'js-import-alias-init)
    (candidates :initform 'projectile-current-project-files)
-   (candidate-number-limit :initform js-import-files-number-limit)
    (persistent-action :initform 'js-import-ff-persistent-action)
    (candidate-transformer :initform 'js-import-project-files-transformer)
    (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
@@ -301,17 +326,17 @@
 (defclass js-import-buffer-imports-source(helm-source-sync)
   ((candidates :initform 'js-import-imported-candidates-in-buffer)
    (candidate-transformer :initform (lambda(candidates) (with-helm-current-buffer
-                                                          (if js-import-current-export-path
-                                                              (js-import-filter-plist 'display-path
-                                                                                      (equal js-import-current-export-path it)
-                                                                                      candidates)
-                                                            candidates))))
+                                                     (if js-import-current-export-path
+                                                         (js-import-filter-plist 'display-path
+                                                                                 (equal js-import-current-export-path it)
+                                                                                 candidates)
+                                                       candidates))))
    (marked-with-props :initform 'withprop)
    (persistent-help :initform "Show symbol")
    (display-to-real :initform 'js-import-display-to-real-imports)
    (keymap :initform js-import-imported-symbols-keymap)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
-                                            (js-import-display-to-real-imports c))))
+                                       (js-import-display-to-real-imports c))))
    (action :initform 'js-import-imported-items-actions)))
 
 
@@ -320,7 +345,7 @@
    (cleanup :initform 'js-import-exports-cleanup)
    (marked-with-props :initform 'withprop)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-persistent
-                                            (js-import-display-to-real-exports c))))
+                                       (js-import-display-to-real-exports c))))
    (action :initform 'js-import-export-items-actions)
    (candidate-transformer :initform 'js-import-exported-candidates-transformer)))
 
@@ -493,25 +518,24 @@
       (concat path))))
 
 
-(defun js-import-alias-header-name(project-name)
+(defun js-import-alias-header-name(_name)
   "A function for display header name for project files. Concatenates `js-import-current-alias' and PROJECT-NAME"
   (with-helm-current-buffer
     (cond
      (js-import-current-alias
       (concat
        (propertize js-import-current-alias 'face 'font-lock-function-name-face)
-       "\s" project-name "/"
+       "\s" (projectile-project-name) "/"
        (lax-plist-get js-import-alias-map js-import-current-alias)))
      (js-import-relative-transformer
-      (format "%s" project-name))
-     (t project-name))))
+      (format "%s" (projectile-project-name)))
+     (t (projectile-project-name)))))
 
 
 (defun js-import-find-file-at-point()
   "Find a file when cursor are placed under stringified path."
   (interactive)
-  (when-let ((in-string (js-import-inside-string-q))
-             (path (js-import-get-path-at-point)))
+  (when-let ((path (js-import-get-path-at-point)))
     (js-import-find-file path)))
 
 (defun js-import-find-file(file)
@@ -877,7 +901,7 @@ foo function is an action function called with one arg candidate."
                    (re-search-forward "as[ \s\t\n]+\\([[:word:]]\\)" nil t 1)
 
                    (let ((real-name (js-import-which-word)))
-                     (push (js-import-make-index-item (format "* as " real-name)
+                     (push (js-import-make-index-item (format "* as %s" real-name)
                                                       :type 16
                                                       :export-type 16
                                                       :real-name real-name
@@ -893,18 +917,18 @@ foo function is an action function called with one arg candidate."
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                              (real-name (car (last parts)))
-                                              (type (if (string= "default" real-name) 1 4)))
-                                         (push (js-import-make-index-item real-name
-                                                                          :type type
-                                                                          :export-type type
-                                                                          :display-part it
-                                                                          :var-type "export"
-                                                                          :real-name real-name
-                                                                          :real-path real-path
-                                                                          :marker (point)
-                                                                          :display-path path)
-                                               exports)))
+                                         (real-name (car (last parts)))
+                                         (type (if (string= "default" real-name) 1 4)))
+                                    (push (js-import-make-index-item real-name
+                                                                     :type type
+                                                                     :export-type type
+                                                                     :display-part it
+                                                                     :var-type "export"
+                                                                     :real-name real-name
+                                                                     :real-path real-path
+                                                                     :marker (point)
+                                                                     :display-path path)
+                                          exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))
@@ -937,7 +961,6 @@ foo function is an action function called with one arg candidate."
                                                       :type 4
                                                       :real-name real-name
                                                       :export-type 4
-                                                      :display-part (format "export %s" var-type)
                                                       :real-path real-path
                                                       :var-type var-type
                                                       :marker (point)
