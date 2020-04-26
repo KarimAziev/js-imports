@@ -276,20 +276,8 @@ ITEM is not string."
   (when-let ((f-exists-p (js-import-expand-node-modules display-path))
              (files (f-files (js-import-expand-node-modules display-path) (lambda(path) (and (js-import-is-module-interface path)
                                                                                         (not (js-import-is-index-file? path)))))))
-    (--map (f-join display-path (f-filename (js-import-remove-ext it)))
-           files)))
+    (mapcar (lambda(it) (f-join display-path (f-filename (js-import-remove-ext it)))) files)))
 
-(defun js-import-get-all-dependencies(&optional $package-json-path)
-  "Return dependencies, devDependencies and peerDependencies from package-json-path"
-  (let ((sections '("dependencies" "peerDependencies" "devDependencies")))
-    (--reduce-r-from (append (js-import-get-dependencies (or $package-json-path (js-import-get-package-json-path)) it) acc) '() sections)))
-
-
-
-(defun js-import-get-dependencies (&optional $package-json-path $section)
-  "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
-  (when-let ((dependencies-hash (js-import-read-package-json-section $package-json-path $section)))
-    (hash-table-keys dependencies-hash)))
 
 (defun js-import-read-package-json-section (&optional $package-json-path $section)
   "Return dependencies list from package-json-path in dependencies, devDependencies and peerDependencies sections."
@@ -303,36 +291,15 @@ ITEM is not string."
       dependencies-hash)))
 
 
-
-(defun js-import-sort-by-ext(files)
-  (--sort (let ((aExt (f-ext it))
-                (bName (f-filename other))
-                (bExt (f-ext other)))
-            (cond
-             ((and (equal aExt "ts") (not (equal bName "index.d.ts")))
-              aExt)
-             ((and (equal aExt "js") (not (equal bExt "ts")))
-              aExt)))
-          files))
-
-(defun js-import-find-index-files(path)
-  (f-files path (lambda(file) (or (and (js-import-is-ext-enabled? file)
-                                  (-contains? (list "index.d" "index") (f-base file)))
-                             (equal "package.json" (f-filename file))))))
-
-
-(defun js-import-try-ext(path &optional dir)
-  (let ((extensions '("d.ts" "ts" "js"))
-        (ext)
-        (real-path))
+(defun js-import-try-ext(path &optional dir extensions)
+  (unless extensions (setq extensions '("d.ts" "ts" "js")))
+  (let (ext real-path)
     (while extensions
       (setq ext (pop extensions))
       (setq real-path (if dir (f-expand (f-swap-ext path ext) dir) (f-swap-ext path ext)))
       (if (f-exists? real-path)
           (setq extensions nil)
         (setq real-path nil)))
-
-    (message "JS-IMPORT-TRY-EXT :real-path==%s \n"  real-path)
     real-path))
 
 (defun js-import-try-json-sections(path sections)
@@ -370,9 +337,7 @@ ITEM is not string."
   (let ((real-path (or $real-path (js-import-expand-node-modules display-path))))
     (unless (f-ext real-path)
       (setq real-path (js-import-try-find-real-path real-path))
-      (message "JS-IMPORT-MAYBE-EXPAND-DEPENDENCY :real-path==%s \n"  real-path)
-      real-path
-      )))
+      real-path)))
 
 
 (defun js-import-path-to-relative(path &optional dir)
@@ -435,7 +400,6 @@ ITEM is not string."
 Result depends on syntax table's string quote character."
   (interactive)
   (let ((result (nth 3 (syntax-ppss))))
-
     result))
 
 (defun js-import-inside-comment? ()
