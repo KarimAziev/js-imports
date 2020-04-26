@@ -274,7 +274,8 @@ ITEM is not string."
 
 (defun js-import-find-interfaces(display-path)
   (when-let ((f-exists-p (js-import-expand-node-modules display-path))
-             (files (f-files (js-import-expand-node-modules display-path) (lambda(path) (and (js-import-is-module-interface path) (not (js-import-is-index-file? path)))))))
+             (files (f-files (js-import-expand-node-modules display-path) (lambda(path) (and (js-import-is-module-interface path)
+                                                                                        (not (js-import-is-index-file? path)))))))
     (--map (f-join display-path (f-filename (js-import-remove-ext it)))
            files)))
 
@@ -302,11 +303,6 @@ ITEM is not string."
       dependencies-hash)))
 
 
-(defun js-import-get-dependency-dir(display-path)
-  (let ((parts (s-slice-at "/[^/]+$" display-path)))
-    (when-let (lastpath (nth 1 parts))
-      (setcdr parts (s-replace-regexp "^/" "" lastpath)))
-    parts))
 
 (defun js-import-sort-by-ext(files)
   (--sort (let ((aExt (f-ext it))
@@ -325,40 +321,64 @@ ITEM is not string."
                              (equal "package.json" (f-filename file))))))
 
 
-(defun js-import-find-index-files-in-path(path)
-  (cond
-   ((js-import-is-dir-and-exist path)
-    (funcall (-compose 'js-import-sort-by-ext 'js-import-find-index-files) path))
-   ((js-import-is-package-json path)
-    (when-let ((dir (f-dirname path))
-               (module (js-import-read-package-json-section path "module")))
-      (unless (f-ext? module)
-        (setq module (f-swap-ext module "js")))
-      (list (f-expand module dir))))
-   (t nil)))
+(defun js-import-try-ext(path &optional dir)
+  (let ((extensions '("d.ts" "ts" "js"))
+        (ext)
+        (real-path))
+    (while extensions
+      (setq ext (pop extensions))
+      (setq real-path (if dir (f-expand (f-swap-ext path ext) dir) (f-swap-ext path ext)))
+      (if (f-exists? real-path)
+          (setq extensions nil)
+        (setq real-path nil)))
 
-(defun js-import-traverse-down(path)
-  (let ((filepath (car (js-import-find-index-files-in-path path))))
-    (if filepath
-        (js-import-traverse-down filepath)
-      path)))
+    (message "JS-IMPORT-TRY-EXT :real-path==%s \n"  real-path)
+    real-path))
+
+(defun js-import-try-json-sections(path sections)
+  (let (section)
+    (while sections
+      (setq section (js-import-read-package-json-section path (pop sections)))
+      (if section
+          (setq sections nil)
+        (setq section nil)))
+    section))
+
+
+(defun js-import-join-when-exists(path filename)
+  "Returns joined PATH with FILENAME when exists."
+  (let ((joined-path (f-join path filename)))
+    (when (f-exists? joined-path)
+      joined-path)))
+
+(defun js-import-try-find-real-path(path)
+  (if (and (f-ext? path) (f-exists? path))
+      path
+    (or (when-let* ((package-json (js-import-join-when-exists path "package.json"))
+                    (module (js-import-try-json-sections
+                             package-json
+                             '("jsnext:main" "module" "types")))
+                    (dir (f-dirname path)))
+          (if (f-ext? module)
+              (f-expand module path)
+            (js-import-try-find-real-path (js-import-try-ext module path))))
+        (js-import-try-ext path)
+        (js-import-try-ext (f-join path "index")))))
 
 
 (defun js-import-maybe-expand-dependency(display-path &optional $real-path)
   (let ((real-path (or $real-path (js-import-expand-node-modules display-path))))
     (unless (f-ext real-path)
-      (setq real-path (js-import-traverse-down real-path)))))
+      (setq real-path (js-import-try-find-real-path real-path))
+      (message "JS-IMPORT-MAYBE-EXPAND-DEPENDENCY :real-path==%s \n"  real-path)
+      real-path
+      )))
 
 
 (defun js-import-path-to-relative(path &optional dir)
-  (let ((filepath (f-expand path dir)))
-    (cond
-     ((f-exists? (concat filepath ".js"))
-      (setq filepath (concat filepath ".js"))
-      filepath)
-     ((f-exists? (concat filepath "/index.js"))
-      (setq filepath (concat filepath "/index.js"))))
-    filepath))
+  (unless dir (setq dir default-directory))
+  (or (js-import-try-ext path dir)
+      (js-import-try-ext (f-join path "index") dir)))
 
 
 
