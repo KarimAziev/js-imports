@@ -213,7 +213,7 @@ ITEM is not string."
          (name (pcase export-type
                  (1 symbols)
                  (4 (format "%s as %s" current-name symbols))
-                 (16 (format "%s as %s" current-name symbols)))))
+                 (16 (format "* as %s" symbols)))))
     name))
 
 (defun js-import-normalize-path(path)
@@ -275,7 +275,7 @@ ITEM is not string."
 (defun js-import-find-interfaces(display-path)
   (when-let ((f-exists-p (js-import-expand-node-modules display-path))
              (files (f-files (js-import-expand-node-modules display-path) (lambda(path) (and (js-import-is-module-interface path)
-                                                                                        (not (js-import-is-index-file? path)))))))
+                                                                                             (not (js-import-is-index-file? path)))))))
     (mapcar (lambda(it) (f-join display-path (f-filename (js-import-remove-ext it)))) files)))
 
 
@@ -357,10 +357,10 @@ ITEM is not string."
             (setq $p1 (region-beginning))
             (setq $p2 (region-end)))
         (save-excursion
-          (skip-chars-backward "_A-Za-z0-9-$")
+          (skip-chars-backward "_$A-Za-z0-9")
           (setq $p1 (point))
           (right-char)
-          (skip-chars-forward "_A-Za-z0-9-$")
+          (skip-chars-forward "_$A-Za-z0-9")
           (setq $p2 (point))))
       (setq mark-active nil)
       (when (< $p1 (point))

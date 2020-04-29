@@ -332,12 +332,11 @@
   (unless js-import-dependencies-cache (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
   (let* ((project-root (projectile-project-root))
          (package-json-path (f-join project-root "package.json"))
-         (node-dir (f-join project-root "node_modules"))
          (tick (file-attribute-modification-time (file-attributes package-json-path 'string)))
          (sections '("dependencies" "devDependencies")))
 
     (unless (equal js-import-dependencies-cache-tick tick)
-      (let (submodules modules max)
+      (let (submodules modules)
         (js-import-invalidate-node-modules-cache)
         (mapc (lambda(section) (when-let ((hash (js-import-read-package-json-section package-json-path section)))
                             (setq modules (append modules (hash-table-keys hash)))))
@@ -373,11 +372,11 @@
 (defclass js-import-buffer-imports-source(helm-source-sync)
   ((candidates :initform 'js-import-imported-candidates-in-buffer)
    (candidate-transformer :initform (lambda(candidates) (with-helm-current-buffer
-                                                     (if js-import-current-export-path
-                                                         (js-import-filter-plist 'display-path
-                                                                                 (equal js-import-current-export-path it)
-                                                                                 candidates)
-                                                       candidates))))
+                                                          (if js-import-current-export-path
+                                                              (js-import-filter-plist 'display-path
+                                                                                      (equal js-import-current-export-path it)
+                                                                                      candidates)
+                                                            candidates))))
    (marked-with-props :initform 'withprop)
    (persistent-help :initform "Show symbol")
    (display-to-real :initform 'js-import-display-to-real-imports)
@@ -411,8 +410,7 @@
 (defun js-import-display-to-real-exports(it)
   "Search for export item"
   (with-helm-current-buffer
-    (let (export-item)
-      (setq export-item (seq-find (lambda(elt) (string= (js-import-get-prop elt 'real-name) it)) js-import-export-candidates-in-path)))))
+    (seq-find (lambda(elt) (string= (js-import-get-prop elt 'real-name) it)) js-import-export-candidates-in-path)))
 
 (defun js-import-display-to-real-imports(it)
   "Search for texport item"
@@ -665,7 +663,7 @@
 
 
 
-(defun js-import-delete-persistent (&optional cand)
+(defun js-import-delete-persistent (&optional _cand)
   "Persistent action for quick delete CAND from import statement"
   (interactive)
   (with-helm-alive-p
@@ -810,8 +808,6 @@
       (let* ((alias-regexp (if (s-blank? alias) (concat "^" alias) (concat "^" alias "\\(/\\|$\\)" )))
              (alias-path (js-import-get-alias-path alias))
              (joined-path (f-join alias-path (s-replace-regexp alias-regexp "" path)))
-             (exists (f-exists? joined-path))
-             (is-match (s-matches? alias-regexp path))
              (found-path (cond
                           ((and (f-ext? joined-path) (f-exists? joined-path))
                            (setq real-path joined-path))
@@ -938,7 +934,7 @@
   (interactive)
   (save-excursion
     (goto-char (point-min))
-    (let (paths symbols)
+    (let (symbols)
       (while (re-search-forward "\\(^\\| +\\)export[ \t\n]+" nil t 1)
         (let (path exports)
           (unless (js-import-inside-comment?)
@@ -968,18 +964,18 @@
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                              (real-name (car (last parts)))
-                                              (type (if (string= "default" real-name) 1 4)))
-                                         (push (js-import-make-index-item real-name
-                                                                          :type type
-                                                                          :export-type type
-                                                                          :display-part it
-                                                                          :var-type "export"
-                                                                          :real-name real-name
-                                                                          :real-path real-path
-                                                                          :marker (point)
-                                                                          :display-path path)
-                                               exports)))
+                                         (real-name (car (last parts)))
+                                         (type (if (string= "default" real-name) 1 4)))
+                                    (push (js-import-make-index-item real-name
+                                                                     :type type
+                                                                     :export-type type
+                                                                     :display-part it
+                                                                     :var-type "export"
+                                                                     :real-name real-name
+                                                                     :real-path real-path
+                                                                     :marker (point)
+                                                                     :display-path path)
+                                          exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))
@@ -1035,7 +1031,7 @@
 (defun js-import-extracts-imports()
   (save-excursion
     (goto-char (point-min))
-    (let (paths symbols)
+    (let (symbols)
       (while (re-search-forward "\\(^\\| +\\)import[ \t\n]+" nil t)
         (unless (js-import-inside-comment?)
           (let (path named-imports default-import module-import)
