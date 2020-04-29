@@ -1,4 +1,3 @@
-
 ;;; -*- lexical-binding: t -*-
 ;;; js-import.el --- This is an Emacs Lisp file with Emacs Lisp code.
 
@@ -391,6 +390,7 @@
 (defclass js-import-exports-source(helm-source-sync)
   ((candidates :initform 'js-import-init-exports-candidates)
    (cleanup :initform 'js-import-exports-cleanup)
+   (volatile :initform t)
    (header-name :initform (lambda(name) (with-helm-current-buffer
                                      (if js-import-current-export-path
                                          (format "exports in %s" js-import-current-export-path)
@@ -448,6 +448,7 @@
     (let (imports exports)
       (setq imports (js-import-imported-candidates-in-buffer helm-current-buffer))
       (setq imports (js-import-filter-plist 'display-path (string= js-import-current-export-path it) imports))
+
       (setq exports (if imports (js-import-filter-exports candidates imports) candidates))
       (setq exports (js-import-strip-duplicates exports))
       (setq exports (mapcar (lambda(c) (js-import-propertize c 'display-path js-import-current-export-path)) exports)))))
@@ -460,7 +461,8 @@
                         (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
                         (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
                                                       (js-import-get-prop imp 'real-name)))
-                                     imports))))
+                                     imports))
+                        (16 (< 0 (length imports)))))
               exports))
 
 
@@ -756,16 +758,18 @@
 (defun js-import-init-exports-candidates()
   "Extracts all exports from file specified in buffer local variable 'js-import-current-export-path"
   (with-current-buffer helm-current-buffer
-    (when-let ((path js-import-current-export-real-path)
-               (syntax (syntax-table))
-               (str (stringp path)))
+    (let ((default-candidates (list (js-import-make-index-item "export all" :type 16))))
+      (if js-import-current-export-real-path
+          (progn (when-let ((path js-import-current-export-real-path)
+                            (syntax (syntax-table))
+                            (str (stringp path)))
 
-      (setq js-import-export-candidates-in-path (with-temp-buffer
-                                                  (erase-buffer)
-                                                  (with-syntax-table syntax
-                                                    (js-import-insert-buffer-or-file path)
-                                                    (js-import-extracts-exports path))))
-      js-import-export-candidates-in-path)))
+                   (setq js-import-export-candidates-in-path (with-temp-buffer
+                                                               (erase-buffer)
+                                                               (with-syntax-table syntax
+                                                                 (js-import-insert-buffer-or-file path)
+                                                                 (append default-candidates (js-import-extracts-exports path)))))))
+        default-candidates))))
 
 
 (defun js-import-insert-buffer-or-file(path)
