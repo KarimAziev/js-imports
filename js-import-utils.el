@@ -63,6 +63,9 @@ the arguments (right-to-left)."
   (declare (indent 2) (debug t))
   `(lambda(&optional _candidate) (mapc ,func (helm-marked-candidates))))
 
+(defun js-import-with-marked (func)
+  (lambda(&optional _candidate) (mapc (lambda(c) (funcall func c)) (helm-marked-candidates))))
+
 (defun js-import-cut-names(str reg)
   (when (stringp str) (-remove 's-blank? (-map 's-trim (split-string str reg t)))))
 
@@ -275,7 +278,7 @@ ITEM is not string."
 (defun js-import-find-interfaces(display-path)
   (when-let ((f-exists-p (js-import-expand-node-modules display-path))
              (files (f-files (js-import-expand-node-modules display-path) (lambda(path) (and (js-import-is-module-interface path)
-                                                                                             (not (js-import-is-index-file? path)))))))
+                                                                                        (not (js-import-is-index-file? path)))))))
     (mapcar (lambda(it) (f-join display-path (f-filename (js-import-remove-ext it)))) files)))
 
 
@@ -466,6 +469,79 @@ Result depends on syntax table's string quote character."
 (defun js-import-filter-by-prop(value prop-symbol plist)
   "Filter PLIST by diffing "
   (seq-filter (lambda(str) (string= value (js-import-get-prop str prop-symbol))) plist))
+
+(defun js-import-rename-default-item(item)
+  "Renames default imported item "
+  (let (real-name new-name confirm overlay end beg)
+    (setq real-name (or (js-import-get-prop item 'real-name) (js-import-strip-text-props item)))
+    (setq beg (js-import-get-prop item 'marker))
+    (goto-char beg)
+    (when (string= real-name (js-import-which-word))
+      (setq end (+ (point) (length (js-import-which-word))))
+
+      (unwind-protect
+          (progn (setq overlay (make-overlay beg end))
+                 (make-overlay beg end)
+                 (overlay-put overlay 'face 'ag-match-face)
+                 (setq new-name (string-trim (read-string
+                                              "Rename %s to"
+                                              (concat "\s" real-name)
+                                              nil)))
+                 (if (string-blank-p new-name)
+                     (message "New name is blank")
+                   (progn
+                     (remove-overlays beg end)
+                     (delete-region beg end)
+                     (insert new-name)
+                     (setq end (+ beg (length new-name)))
+                     (setq overlay (make-overlay beg end))
+                     (overlay-put overlay 'face 'ag-match-face)
+                     (setq confirm (yes-or-no-p (format "Rename occurence?"))))))
+
+        (remove-overlays beg end)
+        (if (not confirm)
+            (when (string= new-name (js-import-which-word))
+              (delete-region beg end)
+              (insert real-name))
+          (progn
+            (let ((case-fold-search nil))
+              (js-import-goto-last-import)
+              (query-replace-regexp (concat "\\_<" real-name "\\_>") new-name))))))))
+
+(defun js-import-rename-as(item)
+  "Rename named imports and module imports."
+  (let* ((marker (js-import-get-prop item 'marker))
+         (full-name (or (js-import-get-prop item 'full-name)
+                        (js-import-strip-text-props item)))
+         (parts (split-string full-name))
+         (real-name (or (js-import-get-prop item 'real-name) (nth 0 parts)))
+         (as-word (nth 1 parts))
+         (renamed-name (nth 2 parts))
+         (prompt (if as-word (format "Rename %s %s" real-name as-word) (format "Rename %s as" real-name)))
+         (input (concat "\s" renamed-name))
+         (new-name (string-trim (read-string
+                                 prompt
+                                 input))))
+
+    (when (and (not (string-blank-p new-name))
+               marker
+               (goto-char marker)
+               (string= real-name (js-import-which-word)))
+      (skip-chars-forward real-name)
+
+      (if as-word
+          (progn
+            (skip-chars-forward " \s\t\n")
+            (skip-chars-forward "as")
+            (skip-chars-forward " \s\t\n")
+            (when (and renamed-name (string= renamed-name (js-import-which-word)))
+              (delete-region (point) (+ (point) (length renamed-name))))
+            (insert new-name))
+
+        (insert (format " as %s" new-name)))
+
+      (js-import-goto-last-import)
+      (query-replace-regexp (concat "\\_<" renamed-name "\\_>") (or new-name real-name)))))
 
 (provide 'js-import-utils)
 ;;; js-import-utils.el ends here

@@ -200,7 +200,7 @@
 (defvar js-import-imported-items-actions
   (helm-make-actions
    "Go" 'js-import-jump-to-item-in-buffer
-   "Rename" (js-import-with-marked-candidates 'js-import-rename-import)
+   "Rename" (js-import-with-marked 'js-import-rename-import)
    "Add more imports" (js-import-call-with-marked-candidates-prop 'js-import-from-path 'display-path)
    "Delete" 'js-import-delete-imported-item
    "Delete whole import" (js-import-call-with-marked-candidates-prop 'js-import-delete-whole-import 'display-path))
@@ -684,35 +684,14 @@
 
 (defun js-import-rename-import(candidate)
   "Rename imported CANDIDATE in buffer."
-  (let* ((real-name (js-import-get-prop candidate 'real-name))
-         (renamed-name (js-import-get-prop candidate 'renamed-name))
-         (display-path (js-import-get-prop candidate 'display-path))
-         (prompt (if renamed-name (format "Rename %s as (%s) " real-name renamed-name)
-                   (format "Rename %s as " real-name)))
-         (new-name (s-trim (read-string
-                            prompt
-                            (or renamed-name real-name)
-                            nil
-                            renamed-name))))
-
-    (when (and new-name
-               (<= 1 (length new-name))
-               (not (string= new-name real-name)))
-      (save-excursion
-        (save-restriction
-          (js-import-narrow-to-import display-path)
-          (let ((case-fold-search nil))
-            (if renamed-name
-                (progn (re-search-forward (concat real-name "[_\s\n]+as[_\s\n]") nil t 1)
-                       (re-search-forward renamed-name nil t 1)
-                       (replace-match new-name)
-                       (widen)
-                       (query-replace-regexp (concat "\\_<" renamed-name "\\_>") new-name))
-              (progn (re-search-forward (concat real-name "[_\s\n,]+") nil t 1)
-                     (skip-chars-backward "[_\s\n,]")
-                     (insert (concat " as " new-name))
-                     (widen))))
-          )))))
+  (interactive)
+  (print candidate)
+  (save-excursion
+    (save-restriction
+      (pcase (js-import-get-prop candidate 'type)
+        (1 (js-import-rename-default-item candidate))
+        (4 (js-import-rename-as candidate))
+        (16 (js-import-rename-as candidate))))))
 
 (defun js-import-insert-import(candidate)
   "Inserts CANDIDATE into existing or new import statement."
@@ -1030,29 +1009,43 @@
 
 (defun js-import-extracts-imports()
   (save-excursion
-    (goto-char (point-min))
+    (goto-char 0)
     (let (symbols)
-      (while (re-search-forward "\\(^\\| +\\)import[ \t\n]+" nil t)
+      (while (re-search-forward "\\(^\\| +\\)import[ \t\n]+" nil t 1)
         (unless (js-import-inside-comment?)
           (let (path named-imports default-import module-import)
             (save-excursion
               (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
               (setq path (js-import-get-path-at-point)))
 
-            (cond ((looking-at-p "*[ \s\t\n]+as[ \s\t\n]")
-                   (re-search-forward "as[ \s\t\n]+\\([[:word:]]\\)" nil t 1)
+            (cond ((looking-at-p "*")
+                   (let (m1 m2 as-word renamed-name)
+                     (setq m1 (point))
+                     (forward-char)
+                     (skip-chars-forward "\s\t")
+                     (setq m2 (point))
+                     (when (string= "as" (js-import-which-word))
+                       (setq as-word "as")
+                       (skip-chars-forward "as")
+                       (setq m2 (point))
+                       (skip-chars-forward "\s\t")
+                       (setq renamed-name (js-import-which-word))
 
-                   (let ((real-name (js-import-which-word)))
-                     (setq module-import (js-import-make-index-item (format "* as %s" real-name)
+                       (if (or (js-import-word-reserved? renamed-name)
+                               (s-matches? "[^_$A-Za-z0-9]" renamed-name))
+                           (setq renamed-name "")
+                         (skip-chars-forward "_$A-Za-z0-9")))
+                     (setq m2 (point))
+                     (setq module-import (js-import-make-index-item (format "%s" (buffer-substring-no-properties m1 m2))
                                                                     :type 16
                                                                     :import-type 16
-                                                                    :real-name real-name
                                                                     :var-type "import"
-                                                                    :display-part "*"
-                                                                    :marker (point)
-                                                                    :display-path path)))
+                                                                    :marker m1
+                                                                    :display-path path))
 
-                   (push module-import named-imports))
+                     (push module-import named-imports)
+                     (skip-chars-forward "_$A-Za-z0-9,\s\n\t")
+                     ))
                   ((looking-at-p "[[:word:]]")
                    (setq default-import (js-import-make-index-item (js-import-which-word)
                                                                    :type 1
@@ -1063,7 +1056,7 @@
                                                                    :marker (point)
                                                                    :display-path path))
                    (push default-import named-imports)
-                   (skip-chars-forward "_A-Za-z0-9$,\s\n\t")))
+                   (skip-chars-forward "_$A-Za-z0-9,\s\n\t")))
             (when (looking-at-p "{")
               (let (p1 p2 item items real-name renamed-name full-name)
                 (setq p1 (+ 1 (point)))
@@ -1103,8 +1096,7 @@
                 (widen)
                 (setq named-imports (append named-imports (reverse items)))))
 
-            (setq symbols (append symbols named-imports)))
-          )
+            (setq symbols (append symbols named-imports))))
         (forward-line 1))
       symbols)))
 
