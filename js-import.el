@@ -372,11 +372,11 @@
 (defclass js-import-buffer-imports-source(helm-source-sync)
   ((candidates :initform 'js-import-imported-candidates-in-buffer)
    (candidate-transformer :initform (lambda(candidates) (with-helm-current-buffer
-                                                          (if js-import-current-export-path
-                                                              (js-import-filter-plist 'display-path
-                                                                                      (equal js-import-current-export-path it)
-                                                                                      candidates)
-                                                            candidates))))
+                                                     (if js-import-current-export-path
+                                                         (js-import-filter-plist 'display-path
+                                                                                 (equal js-import-current-export-path it)
+                                                                                 candidates)
+                                                       candidates))))
    (marked-with-props :initform 'withprop)
    (persistent-help :initform "Show symbol")
    (display-to-real :initform 'js-import-display-to-real-imports)
@@ -1076,15 +1076,14 @@
                   (setq p1 (match-beginning 0))
                   (goto-char p1)
                   (setq real-name (js-import-which-word))
-
-                  (re-search-forward real-name nil t 1)
+                  (skip-chars-forward "_$A-Za-z0-9")
                   (setq p2 (point))
                   (skip-chars-forward " \s\t\n")
                   (when (looking-at-p "as[ \s\t\n]")
                     (progn
                       (re-search-forward "as[ \s\t\n]" nil t 1)
                       (setq renamed-name (js-import-which-word))
-                      (re-search-forward renamed-name nil t 1)
+                      (skip-chars-forward "_$A-Za-z0-9")
                       (setq p2 (point))))
 
                   (setq full-name (string-trim (buffer-substring-no-properties p1 p2)))
