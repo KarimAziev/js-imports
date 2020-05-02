@@ -934,7 +934,7 @@
                        (setq path (js-import-get-path-at-point)))))
 
             (cond ((looking-at-p "*[ \s\t\n]+as[ \s\t\n]")
-                   (re-search-forward "as[ \s\t\n]+\\([[:word:]]\\)" nil t 1)
+                   (re-search-forward "as[ \s\t\n]+\\([_$A-Za-z0-9]\\)" nil t 1)
 
                    (let ((real-name (js-import-which-word)))
                      (push (js-import-make-index-item (format "* as %s" real-name)
@@ -953,18 +953,18 @@
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                              (real-name (car (last parts)))
-                                              (type (if (string= "default" real-name) 1 4)))
-                                         (push (js-import-make-index-item real-name
-                                                                          :type type
-                                                                          :export-type type
-                                                                          :display-part it
-                                                                          :var-type "export"
-                                                                          :real-name real-name
-                                                                          :real-path real-path
-                                                                          :marker (point)
-                                                                          :display-path path)
-                                               exports)))
+                                         (real-name (car (last parts)))
+                                         (type (if (string= "default" real-name) 1 4)))
+                                    (push (js-import-make-index-item real-name
+                                                                     :type type
+                                                                     :export-type type
+                                                                     :display-part it
+                                                                     :var-type "export"
+                                                                     :real-name real-name
+                                                                     :real-path real-path
+                                                                     :marker (point)
+                                                                     :display-path path)
+                                          exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))
@@ -986,7 +986,7 @@
                                                     :marker (point)
                                                     :display-path path)
                          exports))
-                  ((looking-at-p "[[:word:]]")
+                  ((looking-at-p "[_$A-Za-z0-9]")
                    (let ((var-type (js-import-which-word))
                          (real-name))
 
@@ -1055,7 +1055,7 @@
                      (push module-import named-imports)
                      (skip-chars-forward "_$A-Za-z0-9,\s\n\t")
                      ))
-                  ((looking-at-p "[[:word:]]")
+                  ((looking-at-p "[_$A-Za-z0-9]")
                    (setq default-import (js-import-make-index-item (js-import-which-word)
                                                                    :type 1
                                                                    :import-type 1
@@ -1074,7 +1074,7 @@
                                 (setq p2 (- (point) 1)))
                 (narrow-to-region p1 p2)
                 (goto-char p1)
-                (while (re-search-forward "[[:word:]]" nil t 1)
+                (while (re-search-forward "[_$A-Za-z0-9]" nil t 1)
                   (setq p1 (match-beginning 0))
                   (goto-char p1)
                   (setq real-name (js-import-which-word))
