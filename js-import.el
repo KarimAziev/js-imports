@@ -119,6 +119,12 @@
   :global nil
   :keymap js-import-command-map)
 
+(defmacro js-import-exit-and-run (func)
+  "Exit and run FUNC"
+  (declare (indent 2) (debug t))
+  `(lambda ()
+     (interactive)
+     (helm-exit-and-execute-action ,func)))
 
 (defvar js-import-files-keymap
   (let ((map (make-sparse-keymap)))
@@ -126,16 +132,10 @@
     (define-key map (kbd "C->") 'js-import-switch-to-next-alias)
     (define-key map (kbd "C-<") 'js-import-switch-to-prev-alias)
     (define-key map (kbd "C-r") 'js-import-switch-to-relative)
+    (define-key map (kbd "<C-return>") (js-import-exit-and-run 'js-import-find-file))
+    (define-key map (kbd "C-c C-o") (js-import-exit-and-run 'js-import-find-file-other-window))
     map)
   "Keymap for `js-import-alias-source' source.")
-
-
-(defmacro js-import-exit-and-run (func)
-  "Exit and run FUNC"
-  (declare (indent 2) (debug t))
-  `(lambda ()
-     (interactive)
-     (helm-exit-and-execute-action ,func)))
 
 
 (defvar js-import-imported-symbols-keymap
@@ -580,20 +580,24 @@
   (when-let ((path (js-import-get-path-at-point)))
     (js-import-find-file path)))
 
+;;;###autoload
 (defun js-import-find-file(file)
   "Transform FILE to real and open it"
-  (find-file (js-import-path-to-real file)))
+  (interactive)
+  (let ((path (js-import-path-to-real file)))
+    (if (and path (f-exists? path))
+        (find-file path)
+      (message "Could't find %s" file))))
 
+;;;###autoload
 (defun js-import-find-file-other-window(file)
   "Transform FILE to real and open it in other window"
-  (find-file-other-window (js-import-path-to-real file)))
+  (interactive)
+  (let ((path (js-import-path-to-real file)))
+    (if (and path (f-exists? path))
+        (find-file-other-window path)
+      (message "Could't find %s" file))))
 
-(defun js-import-select-subdir(dependency)
-  "Action which checks if DEPENDENCY has nested dirs with exports and propose to select it"
-  (when-let ((subfiles (js-import-find-interfaces dependency)))
-    (push dependency subfiles)
-    (let ((module (completing-read "Select: " subfiles nil t dependency)))
-      (js-import-from-path module))))
 
 (defun js-import-ff-persistent-action (candidate)
   "Preview the contents of a file in a temporary buffer."
@@ -649,7 +653,6 @@
           (goto-char m)
           (recenter-top-bottom)
           (helm-highlight-current-line))))
-
     item))
 
 
@@ -1014,13 +1017,12 @@
               (setq path (js-import-get-path-at-point)))
 
             (cond ((looking-at-p "*")
-                   (let (m1 m2 as-word renamed-name)
+                   (let (m1 m2 renamed-name)
                      (setq m1 (point))
                      (forward-char)
                      (skip-chars-forward "\s\t")
                      (setq m2 (point))
                      (when (string= "as" (js-import-which-word))
-                       (setq as-word "as")
                        (skip-chars-forward "as")
                        (setq m2 (point))
                        (skip-chars-forward "\s\t")
