@@ -478,8 +478,8 @@
   "Init project files."
   (with-current-buffer helm-current-buffer
     (setq js-import-aliases (js-import-get-aliases))
-    (unless (and js-import-current-alias (not js-import-relative-transformer))
-      (setq js-import-current-alias (car js-import-aliases)))))
+    (unless js-import-current-alias
+      (setq js-import-relative-transformer 'js-import-relative-one-by-one))))
 
 (defun js-import-relative-one-by-one(path)
   "Transform relative to `projectile-project-root' PATH into relative to the current `buffer-file-name'"
