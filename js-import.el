@@ -29,7 +29,6 @@
 (require 'subr-x)
 (require 'cl-lib)
 (require 'f)
-(require 'dash)
 (require 'json)
 (require 's)
 (require 'js-import-regexp)
@@ -124,9 +123,6 @@
   `(lambda ()
      (interactive)
      (helm-exit-and-execute-action ,func)))
-
-(defmacro js-import-compose (args &rest funcs)
-  `(funcall (-compose ,@funcs) ,args))
 
 (defmacro js-import-call-with-marked-candidates-prop (func prop)
   "Iter helm-marked-candidates, pluck PROP from every candidate and call FUNC with value of PROP."
@@ -1097,8 +1093,6 @@
                                                         :display-path path
                                                         :import-type 1
                                                         :real-name real-name
-                                                        :p1 p1
-                                                        :p2 p2
                                                         :marker p1))
 
                   (push item items))
@@ -1109,16 +1103,6 @@
         (forward-line 1))
       symbols)))
 
-
-(defun -compose (&rest fns)
-  "Takes a list of functions and returns a fn that is the
-composition of those fns. The returned fn takes a variable
-number of arguments, and returns the result of applying
-each fn to the result of applying the previous fn to
-the arguments (right-to-left)."
-  (lambda (&rest args)
-    (car (-reduce-r-from (lambda (fn xs) (list (apply fn xs)))
-                         args fns))))
 
 (defun js-import-with-marked (func)
   (lambda(&optional _candidate) (mapc (lambda(c) (funcall func c)) (helm-marked-candidates))))
@@ -1141,11 +1125,12 @@ the arguments (right-to-left)."
   (when (and (listp symbols) (<= 1 (length symbols)))
     (s-join ", " symbols)))
 
+
 (defun js-import-join-imports-names(default-name names)
   (let (parts)
     (when (stringp names) (push (concat "{ " names" }") parts))
     (when (stringp default-name) (push default-name parts))
-    (s-join ", " (-non-nil parts))))
+    (s-join ", " (seq-remove (lambda(it) (null it)) parts))))
 
 (defun js-import-goto-last-import()
   (goto-char (point-min))
@@ -1249,15 +1234,21 @@ ITEM is not string."
   (seq-filter (lambda(it) (js-import-filter-pred it alias)) files))
 
 
+(defun js-import-compose-from(arg &rest funcs)
+  "Performs right-to-left unary function composition."
+  (seq-reduce (lambda (xs fn)
+                (funcall fn xs))
+              (reverse funcs) arg))
+
 (defun js-import-generate-name-from-path(path)
   "Generate name for default export from PATH"
-  (js-import-compose path
-                     '(lambda(words) (mapconcat 'capitalize words ""))
-                     (-partial '-take 2)
-                     'reverse
-                     's-split-words
-                     (-partial 'replace-regexp-in-string js-import-file-index-regexp "")
-                     'js-import-remove-ext))
+  (js-import-compose-from path
+                          '(lambda(words) (mapconcat 'capitalize words ""))
+                          '(lambda(it) (seq-take it 2))
+                          'reverse
+                          's-split-words
+                          '(lambda(str) (replace-regexp-in-string js-import-file-index-regexp "" str))
+                          'js-import-remove-ext))
 
 (defun js-propose-import-name (path cell)
   (let* ((current-name (car cell))
@@ -1283,10 +1274,10 @@ ITEM is not string."
     name))
 
 (defun js-import-normalize-path(path)
-  (js-import-compose path
-                     'js-import-remove-double-slashes
-                     'js-import-remove-ext
-                     'js-import-maybe-remove-path-index))
+  (js-import-compose-from path
+                          'js-import-remove-double-slashes
+                          'js-import-remove-ext
+                          'js-import-maybe-remove-path-index))
 
 (defun js-import-maybe-remove-path-index (path)
   (if (js-import-is-index-trimmable? path)
