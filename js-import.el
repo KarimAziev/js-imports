@@ -310,12 +310,17 @@
 
 
 (defclass js-import-alias-source (helm-source-sync)
-  ((header-name :initform 'js-import-alias-header-name)
+  ((header-name :initform 'js-import-files-header-name)
    (init :initform 'js-import-alias-init)
    (candidates :initform 'projectile-current-project-files)
    (persistent-action :initform 'js-import-ff-persistent-action)
-   (candidate-transformer :initform 'js-import-project-files-transformer)
-   (filter-one-by-one :initform 'js-import-project-files-filter-one-by-one)
+   (candidate-transformer :initform (lambda(files)
+                                      (with-current-buffer helm-current-buffer
+                                        (let ((alias-path (plist-get js-import-alias-map js-import-current-alias)))
+                                          (js-import-filter-files files alias-path)))))
+   (filter-one-by-one :initform (lambda(path)
+                                  (with-current-buffer helm-current-buffer
+                                    (js-import-transform-path-one-by-one path js-import-current-alias))))
    (mode-line :initform (list "File(s)"))
    (keymap :initform js-import-files-keymap)
    (action :initform 'js-import-files-actions)
@@ -454,7 +459,10 @@
 
 
 (defun js-import-filter-exports(exports imports)
-  "Returns filtered EXPORTS plist with only those members that are not in IMPORTS plist. For named exports (with property `type' 4) the test for equality is done by `real-name' and for default export by `type'."
+  "Returns filtered EXPORTS plist with only those members that are not in IMPORTS plist.
+
+   For named exports (with property `type' 4) the test for equality is done by `real-name' and for default export by `type'."
+
   (seq-remove (lambda(elt) (pcase (js-import-get-prop elt 'type)
                         (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
                         (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
@@ -478,28 +486,16 @@
   "Init project files."
   (with-current-buffer helm-current-buffer
     (setq js-import-aliases (js-import-get-aliases))
-    (unless js-import-current-alias
-      (setq js-import-relative-transformer 'js-import-relative-one-by-one))))
+    (setq js-import-relative-transformer 'js-import-relative-one-by-one)))
 
 (defun js-import-relative-one-by-one(path)
   "Transform relative to `projectile-project-root' PATH into relative to the current `buffer-file-name'"
   (if (s-matches? "^\\.+/" path)
       path
-    (with-current-buffer helm-current-buffer
-      (let* ((path (f-join (projectile-project-root) path))
-             (relative-path (f-relative path (f-dirname buffer-file-name))))
-        (unless (s-matches? "^\\.+/" relative-path)
-          (setq relative-path (concat "./" relative-path)))
-        relative-path))))
-
-
-(defun js-import-project-files-transformer(files &optional _source)
-  "Filter FILES by extension and one of the aliases, if present."
-  (with-current-buffer helm-current-buffer
-    (let ((alias-filter (when js-import-current-alias (concat "^" (lax-plist-get js-import-alias-map js-import-current-alias)))))
-      (if (and alias-filter (not js-import-relative-transformer))
-          (--filter (and (js-import-filter-pred it) (s-matches? alias-filter it)) files)
-        (--filter (js-import-filter-pred it) files)))))
+    (let ((relative-path (f-relative (f-join (projectile-project-root) path) default-directory)))
+      (unless (s-matches? "^\\.+/" relative-path)
+        (setq relative-path (concat "./" relative-path)))
+      relative-path)))
 
 
 (defun js-import-slash(str)
@@ -508,52 +504,44 @@
       str
     (concat str "/")))
 
-(defun js-import-project-files-filter-one-by-one(path)
-  "Transform relative to the project root PATH into aliased one or relative to the current `buffer-file-name'"
-  (with-current-buffer helm-current-buffer
-    (if (and js-import-current-alias (not js-import-relative-transformer))
-        (progn
-          (let ((regexp (concat "^" (lax-plist-get js-import-alias-map js-import-current-alias) "/")))
-            (js-import-normalize-path (s-replace-regexp regexp (js-import-slash js-import-current-alias) path))))
+(defun js-import-transform-to-alias(filepath alias)
+  "Project"
+  (let ((alias-path (plist-get js-import-alias-map js-import-current-alias)))
+    (s-replace-regexp (concat "^" alias-path "/") (js-import-slash alias) filepath)))
 
-      (js-import-normalize-path (js-import-relative-one-by-one path)))))
+(defun js-import-transform-path-one-by-one(path &optional alias)
+  "Transform relative to the project root PATH into aliased one or relative to the current `buffer-file-name'"
+  (if alias
+      (js-import-normalize-path (js-import-transform-to-alias path alias))
+    (js-import-normalize-path (js-import-relative-one-by-one path))))
 
 
 (defun js-import-switch-to-relative(&optional _cand)
   "Toggle displaying aliased files to relative."
   (interactive)
   (with-current-buffer helm-current-buffer
-    (if js-import-relative-transformer
-        (progn
-          (setq js-import-relative-transformer nil)
-          (when (and (not js-import-current-alias) (car js-import-aliases))
-            (setq js-import-current-alias (car js-import-aliases)))
-          (helm-refresh))
-      (progn
-        (setq js-import-relative-transformer 'js-import-relative-one-by-one)
-        (helm-refresh)))))
+    (setq js-import-current-alias nil)
+    (helm-refresh)))
 
 
 (defun js-import-switch-to-next-alias(&optional _cand)
   "Switch to next alias in `js-import-aliases' list"
   (interactive)
   (with-current-buffer helm-current-buffer
-    (let ((default-alias (car js-import-aliases))
-          (next-alias (car (cdr (member js-import-current-alias js-import-aliases)))))
-      (setq js-import-current-alias (or next-alias default-alias))
-      (setq js-import-relative-transformer nil)
-      (helm-refresh))))
+    (if js-import-current-alias
+        (setq js-import-current-alias (car (cdr (member js-import-current-alias js-import-aliases))))
+      (setq js-import-current-alias (car js-import-aliases)))
+    (helm-refresh)))
 
 
 (defun js-import-switch-to-prev-alias(&optional _cand)
   "Switch to previous alias in `js-import-aliases' list"
   (interactive)
   (with-current-buffer helm-current-buffer
-    (let ((default-alias (car (reverse js-import-aliases)))
-          (next-alias (car (cdr (member js-import-current-alias (reverse js-import-aliases))))))
-      (setq js-import-current-alias (or next-alias default-alias))
-      (setq js-import-relative-transformer nil)
-      (helm-refresh))))
+    (if js-import-current-alias
+        (setq js-import-current-alias (car (cdr (member js-import-current-alias (reverse js-import-aliases)))))
+      (setq js-import-current-alias (car (reverse js-import-aliases))))
+    (helm-refresh)))
 
 (defun js-import-alias-pattern-transformer(pattern)
   "Expand PATTERN if it starts with relative prefix"
@@ -570,18 +558,16 @@
       (concat path))))
 
 
-(defun js-import-alias-header-name(_name)
+(defun js-import-files-header-name(_name)
   "A function for display header name for project files. Concatenates `js-import-current-alias' and PROJECT-NAME"
   (with-helm-current-buffer
-    (cond
-     (js-import-current-alias
-      (concat
-       (propertize js-import-current-alias 'face 'font-lock-function-name-face)
-       "\s" (projectile-project-name) "/"
-       (lax-plist-get js-import-alias-map js-import-current-alias)))
-     (js-import-relative-transformer
-      (format "%s" (projectile-project-name)))
-     (t (projectile-project-name)))))
+    (if js-import-current-alias
+        (progn
+          (concat
+           (propertize js-import-current-alias 'face 'font-lock-function-name-face)
+           "\s" (projectile-project-name) "/"
+           (lax-plist-get js-import-alias-map js-import-current-alias)))
+      (format "Relative to %s (switch to alias C->)" (f-filename buffer-file-name)))))
 
 
 (defun js-import-find-file-at-point()
@@ -633,7 +619,8 @@
   "Jumps to ITEM in buffer. ITEM must be propertized with prop 'marker"
   (let ((m (js-import-get-prop item 'marker))
         (js-buffer "*js-import persistent")
-        (item-path (or (js-import-get-prop item 'real-path) (js-import-path-to-real (js-import-get-prop item 'display-path) default-directory))))
+        (item-path (or (js-import-get-prop item 'real-path)
+                       (js-import-path-to-real (js-import-get-prop item 'display-path) default-directory))))
     (if (and m buffer-file-name (string= item-path buffer-file-name))
         (progn
           (goto-char m)
@@ -809,7 +796,7 @@
     (f-join alias (replace-regexp-in-string (concat "^" alias-path) "" real-path))))
 
 (defun js-import-get-alias-path(alias)
-  (f-slash (f-join (projectile-project-root) (lax-plist-get js-import-alias-map alias))))
+  (f-slash (f-join (projectile-project-root) (plist-get js-import-alias-map alias))))
 
 
 (defun js-import-is-dependency? (display-path &optional project-root)
@@ -943,18 +930,18 @@
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                         (real-name (car (last parts)))
-                                         (type (if (string= "default" real-name) 1 4)))
-                                    (push (js-import-make-index-item real-name
-                                                                     :type type
-                                                                     :export-type type
-                                                                     :display-part it
-                                                                     :var-type "export"
-                                                                     :real-name real-name
-                                                                     :real-path real-path
-                                                                     :marker (point)
-                                                                     :display-path path)
-                                          exports)))
+                                              (real-name (car (last parts)))
+                                              (type (if (string= "default" real-name) 1 4)))
+                                         (push (js-import-make-index-item real-name
+                                                                          :type type
+                                                                          :export-type type
+                                                                          :display-part it
+                                                                          :var-type "export"
+                                                                          :real-name real-name
+                                                                          :real-path real-path
+                                                                          :marker (point)
+                                                                          :display-path path)
+                                               exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))

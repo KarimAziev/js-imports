@@ -179,11 +179,17 @@ ITEM is not string."
       (get-text-property 0 property item)))
 
 
-(defun js-import-filter-pred(filename)
+
+(defun js-import-filter-pred(filename &optional alias)
   (and (not (string-equal (s-replace (projectile-project-root) "" buffer-file-name) filename))
        (js-import-is-ext-enabled? filename)
        (not (s-matches? js-import-unsaved-file-regexp filename))
-       (not (s-matches? js-import-test-file-regexp filename))))
+       (not (s-matches? js-import-test-file-regexp filename))
+       (if alias (s-matches? (concat "^" alias) filename) t)))
+
+(defun js-import-filter-files(files &optional alias)
+  "Filter FILES by extension and one of the aliases, if present."
+  (seq-filter (lambda(it) (js-import-filter-pred it alias)) files))
 
 
 (defun js-import-generate-name-from-path(path)
