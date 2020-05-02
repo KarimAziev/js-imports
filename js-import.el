@@ -282,7 +282,9 @@
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
   "Show imported symbols from current buffer.
-  Available actions includes jumping to item in buffer, renaming, adding more imports from current paths and deleting a symbol or whole import."
+
+  Available actions includes jumping to item in buffer, renaming, adding more
+  imports from current paths and deleting a symbol or whole import."
   (interactive)
   (helm :sources (helm-make-source "*js symbols*" 'js-import-buffer-imports-source)))
 
@@ -441,7 +443,9 @@
           js-import-cached-imports-in-buffer
         (progn
           (setq js-import-cached-imports-in-buffer-tick tick)
-          (setq js-import-cached-imports-in-buffer (save-excursion (with-syntax-table (syntax-table) (js-import-extracts-imports))))
+          (setq js-import-cached-imports-in-buffer (save-excursion
+                                                     (with-syntax-table (syntax-table)
+                                                       (js-import-extracts-imports))))
           js-import-cached-imports-in-buffer)))))
 
 
@@ -617,10 +621,10 @@
 
 (defun js-import-jump-to-item-persistent(item)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop 'marker"
-  (let ((m (js-import-get-prop item 'marker))
-        (js-buffer "*js-import persistent")
-        (item-path (or (js-import-get-prop item 'real-path)
-                       (js-import-path-to-real (js-import-get-prop item 'display-path) default-directory))))
+  (when-let ((m (js-import-get-prop item 'marker))
+             (js-buffer "*js-import persistent")
+             (item-path (or (js-import-get-prop item 'real-path)
+                            (js-import-path-to-real (js-import-get-prop item 'display-path) default-directory))))
     (if (and m buffer-file-name (string= item-path buffer-file-name))
         (progn
           (goto-char m)
@@ -688,9 +692,13 @@
           (renamed-name (js-import-get-prop candidate 'display-name))
           (normalized-path (js-import-get-prop candidate 'display-path)))
       (pcase type
-        (1 (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))
-        (4 (js-import-insert-exports nil name normalized-path))
-        (16 (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))))))
+        (1
+         (js-import-insert-exports
+          (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))
+        (4
+         (js-import-insert-exports nil name normalized-path))
+        (16
+         (js-import-insert-exports (js-propose-import-name normalized-path (cons renamed-name type)) nil normalized-path))))))
 
 (defun js-import-insert-import-as(candidate)
   "Inserts and renames CANDIDATE into existing or new import statement."
