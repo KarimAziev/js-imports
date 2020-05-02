@@ -338,22 +338,20 @@
    (group :initform 'js-import)))
 
 
-(defun js-import-invalidate-node-modules-cache()
-  "Invalidate node modules caches"
-  (setq js-import-dependencies-cache nil)
-  (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
-
 (defun js-import-node-modules-candidates()
   "Returns list of dependencies"
   (unless js-import-dependencies-cache (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
   (let* ((project-root (projectile-project-root))
          (package-json-path (f-join project-root "package.json"))
          (tick (file-attribute-modification-time (file-attributes package-json-path 'string)))
+         (project-cache (gethash project-root js-import-dependencies-cache))
          (sections '("dependencies" "devDependencies")))
 
-    (unless (equal js-import-dependencies-cache-tick tick)
+
+    (when (or (not (equal js-import-dependencies-cache-tick tick))
+              (not project-cache))
       (let (submodules modules)
-        (js-import-invalidate-node-modules-cache)
+        (remhash project-root js-import-dependencies-cache)
         (mapc (lambda(section) (when-let ((hash (js-import-read-package-json-section package-json-path section)))
                             (setq modules (append modules (hash-table-keys hash)))))
               sections)
