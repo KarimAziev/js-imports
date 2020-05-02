@@ -51,7 +51,7 @@
   :type '(choice (const :tag "Double" "\"")
                  (const :tag "Single" "\\'")))
 
-(defcustom js-import-files-number-limit 20
+(defcustom js-import-files-number-limit 50
   "The limit for number of project files displayed. Override `helm-candidate-number-limit'"
   :group 'js-import
   :type 'number)
@@ -169,7 +169,6 @@
 
 (defvar js-import-current-alias nil)
 
-(make-variable-buffer-local 'js-import-current-alias)
 (defvar js-import-aliases nil)
 (make-variable-buffer-local 'js-import-aliases)
 (defvar js-import-relative-transformer nil)
@@ -324,6 +323,7 @@
   ((header-name :initform 'js-import-files-header-name)
    (init :initform 'js-import-alias-init)
    (candidates :initform 'projectile-current-project-files)
+   (candidate-number-limit :initform js-import-files-number-limit)
    (persistent-action :initform 'js-import-ff-persistent-action)
    (candidate-transformer :initform (lambda(files)
                                       (with-current-buffer helm-current-buffer
@@ -499,7 +499,10 @@
   "Init project files."
   (with-current-buffer helm-current-buffer
     (setq js-import-aliases (js-import-get-aliases))
-    (setq js-import-relative-transformer 'js-import-relative-one-by-one)))
+    (when (and js-import-current-alias (not (member js-import-current-alias js-import-aliases)))
+      (setq js-import-current-alias nil))
+    (unless js-import-relative-transformer
+      (setq js-import-relative-transformer 'js-import-relative-one-by-one))))
 
 (defun js-import-relative-one-by-one(path)
   "Transform relative to `projectile-project-root' PATH into relative to the current `buffer-file-name'"
@@ -533,7 +536,9 @@
   "Toggle displaying aliased files to relative."
   (interactive)
   (with-current-buffer helm-current-buffer
-    (setq js-import-current-alias nil)
+    (if js-import-current-alias
+        (setq js-import-current-alias nil)
+      (setq js-import-current-alias (car js-import-aliases)))
     (helm-refresh)))
 
 
