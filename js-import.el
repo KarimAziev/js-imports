@@ -209,7 +209,7 @@
 (defvar js-import-imported-items-actions
   (helm-make-actions
    "Go" 'js-import-jump-to-item-in-buffer
-   "Rename" (js-import-with-marked 'js-import-rename-import)
+   "Rename" (js-import-with-marked-candidates 'js-import-rename-import)
    "Add more imports" (js-import-call-with-marked-candidates-prop 'js-import-from-path 'display-path)
    "Delete" 'js-import-delete-imported-item
    "Delete whole import" (js-import-call-with-marked-candidates-prop 'js-import-delete-whole-import 'display-path))
@@ -1103,9 +1103,6 @@
         (forward-line 1))
       symbols)))
 
-
-(defun js-import-with-marked (func)
-  (lambda(&optional _candidate) (mapc (lambda(c) (funcall func c)) (helm-marked-candidates))))
 
 (defun js-import-cut-names(str reg)
   (when (stringp str) (seq-remove 's-blank? (mapcar 's-trim (split-string str reg t)))))
