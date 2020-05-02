@@ -224,10 +224,12 @@
 
 (defun js-import-preselect()
   "Preselect function"
-  (if (stringp (or (js-import-get-path-at-point)
-                   js-import-last-export-path))
+  (if  (and (> (point-max) (point))
+            (stringp (or (js-import-get-path-at-point)
+                         js-import-last-export-path)))
       (or (js-import-get-path-at-point)
-          js-import-last-export-path) ""))
+          js-import-last-export-path)
+    ""))
 
 ;;;###autoload
 (defun js-import ()
