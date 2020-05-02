@@ -141,16 +141,16 @@
   (declare (indent 2) (debug t))
   `(lambda(&optional _candidate) (mapc ,func (helm-marked-candidates))))
 
-(defvar js-import-files-keymap
+(defvar js-import-files-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
     (define-key map (kbd "C->") 'js-import-switch-to-next-alias)
     (define-key map (kbd "C-<") 'js-import-switch-to-prev-alias)
     (define-key map (kbd "C-r") 'js-import-switch-to-relative)
-    (define-key map (kbd "<C-return>") (js-import-exit-and-run 'js-import-find-file))
-    (define-key map (kbd "C-c C-o") (js-import-exit-and-run 'js-import-find-file-other-window))
+    (define-key map (kbd "<C-return>") 'js-import-find-file-and-exit)
+    (define-key map (kbd "C-c C-o") 'js-import-find-file-other-window-and-exit)
     map)
-  "Keymap for `js-import-alias-source' source.")
+  "Keymap for files sources in Helm.")
 
 
 (defvar js-import-imported-symbols-keymap
@@ -201,8 +201,12 @@
 
 (defvar js-import-files-actions
   (helm-make-actions "Import from file" (js-import-with-marked-candidates 'js-import-from-path)
-                     "Find file" 'js-import-find-file
-                     "Find file other window" 'js-import-find-file-other-window)
+                     (substitute-command-keys "Find file \\<js-import-files-map>`\\[js-import-find-file-and-exit]") 'js-import-find-file-and-exit
+                     (substitute-command-keys "Open file \\<js-import-files-map>`\\[js-import-find-file-other-window-and-exit]'") 'js-import-find-file-other-window-and-exit
+                     (substitute-command-keys "Next alias \\<js-import-files-map>`\\[js-import-switch-to-next-alias]'") 'js-import-switch-to-next-alias
+                     (substitute-command-keys "Prev alias \\<js-import-files-map>`\\[js-import-switch-to-prev-alias]'") 'js-import-switch-to-prev-alias
+                     (substitute-command-keys "Relative \\<js-import-files-map>`\\[js-import-switch-to-relative]'") 'js-import-switch-to-relative)
+
   "File actions")
 
 (defvar js-import-imported-items-actions
@@ -230,6 +234,8 @@
       (or (js-import-get-path-at-point)
           js-import-last-export-path)
     ""))
+
+
 
 ;;;###autoload
 (defun js-import ()
@@ -317,7 +323,7 @@
    (action :initform 'js-import-files-actions)
    (persistent-action :initform 'js-import-ff-persistent-action)
    (mode-line :initform (list "Imports"))
-   (keymap :initform js-import-files-keymap)
+   (keymap :initform js-import-files-map)
    (get-line :initform #'buffer-substring)))
 
 
@@ -335,20 +341,19 @@
                                   (with-current-buffer helm-current-buffer
                                     (js-import-transform-path-one-by-one path js-import-current-alias))))
    (mode-line :initform (list "File(s)"))
-   (keymap :initform js-import-files-keymap)
+   (keymap :initform js-import-files-map)
    (action :initform 'js-import-files-actions)
    (group :initform 'js-import)))
 
 
-(defun js-import-node-modules-candidates()
+(defun js-import-node-modules-candidates(&optional $project-root)
   "Returns list of dependencies"
   (unless js-import-dependencies-cache (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
-  (let* ((project-root (projectile-project-root))
+  (let* ((project-root (or $project-root (projectile-project-root)))
          (package-json-path (f-join project-root "package.json"))
          (tick (file-attribute-modification-time (file-attributes package-json-path 'string)))
          (project-cache (gethash project-root js-import-dependencies-cache))
          (sections '("dependencies" "devDependencies")))
-
 
     (when (or (not (equal js-import-dependencies-cache-tick tick))
               (not project-cache))
@@ -380,7 +385,7 @@
    (candidate-number-limit :initform js-import-dependencies-number-limit)
    (action :initform 'js-import-files-actions)
    (mode-line :initform (list "Dependencies"))
-   (keymap :initform js-import-files-keymap)
+   (keymap :initform js-import-files-map)
    (persistent-action :initform 'js-import-ff-persistent-action)
    (group :initform 'js-import)))
 
@@ -584,8 +589,8 @@
           (concat
            (propertize js-import-current-alias 'face 'font-lock-function-name-face)
            "\s" (projectile-project-name) "/"
-           (lax-plist-get js-import-alias-map js-import-current-alias)))
-      (format "Relative to %s (switch to alias C->)" (f-filename buffer-file-name)))))
+           (plist-get js-import-alias-map js-import-current-alias)))
+      (format "Relative files"))))
 
 
 (defun js-import-find-file-at-point()
@@ -593,6 +598,16 @@
   (interactive)
   (when-let ((path (js-import-get-path-at-point)))
     (js-import-find-file path)))
+
+(defun js-import-find-file-and-exit(&optional _file)
+  "Transform FILE to real and open it"
+  (interactive)
+  (helm-run-after-exit 'js-import-find-file (car (helm-marked-candidates))))
+
+(defun js-import-find-file-other-window-and-exit()
+  "Transform FILE to real and open it"
+  (interactive)
+  (helm-run-after-exit 'js-import-find-file-other-window (car (helm-marked-candidates))))
 
 ;;;###autoload
 (defun js-import-find-file(file)
@@ -602,6 +617,7 @@
     (if (and path (f-exists? path))
         (find-file path)
       (message "Could't find %s" file))))
+(put 'js-import-find-file 'helm-only t)
 
 ;;;###autoload
 (defun js-import-find-file-other-window(file)
@@ -611,7 +627,7 @@
     (if (and path (f-exists? path))
         (find-file-other-window path)
       (message "Could't find %s" file))))
-
+(put 'js-import-find-file-other-window 'helm-only t)
 
 (defun js-import-ff-persistent-action (candidate)
   "Preview the contents of a file in a temporary buffer."
@@ -785,7 +801,7 @@
            path)
           ((js-import-is-relative? path)
            (js-import-path-to-relative path dir))
-          ((js-import-is-dependency? path)
+          ((js-import-is-dependency? path (projectile-project-root))
            (js-import-maybe-expand-dependency path))
           (t (js-import-alias-path-to-real path)))))
 
@@ -826,7 +842,7 @@
 
 (defun js-import-is-dependency? (display-path &optional project-root)
   "Check if path is dependency"
-  (let ((dependencies (js-import-node-modules-candidates))
+  (let ((dependencies (js-import-node-modules-candidates project-root))
         (dirname (car (split-string display-path "/"))))
     (or (member dirname dependencies)
         (f-exists? (js-import-expand-node-modules dirname project-root)))))
