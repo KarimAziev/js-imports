@@ -166,37 +166,34 @@
 
 (defvar js-import-dependencies-cache (make-hash-table :test 'equal))
 (defvar js-import-dependencies-cache-tick nil)
-
 (defvar js-import-current-alias nil)
+
+(defvar js-import-dependency-source-name "node modules")
+(defvar js-import-buffer-source-name "imported in buffer")
 
 (defvar js-import-aliases nil)
 (make-variable-buffer-local 'js-import-aliases)
 (defvar js-import-relative-transformer nil)
 (make-variable-buffer-local 'js-import-relative-transformer)
-
-(defvar js-import-dependencies-cache-plist nil)
-
-(defvar js-import-dependency-source-name "node modules")
-(defvar js-import-buffer-source-name "imported in buffer")
-
 (defvar js-import-current-export-path nil)
 (make-variable-buffer-local 'js-import-current-export-path)
 (defvar js-import-current-export-real-path nil)
 (make-variable-buffer-local 'js-import-current-export-real-path)
 (defvar js-import-export-candidates-in-path nil)
 (make-variable-buffer-local 'js-import-export-candidates-in-path)
-
 (defvar js-import-cached-imports-in-buffer nil)
 (make-variable-buffer-local 'js-import-cached-imports-in-buffer)
 (defvar js-import-cached-imports-in-buffer-tick nil)
 (make-variable-buffer-local 'js-import-cached-imports-in-buffer-tick)
-
 (defvar js-import-last-export-path nil)
 (make-variable-buffer-local 'js-import-last-export-path)
-(defvar js-import-node-modules-source nil)
-(defvar js-import-project-files-source nil)
-(defvar js-import-buffer-files-source nil)
 
+(defvar js-import-node-modules-source nil
+  "Variable keeps source files from node_modules.")
+(defvar js-import-project-files-source nil
+  "Variable for project sources includes both relative and aliased files without dependencies")
+(defvar js-import-buffer-files-source nil
+  "Buffer local variable for source of all imported files in a buffer")
 (make-variable-buffer-local 'js-import-buffer-files-source)
 
 (defvar js-import-files-actions
@@ -264,7 +261,8 @@
 
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
-          (helm-make-source js-import-buffer-source-name 'js-import-imported-files-source)))
+          (helm-make-source
+              js-import-buffer-source-name 'js-import-imported-files-source)))
 
   (unless js-import-project-files-source
     (setq js-import-project-files-source
@@ -272,7 +270,8 @@
 
   (unless js-import-node-modules-source
     (setq js-import-node-modules-source
-          (helm-make-source js-import-dependency-source-name 'js-import-dependency-source)))
+          (helm-make-source js-import-dependency-source-name
+              'js-import-dependency-source)))
 
   (save-excursion
     (helm
@@ -315,6 +314,7 @@
                                  :preselect (js-import-preselect)))))
       (js-import-from-path module))))
 
+
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
   "Show imported symbols from current buffer.
@@ -322,7 +322,8 @@
   Available actions includes jumping to item in buffer, renaming, adding more
   imports from current paths and deleting a symbol or whole import."
   (interactive)
-  (helm :sources (helm-make-source "*js symbols*" 'js-import-buffer-imports-source)))
+  (helm :sources
+        (helm-make-source "*js symbols*" 'js-import-buffer-imports-source)))
 
 
 (defun js-import-from-path(path)
@@ -378,36 +379,34 @@
 
 (defun js-import-node-modules-candidates(&optional $project-root)
   "Returns list of dependencies"
-  (unless js-import-dependencies-cache (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
+  (unless js-import-dependencies-cache
+    (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
   (let* ((project-root (or $project-root (projectile-project-root)))
          (package-json-path (f-join project-root "package.json"))
          (tick (file-attribute-modification-time (file-attributes package-json-path 'string)))
          (project-cache (gethash project-root js-import-dependencies-cache))
          (sections '("dependencies" "devDependencies")))
-
     (when (or (not (equal js-import-dependencies-cache-tick tick))
               (not project-cache))
       (let (submodules modules)
         (remhash project-root js-import-dependencies-cache)
-        (mapc (lambda(section) (when-let ((hash (js-import-read-package-json-section package-json-path section)))
-                            (setq modules (append modules (hash-table-keys hash)))))
+        (mapc (lambda(section)
+                (when-let ((hash (js-import-read-package-json-section package-json-path section)))
+                  (setq modules (append modules (hash-table-keys hash)))))
               sections)
-
         (let* ((max (length modules))
                (progress-reporter
                 (make-progress-reporter "Scaning node modules" 0  max)))
           (dotimes (k max)
             (let ((elt (nth k modules)))
               (sit-for 0.01)
-              (unless (s-contains? "/" elt) (setq submodules (append submodules (js-import-find-interfaces elt))))
+              (unless (s-contains? "/" elt)
+                (setq submodules (append submodules (js-import-find-interfaces elt))))
               (progress-reporter-update progress-reporter k)))
-
           (setq modules (append modules submodules))
-
           (puthash project-root modules js-import-dependencies-cache)
           (setq js-import-dependencies-cache-tick tick)
           (progress-reporter-done progress-reporter))))
-
     (gethash project-root js-import-dependencies-cache)))
 
 
@@ -453,14 +452,14 @@
 (defun js-import-display-to-real-exports(it)
   "Search for export item"
   (with-helm-current-buffer
-    (seq-find (lambda(elt) (string= (js-import-get-prop elt 'real-name) it)) js-import-export-candidates-in-path)))
+    (seq-find (lambda(elt) (string= (js-import-get-prop elt 'real-name) it))
+              js-import-export-candidates-in-path)))
 
 (defun js-import-display-to-real-imports(it)
   "Search for texport item"
   (with-helm-current-buffer
-    (let (import-item)
-      (setq import-item (seq-find (lambda(elt) (string= elt it)) js-import-cached-imports-in-buffer it))
-      import-item)))
+    (seq-find (lambda(elt) (string= elt it))
+              js-import-cached-imports-in-buffer it)))
 
 (defun js-import-jump-to-item-in-buffer(item)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop 'marker"
@@ -737,6 +736,8 @@
          (whole-import-bounds (js-import-get-import-positions display-path))
          (beg (car whole-import-bounds))
          (end (cdr whole-import-bounds))
+         (p1)
+         (p2)
          (overlay))
 
     (setq other-imports (remove candidate other-imports))
@@ -1535,12 +1536,12 @@ Result depends on syntax table's string quote character."
 (defun js-import-rename-default-item(item)
   "Renames default imported item "
   (let (real-name new-name confirm overlay end beg)
-    (setq real-name (or (js-import-get-prop item 'real-name) (js-import-strip-text-props item)))
+    (setq real-name (or (js-import-get-prop item 'real-name)
+                        (js-import-strip-text-props item)))
     (setq beg (js-import-get-prop item 'marker))
     (goto-char beg)
     (when (string= real-name (js-import-which-word))
       (setq end (+ (point) (length (js-import-which-word))))
-
       (unwind-protect
           (progn (setq overlay (make-overlay beg end))
                  (make-overlay beg end)
@@ -1559,7 +1560,6 @@ Result depends on syntax table's string quote character."
                      (setq overlay (make-overlay beg end))
                      (overlay-put overlay 'face 'ag-match-face)
                      (setq confirm (yes-or-no-p (format "Rename occurence?"))))))
-
         (remove-overlays beg end)
         (if (not confirm)
             (when (string= new-name (js-import-which-word))
@@ -1579,24 +1579,25 @@ Result depends on syntax table's string quote character."
          (real-name (or (js-import-get-prop item 'real-name) (nth 0 parts)))
          (as-word (nth 1 parts))
          (renamed-name (nth 2 parts))
-         (prompt (if as-word (format "Rename %s %s" real-name as-word) (format "Rename %s as" real-name)))
+         (prompt (if as-word
+                     (format "Rename %s %s" real-name as-word)
+                   (format "Rename %s as" real-name)))
          (input (concat "\s" renamed-name))
          (new-name (string-trim (read-string
                                  prompt
                                  input))))
-
     (when (and (not (string-blank-p new-name))
                marker
                (goto-char marker)
                (string= real-name (js-import-which-word)))
       (skip-chars-forward real-name)
-
       (if as-word
           (progn
             (skip-chars-forward " \s\t\n")
             (skip-chars-forward "as")
             (skip-chars-forward " \s\t\n")
-            (when (and renamed-name (string= renamed-name (js-import-which-word)))
+            (when (and renamed-name
+                       (string= renamed-name (js-import-which-word)))
               (delete-region (point) (+ (point) (length renamed-name))))
             (insert new-name))
 
