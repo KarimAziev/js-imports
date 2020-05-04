@@ -70,6 +70,16 @@
   :group 'js-import
   :type '(repeat string))
 
+(defcustom js-import-node-modules-dir "node_modules"
+  "Node modules path"
+  :group 'js-import
+  :type 'string)
+
+(defcustom js-import-buffer "*js import*"
+  "Name of js-import buffer"
+  :group 'js-import
+  :type 'string)
+
 (defcustom js-import-symbols-faces
   '(("^\\(type\\|interface\\)$" . font-lock-type-face)
     ("^\\(function\\|function*\\)$" . font-lock-function-name-face)
@@ -82,16 +92,9 @@
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
-
-(defcustom js-import-node-modules-dir "node_modules"
-  "Node modules path"
-  :group 'js-import
-  :type 'string)
-
-(defcustom js-import-buffer "*js import*"
-  "Name of js-import buffer"
-  :group 'js-import
-  :type 'string)
+(defface js-import-deletion-face '((t (:background "#e52b50" :foreground "white")))
+  "Face used to highlight deleletion"
+  :group 'js-import)
 
 
 (defvar js-import-command-map
@@ -747,7 +750,7 @@
         (if (or (= type 16) (not other-imports))
             (progn
               (setq overlay (make-overlay beg end))
-              (overlay-put overlay 'face 'ag-match-face)
+              (overlay-put overlay 'face 'js-import-deletion-face)
               (when (yes-or-no-p "Delete whole import?")
                 (remove-overlays beg end)
                 (delete-region beg end)))
@@ -760,11 +763,12 @@
             (setq p2 (point))
 
             (when (looking-at-p "}")
-              (setq p2 (1+ (point)))
+              (setq p2 (point))
               (goto-char p1)
               (skip-chars-backward " \s\t\n")
               (backward-char)
               (when (looking-at-p "{")
+                (setq p2 (1+ p2))
                 (setq p1 (point))
                 (skip-chars-backward  " \s\t\n")
                 (backward-char))
@@ -772,7 +776,8 @@
                 (setq p1 (point))))
 
             (setq overlay (make-overlay p1 p2))
-            (overlay-put overlay 'face 'ag-match-face)
+            (overlay-put overlay 'face 'js-import-deletion-face)
+
             (when (yes-or-no-p "Delete?")
               (remove-overlays p1 p2)
               (delete-region p1 p2))))
