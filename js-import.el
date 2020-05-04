@@ -831,17 +831,12 @@
       (let* ((alias-regexp (if (s-blank? alias) (concat "^" alias) (concat "^" alias "\\(/\\|$\\)" )))
              (alias-path (js-import-get-alias-path alias))
              (joined-path (f-join alias-path (s-replace-regexp alias-regexp "" path)))
-             (found-path (cond
-                          ((and (f-ext? joined-path) (f-exists? joined-path))
-                           (setq real-path joined-path))
-                          ((f-exists? (f-swap-ext joined-path "ts") )
-                           (setq real-path (f-swap-ext joined-path "ts")))
-                          ((f-exists? (f-swap-ext joined-path "js") )
-                           (setq real-path (f-swap-ext joined-path "js")))
-                          ((and (not (f-ext? joined-path)) (f-exists? (f-join joined-path "index.ts")) )
-                           (setq real-path (f-join joined-path "index.ts")))
-                          ((and (not (f-ext? joined-path)) (f-exists? (f-join joined-path "index.js")) )
-                           (setq real-path (f-join joined-path "index.js"))))))
+             (found-path (if (and (f-ext? joined-path)
+                                  (f-exists? joined-path))
+                             joined-path
+                           (or (js-import-try-ext joined-path) (js-import-try-ext (f-join joined-path "index"))))))
+
+
         (when (and found-path (f-exists? found-path))
           (setq real-path found-path)
           (setq aliases nil))))
@@ -1009,7 +1004,7 @@
       (remove-overlays beg end))))
 
 
-(defun js-import-rename-item(&optional candidate)
+(defun js-import-rename-item()
   "Persistent quick action to rename CANDIDATE in buffer."
   (interactive)
   (helm-exit-and-execute-action 'js-import-rename-import))
