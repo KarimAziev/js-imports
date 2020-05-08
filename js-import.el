@@ -50,7 +50,7 @@
   :type '(choice (const :tag "Double" "\"")
                  (const :tag "Single" "\\'")))
 
-(defcustom js-import-files-number-limit 50
+(defcustom js-import-files-number-limit 30
   "The limit for number of project files displayed.
 
   Override `helm-candidate-number-limit'"
@@ -76,7 +76,8 @@
 
 
 (defcustom js-import-preffered-extensions '("d.ts" "ts" "js" "tsx" "jsx")
-  "Sorted by priority list of stringed suffixes for selecting files with the same name but different extension"
+  "Sorted by priority list of stringed suffixes for selecting files with
+the same name but different extension"
   :group 'js-import
   :type '(repeat string))
 
@@ -200,7 +201,8 @@
 (defvar js-import-node-modules-source nil
   "Variable keeps source files from node_modules.")
 (defvar js-import-project-files-source nil
-  "Variable for project sources includes both relative and aliased files without dependencies")
+  "Variable for project sources includes both relative and aliased files
+without dependencies")
 (defvar js-import-buffer-files-source nil
   "Buffer local variable for source of all imported files in a buffer")
 (make-variable-buffer-local 'js-import-buffer-files-source)
@@ -448,6 +450,7 @@
           (progress-reporter-done progress-reporter))))
     (gethash project-root js-import-dependencies-cache)))
 
+
 (defun js-import-preselect()
   "Preselect function for file sources"
   (if  (and (> (point-max) (point))
@@ -493,7 +496,7 @@
   "Returns imported symbols in BUFFER which are cached and stored
    in a buffer local variable `js-import-cached-imports-in-buffer'.
 
-   Cache are invalidated when `buffer-modified-tick' changes."
+   Cache are invalidated when `buffer-modified-tick' is changed."
 
   (with-current-buffer (or buffer helm-current-buffer)
     (let ((tick (buffer-modified-tick)))
@@ -512,11 +515,13 @@
   (with-current-buffer helm-current-buffer
     (let (imports exports)
       (setq imports (js-import-imported-candidates-in-buffer helm-current-buffer))
-      (setq imports (js-import-filter-plist 'display-path (string= js-import-current-export-path it) imports))
+      (setq imports (js-import-filter-plist 'display-path (string= js-import-current-export-path it)
+                                            imports))
 
       (setq exports (if imports (js-import-filter-exports candidates imports) candidates))
       (setq exports (js-import-strip-duplicates exports))
-      (setq exports (mapcar (lambda(c) (js-import-propertize c 'display-path js-import-current-export-path)) exports)))))
+      (setq exports (mapcar (lambda(c) (js-import-propertize c 'display-path js-import-current-export-path))
+                            exports)))))
 
 
 
@@ -532,6 +537,7 @@
                                      imports))
                         (16 (< 0 (length imports)))))
               exports))
+
 
 
 (defun js-import-find-imported-files-in-buffer()
@@ -626,7 +632,8 @@
 
 
 (defun js-import-files-header-name(_name)
-  "A function for display header name for project files. Concatenates `js-import-current-alias' and PROJECT-NAME"
+  "A function for display header name for project files.
+Concatenates `js-import-current-alias' and PROJECT-NAME"
   (with-helm-current-buffer
     (if js-import-current-alias
         (progn
@@ -640,8 +647,12 @@
 (defun js-import-find-file-at-point()
   "Find a file when cursor are placed under stringified path."
   (interactive)
-  (when-let ((path (js-import-get-path-at-point)))
-    (js-import-find-file path)))
+  (let (path)
+    (save-excursion
+      (beginning-of-line)
+      (setq path (js-import-get-path-at-point)))
+    (when path
+      (js-import-find-file path))))
 
 (defun js-import-find-file-and-exit(&optional _file)
   "Transform FILE to real and open it"
@@ -856,7 +867,9 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
         (real-path))
     (while aliases
       (setq alias (pop aliases))
-      (let* ((alias-regexp (if (s-blank? alias) (concat "^" alias) (concat "^" alias "\\(/\\|$\\)" )))
+      (let* ((alias-regexp (if (s-blank? alias)
+                               (concat "^" alias)
+                             (concat "^" alias "\\(/\\|$\\)" )))
              (alias-path (js-import-get-alias-path alias))
              (joined-path (f-join alias-path (s-replace-regexp alias-regexp "" path)))
              (found-path (if (and (f-ext? joined-path)
@@ -1154,18 +1167,10 @@ In both cases the content will be copied without properties"
 
 (cl-defun js-import-make-index-item (candidate
                                      &key
-                                     display-path
-                                     full-name
-                                     p1
-                                     p2
-                                     display-name
-                                     display-part
                                      type
-                                     export-type
-                                     import-type
+                                     display-path
                                      var-type
                                      real-path
-                                     renamed-name
                                      real-name
                                      marker)
   "Utility function to propertize js symbol. See also
@@ -1174,17 +1179,9 @@ In both cases the content will be copied without properties"
   (setq candidate (js-import-strip-text-props candidate))
   (js-import-propertize candidate
                         'real-name real-name
-                        'full-name full-name
-                        'p1 p1
-                        'p2 p2
-                        'renamed-name renamed-name
-                        'display-name (or display-name candidate)
                         'display-path display-path
                         'real-path real-path
                         'type type
-                        'display-part display-part
-                        'export-type export-type
-                        'import-type import-type
                         'var-type var-type
                         'marker marker))
 
@@ -1209,10 +1206,8 @@ In both cases the content will be copied without properties"
                    (let ((real-name (js-import-which-word)))
                      (push (js-import-make-index-item (format "* as %s" real-name)
                                                       :type 16
-                                                      :export-type 16
                                                       :real-name real-name
                                                       :var-type "export"
-                                                      :display-part "*"
                                                       :marker (point)
                                                       :real-path real-path
                                                       :display-path path)
@@ -1227,8 +1222,6 @@ In both cases the content will be copied without properties"
                                          (type (if (string= "default" real-name) 1 4)))
                                     (push (js-import-make-index-item real-name
                                                                      :type type
-                                                                     :export-type type
-                                                                     :display-part it
                                                                      :var-type "export"
                                                                      :real-name real-name
                                                                      :real-path real-path
@@ -1249,8 +1242,6 @@ In both cases the content will be copied without properties"
                    (push (js-import-make-index-item (js-import-which-word)
                                                     :type 1
                                                     :real-name (js-import-which-word)
-                                                    :export-type 1
-                                                    :display-part "default"
                                                     :real-path real-path
                                                     :var-type "export default"
                                                     :marker (point)
@@ -1266,11 +1257,9 @@ In both cases the content will be copied without properties"
                      (push (js-import-make-index-item real-name
                                                       :type 4
                                                       :real-name real-name
-                                                      :export-type 4
                                                       :real-path real-path
                                                       :var-type var-type
                                                       :marker (point)
-                                                      :real-path real-path
                                                       :display-path real-path)
                            exports)))
                   ((looking-at-p "*[ \s\t]from")
@@ -1317,8 +1306,7 @@ In both cases the content will be copied without properties"
                      (setq m2 (point))
                      (setq module-import (js-import-make-index-item (format "%s" (buffer-substring-no-properties m1 m2))
                                                                     :type 16
-                                                                    :import-type 16
-                                                                    :var-type "import"
+                                                                    :real-name renamed-name
                                                                     :marker m1
                                                                     :display-path path))
 
@@ -1327,16 +1315,13 @@ In both cases the content will be copied without properties"
                   ((looking-at-p "[_$A-Za-z0-9]")
                    (setq default-import (js-import-make-index-item (js-import-which-word)
                                                                    :type 1
-                                                                   :import-type 1
                                                                    :real-name (js-import-which-word)
-                                                                   :display-part "default"
-                                                                   :var-type "import"
                                                                    :marker (point)
                                                                    :display-path path))
                    (push default-import named-imports)
                    (skip-chars-forward "_$A-Za-z0-9,\s\n\t")))
             (when (looking-at-p "{")
-              (let (p1 p2 item items real-name renamed-name full-name)
+              (let (p1 p2 item items real-name full-name)
                 (setq p1 (+ 1 (point)))
 
                 (save-excursion (re-search-forward "}" nil t 1)
@@ -1353,19 +1338,15 @@ In both cases the content will be copied without properties"
                   (when (looking-at-p "as[ \s\t\n]")
                     (progn
                       (re-search-forward "as[ \s\t\n]" nil t 1)
-                      (setq renamed-name (js-import-which-word))
+
                       (skip-chars-forward "_$A-Za-z0-9")
                       (setq p2 (point))))
 
                   (setq full-name (string-trim (buffer-substring-no-properties p1 p2)))
                   (setq item (js-import-make-index-item full-name
                                                         :type 4
-                                                        :display-part full-name
-                                                        :full-name full-name
-                                                        :renamed-name renamed-name
-                                                        :display-path path
-                                                        :import-type 1
                                                         :real-name real-name
+                                                        :display-path path
                                                         :marker p1))
 
                   (push item items))
@@ -1422,8 +1403,11 @@ In both cases the content will be copied without properties"
       (cons pos1 pos2))))
 
 
-(defun js-import-delete-whole-import(cand)
-  (when-let ((bounds (js-import-get-import-positions (js-import-get-prop cand 'display-path))))
+(defun js-import-delete-whole-import(candidate)
+  "Remove CANDIDATE's import statement.
+CANDIDATE must be properizied with prop `display-path'"
+  (when-let* ((path (js-import-get-prop candidate 'display-path))
+              (bounds (js-import-get-import-positions path)))
     (delete-region (car bounds) (cdr bounds))
     (join-line)))
 
@@ -1485,7 +1469,7 @@ ITEM is not string."
       (buffer-substring-no-properties $p1 $p2))))
 
 
-(defun js-import-get-path-at-point()
+t(defun js-import-get-path-at-point()
   (interactive)
   (save-excursion
     (when-let* ((word (js-import-which-word))
@@ -1561,10 +1545,9 @@ Result depends on syntax table's string quote character."
 (defun js-import-rename-as(item)
   "Rename named imports and module imports."
   (let* ((marker (js-import-get-prop item 'marker))
-         (full-name (or (js-import-get-prop item 'full-name)
-                        (js-import-strip-text-props item)))
+         (full-name (js-import-strip-text-props item))
          (parts (split-string full-name))
-         (real-name (or (js-import-get-prop item 'real-name) (nth 0 parts)))
+         (real-name (nth 0 parts))
          (as-word (nth 1 parts))
          (renamed-name (nth 2 parts))
          (prompt (if as-word
