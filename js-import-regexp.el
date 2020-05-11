@@ -24,99 +24,53 @@
 
 ;;; Code:
 
-(defcustom js-import-unsaved-file-regexp "[a-zZ-A0-9]*.#[a-zZ-A0-9/]"
-  "Regexp used for filtering test files"
-  :group 'js-import
-  :type 'string)
-
-(defcustom js-import-test-file-regexp "__tests__/\\|[a-zZ-A]+\\.test[s]"
-  "Regexp used for filtering test files"
-  :group 'js-import
-  :type 'string)
-
-(defvar js-import-word-chars-regexp "[a-zZ-A0-9_$]")
 
 (defvar js-import-import-regexp
   "^import[ \t\\n]+\\([a-zZ-A0-9_$]+\\|*[\t\n\s]+as[\t\n\s][a-zZ-A0-9_$]\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']\\([^['\"]*\\)"
   "Regexp for searching import declarations")
 
+(defconst js-import-regexp-name
+  "_$A-Za-z0-9"
+  "Regexp matching the start of a js identifier.")
+
+(defconst js-import-regexp-name-set
+  (concat "[" js-import-regexp-name "]")
+  "Regexp set matching the start of a js identifier.")
+
+(defconst js-import-regexp-name-with-separators
+  (concat js-import-regexp-name ",\s\n\t")
+  "Regexp matching js identifier's chars with separators")
+
+(defconst js-import-regexp-import-keyword
+  "\\(^\\| +\\)import[ \t\n]+"
+  "Regexp matching keyword import")
+
+(defconst js-import-regexp-export-keyword
+  "\\(^\\| +\\)export[ \t\n]+"
+  "Regexp matching keyword export")
+
+(defconst js-import-file-ext-regexp
+  "\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)$"
+  "Regexp matching js, jsx and ts extensions files.")
+
 (defvar js-import-file-index-regexp
   "\\(/\\|^\\)\\index\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)?$")
 
-
-(defconst js-import-reserved-words
-  '("abstract"
-    "as"
-    "arguments"
-    "await"
-    "boolean"
-    "break"
-    "byte"
-    "case"
-    "catch"
-    "char"
-    "class"
-    "const"
-    "continue"
-    "debugger"
-    "default"
-    "delete"
-    "do"
-    "double"
-    "export",
-    "else"
-    "enum"
-    "eval"
-    "export"
-    "extends"
-    "false"
-    "final"
-    "finally"
-    "float"
-    "for"
-    "function"
-    "function*"
-    "goto"
-    "if"
-    "implements"
-    "import"
-    "in"
-    "instanceof"
-    "int"
-    "interface"
-    "let"
-    "long"
-    "native"
-    "new"
-    "null"
-    "package"
-    "private"
-    "protected"
-    "public"
-    "return"
-    "short"
-    "static"
-    "super"
-    "switch"
-    "synchronized"
-    "this"
-    "throw"
-    "throws"
-    "transient"
-    "true"
-    "try"
-    "typeof"
-    "var"
-    "void"
-    "volatile"
-    "while"
-    "with"
-    "yield")
+(defconst js-import-reserved-js-words '("abstract" "any" "as" "async" "await" "boolean" "bigint" "break" "case" "catch" "class" "const"
+                                        "constructor" "continue" "declare" "default" "delete" "do" "else"
+                                        "enum" "export" "extends" "extern" "false" "finally" "for"
+                                        "function" "from" "get" "goto" "if" "implements" "import" "in" "instanceof"
+                                        "interface" "keyof" "let" "module" "namespace" "never" "new" "null" "number" "object" "of"
+                                        "private" "protected" "public" "readonly" "return" "set" "static" "string"
+                                        "super" "switch"  "this" "throw" "true"
+                                        "try" "type" "typeof" "unknown" "var" "void"
+                                        "while" "yield")
   "List of reserved words in javascript")
+
 
 (defun js-import-word-reserved?(str &optional reserved-list)
   "Check if STR is js reserved word"
-  (unless reserved-list (setq reserved-list js-import-reserved-words))
+  (unless reserved-list (setq reserved-list js-import-reserved-js-words))
   (when (stringp str)
     (member str reserved-list)))
 
