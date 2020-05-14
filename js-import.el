@@ -648,7 +648,8 @@ Concatenates `js-import-current-alias' and PROJECT-NAME"
   (interactive)
   (let (path)
     (save-excursion
-      (beginning-of-line)
+      (unless (js-import-inside-string-q)
+        (beginning-of-line))
       (setq path (js-import-get-path-at-point)))
     (when path
       (js-import-find-file path))))
