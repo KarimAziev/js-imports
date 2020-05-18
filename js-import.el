@@ -275,9 +275,10 @@ without dependencies")
           (helm-make-source
               js-import-buffer-source-name 'js-import-source-imported-files)))
 
-  (setq js-import-project-files-source
-        (helm-make-source js-import-files-source-name 'js-import-source-project-files))
-
+  (unless js-import-project-files-source
+    (setq js-import-project-files-source
+          (helm-make-source
+              js-import-files-source-name 'js-import-source-project-files)))
 
   (unless js-import-node-modules-source
     (setq js-import-node-modules-source
@@ -538,7 +539,7 @@ without dependencies")
           (setq js-import-cached-imports-in-buffer-tick tick)
           (setq js-import-cached-imports-in-buffer (save-excursion
                                                      (with-syntax-table (syntax-table)
-                                                       (js-import-extracts-imports))))
+                                                       (js-import-extract-imports))))
           js-import-cached-imports-in-buffer)))))
 
 (defun js-import-exported-candidates-in-buffer(&optional buffer)
@@ -546,7 +547,7 @@ without dependencies")
    in a buffer local variable `js-import-cached-exports-in-buffer'.
 
    Cache are invalidated when `buffer-modified-tick' is changed."
-  (message "js-import-exported-candidates-in-buffer JS-IMPORT-CACHED-EXPORTS-IN-BUFFER==%s \n"  js-import-cached-exports-in-buffer)
+
   (with-current-buffer (or buffer helm-current-buffer)
     (let ((tick (buffer-modified-tick)))
       (if (eq js-import-cached-exports-in-buffer-tick tick)
@@ -555,7 +556,7 @@ without dependencies")
           (setq js-import-cached-exports-in-buffer-tick tick)
           (setq js-import-cached-exports-in-buffer (save-excursion
                                                      (with-syntax-table (syntax-table)
-                                                       (js-import-extracts-exports buffer-file-name))))
+                                                       (js-import-extract-exports buffer-file-name))))
           js-import-cached-exports-in-buffer)))))
 
 
@@ -993,7 +994,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
                                                                (with-syntax-table syntax
                                                                  (js-import-insert-buffer-or-file path)
                                                                  (append default-candidates
-                                                                         (js-import-extracts-exports path)))))))
+                                                                         (js-import-extract-exports path)))))))
         default-candidates))))
 
 
@@ -1239,9 +1240,8 @@ In both cases the content will be copied without properties"
                         'var-type var-type
                         'marker marker))
 
-(defun js-import-extracts-exports(&optional real-path)
-  "Extracts all available exports. REAL-PATH used for resolving relative nested exports - `export * from ...`'"
-  (interactive)
+(defun js-import-extract-exports(&optional real-path)
+  "Extracts all available exports. REAL-PATH used for resolving nested exports - `export * from ...`'"
   (save-excursion
     (goto-char (point-min))
     (let (symbols)
@@ -1272,35 +1272,42 @@ In both cases the content will be copied without properties"
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                              (real-name (car (last parts)))
-                                              (type (if (string= "default" real-name) 1 4)))
-                                         (push (js-import-make-index-item real-name
-                                                                          :type type
-                                                                          :var-type "export"
-                                                                          :real-name real-name
-                                                                          :real-path real-path
-                                                                          :marker (point)
-                                                                          :display-path path)
-                                               exports)))
+                                         (real-name (car (last parts)))
+                                         (type (if (string= "default" real-name) 1 4)))
+                                    (push (js-import-make-index-item real-name
+                                                                     :type type
+                                                                     :var-type "export"
+                                                                     :real-name real-name
+                                                                     :real-path real-path
+                                                                     :marker (point)
+                                                                     :display-path path)
+                                          exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))
-                  ((looking-at-p "default")
-                   (forward-word)
-                   (skip-chars-forward "\s\t")
-
-                   (when (js-import-word-reserved? (js-import-which-word))
+                  ((looking-at-p "default[ \s\t]")
+                   (let (name)
                      (forward-word)
-                     (skip-chars-forward "\s\t"))
+                     (skip-chars-forward "\s\t")
+                     (setq name (js-import-which-word))
 
-                   (push (js-import-make-index-item (js-import-which-word)
-                                                    :type 1
-                                                    :real-name (js-import-which-word)
-                                                    :real-path real-path
-                                                    :var-type "export default"
-                                                    :marker (point)
-                                                    :display-path path)
-                         exports))
+                     (when (js-import-word-reserved? name)
+                       (forward-word)
+                       (skip-chars-forward "\s\t")
+                       (setq name (js-import-which-word)))
+
+
+                     (when (or (s-matches? (concat "[" "^" js-import-regexp-name "]") name)
+                               (js-import-word-reserved? name))
+                       (setq name "default"))
+                     (push (js-import-make-index-item name
+                                                      :type 1
+                                                      :real-name (js-import-which-word)
+                                                      :real-path real-path
+                                                      :var-type "export default"
+                                                      :marker (point)
+                                                      :display-path path)
+                           exports)))
                   ((looking-at-p js-import-regexp-name-set)
                    (let ((var-type (js-import-which-word))
                          (real-name))
@@ -1325,12 +1332,12 @@ In both cases the content will be copied without properties"
                        (with-syntax-table table
                          (erase-buffer)
                          (js-import-insert-buffer-or-file next-path)
-                         (setq symbols (append symbols (js-import-extracts-exports next-path))))))))
+                         (setq symbols (append symbols (js-import-extract-exports next-path))))))))
             (setq symbols (append symbols exports))))
         (forward-line 1))
       symbols)))
 
-(defun js-import-extracts-imports()
+(defun js-import-extract-imports()
   (save-excursion
     (goto-char 0)
     (let (symbols)
@@ -1645,7 +1652,13 @@ Result depends on syntax table's string quote character."
          (type (js-import-get-prop candidate 'type))
          (current-name (car parts))
          (display-path (js-import-get-prop candidate 'display-path))
-         (proposed-symbol (js-import-generate-name-from-path display-path))
+         (proposed-symbol (pcase type
+                            (1 (if (or (js-import-word-reserved? candidate)
+                                       (s-matches? (concat "[" "^" js-import-regexp-name "]") candidate))
+                                   (js-import-generate-name-from-path display-path)
+                                 candidate))
+                            (4 (js-import-generate-name-from-path display-path))
+                            (16 (js-import-generate-name-from-path display-path))))
          (prompt (format
                   (pcase type
                     (1 "Import default as (default: %s): ")
