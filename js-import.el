@@ -207,6 +207,9 @@ the same name but different extension"
 (make-variable-buffer-local 'js-import-cached-imports-in-buffer)
 (defvar js-import-cached-imports-in-buffer-tick nil)
 (make-variable-buffer-local 'js-import-cached-imports-in-buffer-tick)
+
+(defvar-local js-import-cached-exports-in-buffer nil)
+(defvar-local js-import-cached-exports-in-buffer-tick nil)
 (defvar js-import-last-export-path nil)
 (make-variable-buffer-local 'js-import-last-export-path)
 
@@ -329,10 +332,12 @@ without dependencies")
   Available actions includes jumping to item in buffer, renaming, adding more
   imports from current paths and deleting a symbol or whole import."
   (interactive)
-  (helm
-   :preselect (or (js-import-which-word) "")
-   :sources
-   (helm-make-source "*js symbols*" 'js-import-source-symbols-in-buffer)))
+  (let (sources)
+    (push (helm-make-source "*js exports*" 'js-import-exported-symbols-in-buffer) sources)
+    (push (helm-make-source "*js imports*" 'js-import-source-symbols-in-buffer) sources)
+    (helm
+     :preselect (or (js-import-which-word) "")
+     :sources sources)))
 
 
 (defun js-import-symbols-preselect()
@@ -416,6 +421,18 @@ without dependencies")
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
                                        (js-import-display-to-real-imports c))))
    (action :initform 'js-import-symbols-in-buffer-actions)))
+
+(defclass js-import-exported-symbols-in-buffer(helm-source-sync)
+  ((candidates :initform 'js-import-exported-candidates-in-buffer)
+   (marked-with-props :initform 'withprop)
+   (persistent-help :initform "Show symbol")
+   (display-to-real :initform (lambda(it) (with-helm-current-buffer
+                                       (seq-find (lambda(elt) (string= elt it))
+                                                 js-import-cached-exports-in-buffer it))))
+   (persistent-action :initform (lambda(it) (with-helm-current-buffer
+                                         (js-import-jump-to-item-in-buffer (seq-find (lambda(elt) (string= elt it))
+                                                                                     js-import-cached-exports-in-buffer it)))))
+   (action :initform 'js-import-jump-to-item-in-buffer)))
 
 
 (defclass js-import-source-symbols-in-path(helm-source-sync)
@@ -524,6 +541,23 @@ without dependencies")
                                                        (js-import-extracts-imports))))
           js-import-cached-imports-in-buffer)))))
 
+(defun js-import-exported-candidates-in-buffer(&optional buffer)
+  "Returns imported symbols in BUFFER which are cached and stored
+   in a buffer local variable `js-import-cached-exports-in-buffer'.
+
+   Cache are invalidated when `buffer-modified-tick' is changed."
+  (message "js-import-exported-candidates-in-buffer JS-IMPORT-CACHED-EXPORTS-IN-BUFFER==%s \n"  js-import-cached-exports-in-buffer)
+  (with-current-buffer (or buffer helm-current-buffer)
+    (let ((tick (buffer-modified-tick)))
+      (if (eq js-import-cached-exports-in-buffer-tick tick)
+          js-import-cached-exports-in-buffer
+        (progn
+          (setq js-import-cached-exports-in-buffer-tick tick)
+          (setq js-import-cached-exports-in-buffer (save-excursion
+                                                     (with-syntax-table (syntax-table)
+                                                       (js-import-extracts-exports buffer-file-name))))
+          js-import-cached-exports-in-buffer)))))
+
 
 (defun js-import-exported-candidates-transformer(candidates)
   "Removes duplicates and imported members from from CANDIDATES plist."
@@ -599,16 +633,16 @@ without dependencies")
       (setq files (seq-uniq files))
       (when alias-path
         (setq files (seq-filter (lambda(filename) (if (f-absolute? filename)
-                                                 (s-matches-p alias-path filename)
-                                               filename))
+                                                      (s-matches-p alias-path filename)
+                                                    filename))
                                 files)))
 
       (setq files (seq-remove (lambda(filename) (equal buffer-file-name filename)) files))
       (if alias-path
           (mapcar
            (lambda(path) (js-import-normalize-path
-                     (s-replace-regexp alias-path (js-import-slash js-import-current-alias)
-                                       path)))
+                          (s-replace-regexp alias-path (js-import-slash js-import-current-alias)
+                                            path)))
            files)
         (mapcar (lambda(path) (js-import-normalize-path (js-import-relative-one-by-one path)))
                 files)))))
