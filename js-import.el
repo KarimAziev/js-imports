@@ -25,12 +25,11 @@
 ;;; Code:
 
 (require 'helm)
-(require 'projectile)
 (require 'subr-x)
 (require 'cl-lib)
 (require 'f)
-(require 'json)
 (require 's)
+(require 'json)
 (require 'js-import-regexp)
 
 (defgroup js-import nil
@@ -86,7 +85,7 @@ the same name but different extension"
   :group 'js-import
   :type '(repeat string))
 
-(defcustom js-import-buffer "*js import*"
+(defcustom js-import-buffer "*helm js import*"
   "Name of js-import buffer"
   :group 'js-import
   :type 'string)
@@ -193,7 +192,7 @@ the same name but different extension"
 
 (defvar js-import-dependency-source-name "node modules")
 (defvar js-import-buffer-source-name "imported in buffer")
-(defvar js-import-files-source "js-import-files")
+(defvar js-import-files-source-name "js-import-files")
 
 (defvar js-import-aliases nil)
 (make-variable-buffer-local 'js-import-aliases)
@@ -268,15 +267,14 @@ without dependencies")
 (defun js-import ()
   "Init imports from your current project"
   (interactive)
-
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
           (helm-make-source
               js-import-buffer-source-name 'js-import-source-imported-files)))
 
-  (unless js-import-project-files-source
-    (setq js-import-project-files-source
-          (helm-make-source js-import-files-source 'js-import-source-project-files)))
+  (setq js-import-project-files-source
+        (helm-make-source js-import-files-source-name 'js-import-source-project-files))
+
 
   (unless js-import-node-modules-source
     (setq js-import-node-modules-source
@@ -297,10 +295,9 @@ without dependencies")
 (defun js-import-alias ()
   "Import from project files without dependencies."
   (interactive)
-
   (unless js-import-project-files-source
     (setq js-import-project-files-source
-          (helm-make-source js-import-files-source 'js-import-source-project-files)))
+          (helm-make-source js-import-files-source-name 'js-import-source-project-files)))
 
   (save-excursion
     (helm
@@ -351,6 +348,7 @@ without dependencies")
     (setq js-import-last-export-path path)
     (setq js-import-current-export-real-path (js-import-path-to-real path default-directory)))
 
+
   (helm :sources (append (list (helm-make-source "js-exports " 'js-import-source-symbols-in-path)
                                (helm-make-source "imported" 'js-import-source-symbols-in-buffer)))))
 
@@ -368,17 +366,29 @@ without dependencies")
 (defclass js-import-source-project-files (helm-source-sync)
   ((header-name :initform 'js-import-files-header-name)
    (init :initform 'js-import-alias-init)
-   (candidates :initform 'projectile-current-project-files)
+   (candidates :initform 'js-import-project-files)
    (candidate-number-limit :initform js-import-files-number-limit)
+   (allow-dups :initform nil)
    (persistent-action :initform 'js-import-ff-persistent-action)
-   (candidate-transformer :initform 'js-import-project-files-transformer)
-   (filter-one-by-one :initform (lambda(path)
-                                  (with-current-buffer helm-current-buffer
-                                    (js-import-transform-path-one-by-one path js-import-current-alias))))
+   (filtered-candidate-transformer :initform 'js-import-project-files-transformer)
    (mode-line :initform (list "File(s)"))
    (keymap :initform js-import-files-map)
    (action :initform 'js-import-files-actions)
    (group :initform 'js-import)))
+
+
+
+(defun js-import-project-files()
+  "Search for files"
+  (let* ((root (js-import-find-package-json))
+         (dirs (f-directories root (lambda(it) (not (or (s-contains? "node_modules" it)
+                                                   (s-matches? "/\\.[a-zZ-A]" it))))))
+         (files (f-files default-directory 'js-import-filter-pred t)))
+
+    (mapc (lambda(dir) (setq files (append files (f-files dir 'js-import-filter-pred t))))
+          (reverse dirs))
+
+    files))
 
 
 (defclass js-import-source-node-modules (helm-source-sync)
@@ -424,19 +434,11 @@ without dependencies")
 
 
 
-
-(defun js-import-project-files-transformer(files)
-  "Filter FILES by extension and one of the aliases, if present."
-  (with-current-buffer helm-current-buffer
-    (let ((alias-path (plist-get js-import-alias-map js-import-current-alias)))
-      (seq-filter (lambda(it) (js-import-filter-pred it alias-path)) files))))
-
-
 (defun js-import-node-modules-candidates(&optional $project-root)
   "Returns list of dependencies. Dependencies are retrievies and cached from package json."
   (unless js-import-dependencies-cache
     (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
-  (let* ((project-root (or $project-root (projectile-project-root)))
+  (let* ((project-root (or $project-root (js-import-find-package-json)))
          (package-json-path (f-join project-root "package.json"))
          (tick (file-attribute-modification-time (file-attributes package-json-path 'string)))
          (project-cache (gethash project-root js-import-dependencies-cache)))
@@ -573,10 +575,10 @@ without dependencies")
       (setq js-import-current-alias nil))))
 
 (defun js-import-relative-one-by-one(path)
-  "Transform relative to `projectile-project-root' PATH into relative to the current `buffer-file-name'"
+  "Transform PATH into relative to the `buffer-file-name'"
   (if (js-import-is-relative? path)
       path
-    (let ((relative-path (f-relative (f-join (projectile-project-root) path) default-directory)))
+    (let ((relative-path (f-relative path default-directory)))
       (unless (js-import-is-relative? relative-path)
         (setq relative-path (concat "./" relative-path)))
       relative-path)))
@@ -588,16 +590,28 @@ without dependencies")
       str
     (concat str "/")))
 
-(defun js-import-transform-to-alias(filepath alias)
-  "Project"
-  (let ((alias-path (plist-get js-import-alias-map js-import-current-alias)))
-    (s-replace-regexp (concat "^" alias-path "/") (js-import-slash alias) filepath)))
 
-(defun js-import-transform-path-one-by-one(path &optional alias)
-  "Transform relative to the project root PATH into aliased one or relative to the current `buffer-file-name'"
-  (if alias
-      (js-import-normalize-path (js-import-transform-to-alias path alias))
-    (js-import-normalize-path (js-import-relative-one-by-one path))))
+(defun js-import-project-files-transformer(files &optional _source)
+  "Filter FILES by extension and one of the aliases, if present."
+  (with-current-buffer helm-current-buffer
+    (let ((alias-path (when js-import-current-alias (f-slash (f-join (js-import-find-package-json)
+                                                                     (plist-get js-import-alias-map js-import-current-alias))))))
+      (setq files (seq-uniq files))
+      (when alias-path
+        (setq files (seq-filter (lambda(filename) (if (f-absolute? filename)
+                                                 (s-matches-p alias-path filename)
+                                               filename))
+                                files)))
+
+      (setq files (seq-remove (lambda(filename) (equal buffer-file-name filename)) files))
+      (if alias-path
+          (mapcar
+           (lambda(path) (js-import-normalize-path
+                     (s-replace-regexp alias-path (js-import-slash js-import-current-alias)
+                                       path)))
+           files)
+        (mapcar (lambda(path) (js-import-normalize-path (js-import-relative-one-by-one path)))
+                files)))))
 
 
 (defun js-import-switch-to-relative(&optional _cand)
@@ -631,16 +645,15 @@ without dependencies")
 
 
 (defun js-import-files-header-name(_name)
-  "A function for display header name for project files.
-Concatenates `js-import-current-alias' and PROJECT-NAME"
+  "A function for display header name for project files."
   (with-helm-current-buffer
     (if js-import-current-alias
         (progn
           (concat
            (propertize js-import-current-alias 'face 'font-lock-function-name-face)
-           "\s" (projectile-project-name) "/"
+           "\s" (f-short (js-import-find-package-json)) "/"
            (plist-get js-import-alias-map js-import-current-alias)))
-      (format "Relative files"))))
+      (f-short (js-import-find-package-json)))))
 
 
 (defun js-import-find-file-at-point()
@@ -684,12 +697,10 @@ Concatenates `js-import-current-alias' and PROJECT-NAME"
       (message "Could't find %s" file))))
 (put 'js-import-find-file-other-window 'helm-only t)
 
-(defun js-import-filter-pred(filename &optional alias)
-  (and (not (string-equal (s-replace (projectile-project-root) "" buffer-file-name) filename))
-       (js-import-is-ext-enabled? filename)
+(defun js-import-filter-pred(filename)
+  (and (js-import-is-ext-enabled? filename)
        (seq-every-p (lambda(re) (not (s-matches? re filename)))
-                    js-import-ignored-files-regexp)
-       (if alias (s-matches? (concat "^" alias) filename) t)))
+                    js-import-ignored-files-regexp)))
 
 
 (defun js-import-compose-from(arg &rest funcs)
@@ -716,7 +727,7 @@ Concatenates `js-import-current-alias' and PROJECT-NAME"
   "Return the path to node-modules."
   (if (f-absolute? js-import-node-modules-dir)
       js-import-node-modules-dir
-    (f-join (or project-dir (projectile-project-root)) js-import-node-modules-dir)))
+    (f-join (or project-dir (js-import-find-package-json)) js-import-node-modules-dir)))
 
 (defun js-import-expand-node-modules(module &optional project-dir)
   (f-join (js-import-get-node-modules-path project-dir) module))
@@ -746,7 +757,7 @@ Concatenates `js-import-current-alias' and PROJECT-NAME"
 
 (defun js-import-get-package-json-path ()
   "Return the path to package.json."
-  (f-join (projectile-project-root) "package.json"))
+  (f-join (js-import-find-package-json) "package.json"))
 
 (defun js-import-remove-ext(path)
   (replace-regexp-in-string js-import-file-ext-regexp "" path))
@@ -856,7 +867,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
            path)
           ((js-import-is-relative? path)
            (js-import-path-to-relative path dir))
-          ((js-import-is-dependency? path (projectile-project-root))
+          ((js-import-is-dependency? path (js-import-find-package-json))
            (js-import-maybe-expand-dependency path))
           (t (js-import-alias-path-to-real path)))))
 
@@ -884,13 +895,22 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
           (setq aliases nil))))
     real-path))
 
+(defun js-import-find-package-json (&optional dir)
+  (unless dir (setq dir default-directory))
+  (let ((parent (expand-file-name ".." dir)))
+    (unless (or (equal parent dir)
+                (equal dir "/"))
+      (if (file-exists-p (expand-file-name "package.json" dir))
+          dir
+        (js-import-find-package-json parent)))))
 
 (defun js-import-real-path-to-alias(real-path alias)
   (let ((alias-path (js-import-get-alias-path alias)))
     (f-join alias (replace-regexp-in-string (concat "^" alias-path) "" real-path))))
 
 (defun js-import-get-alias-path(alias)
-  (f-slash (f-join (projectile-project-root) (plist-get js-import-alias-map alias))))
+  (let ((root (js-import-find-package-json)))
+    (f-join root (plist-get js-import-alias-map alias))))
 
 
 (defun js-import-is-dependency? (display-path &optional project-root)
@@ -1218,16 +1238,16 @@ In both cases the content will be copied without properties"
                      (re-search-forward "}")
                      (setq p2 (point))
                      (mapc (lambda(it) (let* ((parts (split-string it))
-                                         (real-name (car (last parts)))
-                                         (type (if (string= "default" real-name) 1 4)))
-                                    (push (js-import-make-index-item real-name
-                                                                     :type type
-                                                                     :var-type "export"
-                                                                     :real-name real-name
-                                                                     :real-path real-path
-                                                                     :marker (point)
-                                                                     :display-path path)
-                                          exports)))
+                                              (real-name (car (last parts)))
+                                              (type (if (string= "default" real-name) 1 4)))
+                                         (push (js-import-make-index-item real-name
+                                                                          :type type
+                                                                          :var-type "export"
+                                                                          :real-name real-name
+                                                                          :real-path real-path
+                                                                          :marker (point)
+                                                                          :display-path path)
+                                               exports)))
                            (js-import-cut-names
                             (buffer-substring-no-properties p1 p2)
                             ",\\|}\\|{"))))
