@@ -270,11 +270,11 @@ without dependencies")
 (defun js-import ()
   "Init imports from your current project"
   (interactive)
+
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
           (helm-make-source
               js-import-buffer-source-name 'js-import-source-imported-files)))
-
   (unless js-import-project-files-source
     (setq js-import-project-files-source
           (helm-make-source
@@ -383,13 +383,14 @@ without dependencies")
    (group :initform 'js-import)))
 
 
-
 (defun js-import-project-files()
   "Search for files"
   (let* ((root (js-import-find-package-json))
-         (dirs (f-directories root (lambda(it) (not (or (s-contains? "node_modules" it)
-                                                   (s-matches? "/\\.[a-zZ-A]" it))))))
+         (alias-path (and js-import-current-alias (js-import-get-alias-path js-import-current-alias)))
+         (dirs (f-directories (or alias-path root) (lambda(it) (not (or (s-contains? "node_modules" it)
+                                                                   (s-matches? "/\\.[a-zZ-A]" it))))))
          (files (f-files default-directory 'js-import-filter-pred t)))
+
 
     (mapc (lambda(dir) (setq files (append files (f-files dir 'js-import-filter-pred t))))
           (reverse dirs))
@@ -621,7 +622,7 @@ without dependencies")
 
 (defun js-import-slash(str)
   "Append slash to non-empty STR unless one already."
-  (if (or (s-matches? "/$" str) (s-blank? str))
+  (if (or (null str) (s-matches? "/$" str) (s-blank? str))
       str
     (concat str "/")))
 
@@ -943,9 +944,10 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
   (let ((alias-path (js-import-get-alias-path alias)))
     (f-join alias (replace-regexp-in-string (concat "^" alias-path) "" real-path))))
 
-(defun js-import-get-alias-path(alias)
-  (let ((root (js-import-find-package-json)))
-    (f-join root (plist-get js-import-alias-map alias))))
+(defun js-import-get-alias-path(alias &optional project-root)
+  (when alias
+    (let ((root (or project-root (js-import-find-package-json))))
+      (f-join root (plist-get js-import-alias-map alias)))))
 
 
 (defun js-import-is-dependency? (display-path &optional project-root)
@@ -958,7 +960,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
 (defun js-import-ff-persistent-action (candidate)
   "Preview the contents of a file in a temporary buffer."
   (setq candidate (js-import-path-to-real candidate default-directory))
-  (when-let ((buf (get-buffer-create " *js-import persistent*"))
+  (when-let ((buf (get-buffer-create "*helm-js-import*"))
              (valid (and candidate (stringp candidate) (f-exists? candidate))))
     (cl-flet ((preview (candidate)
                        (switch-to-buffer buf)
