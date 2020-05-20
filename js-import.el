@@ -1264,7 +1264,8 @@ In both cases the content will be copied without properties"
                                                                (with-syntax-table syntax
                                                                  (js-import-insert-buffer-or-file path)
                                                                  (append default-candidates
-                                                                         (js-import-extract-exports path)))))))
+                                                                         (or (js-import-extract-exports path)
+                                                                             (list (js-import-make-index-item "default" :type 1)))))))))
         (append default-candidates (list (js-import-make-index-item "default" :type 1)))))))
 
 (defun js-import-extract-exports(&optional real-path)
@@ -1276,7 +1277,7 @@ In both cases the content will be copied without properties"
         (let (path exports)
           (unless (js-import-inside-comment?)
             (save-excursion
-              (if (looking-at-p "\\(const\\|let\\|var\\|function[*]?\\|interface\\|type\\|class\\|default\\)")
+              (if (looking-at-p js-import-js-vars)
                   (setq path real-path)
                 (progn (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
                        (setq path (js-import-get-path-at-point)))))
@@ -1287,10 +1288,8 @@ In both cases the content will be copied without properties"
                    (setq exports (append exports
                                          (js-import-extract-exports-in-brackets real-path path)))
                    (re-search-forward "}"))
-                  ((looking-at-p "default[ \s\t]")
-                   (push (js-import-extract-default-export real-path path) exports))
                   ((looking-at-p js-import-regexp-name-set)
-                   (push (js-import-extract-var-export real-path) exports))
+                   (push (js-import-extract-named-or-default-export real-path) exports))
                   ((looking-at-p "*[ \s\t]from")
                    (when-let* ((curr-dir (f-dirname real-path))
                                (table (syntax-table))
@@ -1317,41 +1316,20 @@ In both cases the content will be copied without properties"
                                :real-path real-path
                                :display-path display-path)))
 
-(defun js-import-extract-default-export(real-path &optional display-path)
-  "Returns propertizied default export"
-  (let (name)
-    (forward-word)
-    (skip-chars-forward "\s\t")
-    (setq name (js-import-which-word))
-
-    (when (js-import-word-reserved? name)
-      (forward-word)
-      (skip-chars-forward "\s\t*")
-      (setq name (js-import-which-word)))
-
-
-    (when (or (s-matches? (concat "[" "^" js-import-regexp-name "]") name)
-              (js-import-word-reserved? name))
-      (setq name "default"))
-    (js-import-make-index-item name
-                               :type 1
-                               :real-name (js-import-which-word)
-                               :real-path real-path
-                               :var-type "export default"
-                               :marker (point)
-                               :display-path display-path)))
-
-
-(defun js-import-extract-var-export(real-path)
+(defun js-import-extract-named-or-default-export(real-path)
   "Returns propertizied named export"
-  (let ((var-type (js-import-which-word))
-        (real-name))
-
-    (forward-word)
+  (let (var-type real-name)
+    (setq var-type (js-import-which-word))
+    (skip-chars-forward var-type)
     (skip-chars-forward "\s\t*")
     (setq real-name (js-import-which-word))
+    (while (js-import-word-reserved? real-name)
+      (skip-chars-forward real-name)
+      (skip-chars-forward "\s\t*")
+      (setq real-name (js-import-which-word)))
+
     (js-import-make-index-item real-name
-                               :type 4
+                               :type (if (string= var-type "default") 1 4)
                                :real-name real-name
                                :real-path real-path
                                :var-type var-type
