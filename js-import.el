@@ -868,19 +868,28 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
     (when (f-exists? joined-path)
       joined-path)))
 
+
 (defun js-import-try-find-real-path(path)
   (if (and (f-ext? path) (f-exists? path))
       path
     (or (when-let* ((package-json (js-import-join-when-exists path "package.json"))
                     (module (js-import-try-json-sections
                              package-json
-                             '("jsnext:main" "module" "types")))
-                    (dir (f-dirname path)))
+                             js-import-node-modules-priority-section-to-read)))
           (if (f-ext? module)
               (f-expand module path)
             (js-import-try-find-real-path (js-import-try-ext module path))))
         (js-import-try-ext path)
-        (js-import-try-ext (f-join path "index")))))
+        (js-import-try-ext (f-join path "index"))
+        (when-let* ((dir (f-join path "src"))
+                    (exists (f-exists? dir))
+                    (files (seq-filter (lambda(it) (js-import-filter-pred it))
+                                       (f-files dir))))
+
+          (if (= 1 (length files))
+              (car files)
+            (seq-find (lambda(it) (s-matches? js-import-file-index-regexp it))
+                      files))))))
 
 
 (defun js-import-maybe-expand-dependency(display-path &optional $real-path)
