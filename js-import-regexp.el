@@ -59,7 +59,7 @@
 (defconst js-import-reserved-js-words '("abstract" "any" "as" "async" "await" "boolean" "bigint" "break" "case" "catch" "class" "const"
                                         "constructor" "continue" "declare" "default" "delete" "do" "else"
                                         "enum" "export" "extends" "extern" "false" "finally" "for"
-                                        "function" "from" "get" "goto" "if" "implements" "import" "in" "instanceof"
+                                        "function" "function*" "from" "get" "goto" "if" "implements" "import" "in" "instanceof"
                                         "interface" "keyof" "let" "module" "namespace" "never" "new" "null" "number" "object" "of"
                                         "private" "protected" "public" "readonly" "return" "set" "static" "string"
                                         "super" "switch"  "this" "throw" "true"
