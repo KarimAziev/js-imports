@@ -1007,7 +1007,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
                                                                  (js-import-insert-buffer-or-file path)
                                                                  (append default-candidates
                                                                          (js-import-extract-exports path)))))))
-        default-candidates))))
+        (append default-candidates (list (js-import-make-index-item "default" :type 1)))))))
 
 
 (defun js-import-jump-to-item-persistent(item)
