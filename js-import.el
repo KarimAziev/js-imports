@@ -992,24 +992,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
 
 
 
-(defun js-import-init-exports-candidates()
-  "Extracts all exports from file specified in buffer local variable 'js-import-current-export-path"
-  (with-current-buffer helm-current-buffer
-    (let ((default-candidates (list (js-import-make-index-item "* as" :type 16))))
-      (if js-import-current-export-real-path
-          (progn (when-let ((path js-import-current-export-real-path)
-                            (syntax (syntax-table))
-                            (str (stringp path)))
-
-                   (setq js-import-export-candidates-in-path (with-temp-buffer
-                                                               (erase-buffer)
-                                                               (with-syntax-table syntax
-                                                                 (js-import-insert-buffer-or-file path)
-                                                                 (append default-candidates
-                                                                         (js-import-extract-exports path)))))))
-        (append default-candidates (list (js-import-make-index-item "default" :type 1)))))))
-
-
 (defun js-import-jump-to-item-persistent(item)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop 'marker"
   (when-let ((m (js-import-get-prop item 'marker))
@@ -1180,9 +1162,13 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
 depending whether buffer with the given PATH exists.
 
 In both cases the content will be copied without properties"
-  (if (get-file-buffer path)
-      (insert-buffer-substring-no-properties (get-file-buffer path))
-    (insert-file-contents path)))
+  (when (and path (f-exists-p path))
+    (if (get-file-buffer path)
+        (insert-buffer-substring-no-properties (get-file-buffer path))
+      (progn
+        (let ((buffer-file-name path))
+          (insert-file-contents path)
+          (set-auto-mode))))))
 
 
 (defun js-import-insert-exports(default-name named-list path)
@@ -1255,6 +1241,23 @@ In both cases the content will be copied without properties"
                         'var-type var-type
                         'marker marker))
 
+(defun js-import-init-exports-candidates()
+  "Extracts all exports from file specified in buffer local variable 'js-import-current-export-path"
+  (with-current-buffer helm-current-buffer
+    (let ((default-candidates (list (js-import-make-index-item "* as" :type 16))))
+      (if js-import-current-export-real-path
+          (progn (when-let* ((path js-import-current-export-real-path)
+                             (syntax (syntax-table))
+                             (str (stringp path)))
+
+                   (setq js-import-export-candidates-in-path (with-temp-buffer
+                                                               (erase-buffer)
+                                                               (with-syntax-table syntax
+                                                                 (js-import-insert-buffer-or-file path)
+                                                                 (append default-candidates
+                                                                         (js-import-extract-exports path)))))))
+        (append default-candidates (list (js-import-make-index-item "default" :type 1)))))))
+
 (defun js-import-extract-exports(&optional real-path)
   "Extracts all available exports. REAL-PATH used for resolving nested exports - `export * from ...`'"
   (save-excursion
@@ -1280,9 +1283,9 @@ In both cases the content will be copied without properties"
                   ((looking-at-p js-import-regexp-name-set)
                    (push (js-import-extract-var-export real-path) exports))
                   ((looking-at-p "*[ \s\t]from")
-                   (let* ((curr-dir (f-dirname real-path))
-                          (table (syntax-table))
-                          (next-path (js-import-path-to-real path curr-dir)))
+                   (when-let* ((curr-dir (f-dirname real-path))
+                               (table (syntax-table))
+                               (next-path (js-import-path-to-real path curr-dir)))
                      (with-temp-buffer
                        (setq path next-path)
                        (with-syntax-table table
