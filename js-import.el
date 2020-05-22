@@ -378,7 +378,6 @@ without dependencies")
    (init :initform 'js-import-alias-init)
    (candidates :initform 'js-import-project-files)
    (candidate-number-limit :initform js-import-files-number-limit)
-   (allow-dups :initform nil)
    (persistent-action :initform 'js-import-ff-persistent-action)
    (filtered-candidate-transformer :initform 'js-import-project-files-transformer)
    (mode-line :initform (list "File(s)"))
@@ -388,17 +387,19 @@ without dependencies")
 
 
 (defun js-import-project-files()
-  "Search for files"
+  "Initialize candidates for project files"
   (let* ((root (js-import-find-package-json))
          (alias-path (and js-import-current-alias (js-import-get-alias-path js-import-current-alias)))
+         (priority-dir (if (and alias-path (not (f-parent-of? root alias-path)))
+                           alias-path
+                         default-directory))
          (dirs (f-directories (or alias-path root) (lambda(it) (not (or (s-contains? "node_modules" it)
                                                                    (s-matches? "/\\.[a-zZ-A]" it))))))
-         (files (f-files default-directory 'js-import-filter-pred t)))
 
+         (files (f-files priority-dir 'js-import-filter-pred t)))
 
     (mapc (lambda(dir) (setq files (append files (f-files dir 'js-import-filter-pred t))))
           (reverse dirs))
-
     files))
 
 
