@@ -133,6 +133,14 @@ the same name but different extension"
     map)
   "Keymap for js-import mode")
 
+(defvar js-import-mode-syntax-table
+  (let ((table (make-syntax-table)))
+    (c-populate-syntax-table table)
+    (modify-syntax-entry ?$ "_" table)
+    (modify-syntax-entry ?` "\"" table)
+    table)
+  "Syntax table for `js-import-mode'.")
+
 ;;;###autoload
 (define-minor-mode js-import-mode
   "js-import-mode is a minor mode for importing.
@@ -142,9 +150,8 @@ the same name but different extension"
   :global nil
   :keymap js-import-mode-map)
 
-
 (defmacro js-import-call-with-marked-candidates-prop (func prop)
-  "Iter helm-marked-candidates, pluck PROP from every candidate and call FUNC with value of PROP."
+  "Iter helm-marked-candidates by calling FUNC with extracted item's PROP."
   (declare (indent 2) (debug t))
   `(lambda(_cand) (mapc
               (lambda(candidate)
@@ -257,7 +264,6 @@ without dependencies")
    'js-import-delete-whole-import)
   "Actions for editing imported symbols in buffer")
 
-
 (defvar js-import-export-items-actions
   (helm-make-actions
    "Import" (js-import-with-marked-candidates 'js-import-insert-import)
@@ -265,12 +271,10 @@ without dependencies")
    "Go" 'js-import-jump-to-item-other-window)
   "Actions for generating and inserting imports statements")
 
-
 ;;;###autoload
 (defun js-import ()
   "Init imports from your current project"
   (interactive)
-
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
           (helm-make-source
@@ -279,12 +283,10 @@ without dependencies")
     (setq js-import-project-files-source
           (helm-make-source
               js-import-files-source-name 'js-import-source-project-files)))
-
   (unless js-import-node-modules-source
     (setq js-import-node-modules-source
           (helm-make-source js-import-dependency-source-name
               'js-import-source-node-modules)))
-
   (save-excursion
     (helm
      :sources '(js-import-buffer-files-source
@@ -302,7 +304,6 @@ without dependencies")
   (unless js-import-project-files-source
     (setq js-import-project-files-source
           (helm-make-source js-import-files-source-name 'js-import-source-project-files)))
-
   (save-excursion
     (helm
      :sources 'js-import-project-files-source
@@ -318,7 +319,6 @@ without dependencies")
   (unless js-import-node-modules-source
     (setq js-import-node-modules-source
           (helm-make-source js-import-dependency-source-name 'js-import-source-node-modules)))
-
   (save-excursion
     (when-let ((module (or dependency
                            (helm :sources js-import-node-modules-source
@@ -361,10 +361,11 @@ without dependencies")
 
 
 (defclass js-import-source-imported-files(helm-source-in-buffer)
-  ((header-name :initform (lambda(name) (with-helm-current-buffer
-                                     (if buffer-file-name
-                                         (format "%s %s" name (file-name-base buffer-file-name))
-                                       name))))
+  ((header-name :initform (lambda(name)
+                            (with-helm-current-buffer
+                              (if buffer-file-name
+                                  (format "%s %s" name (file-name-base buffer-file-name))
+                                name))))
    (init :initform 'js-import-find-imported-files-in-buffer)
    (action :initform 'js-import-files-actions)
    (persistent-action :initform 'js-import-ff-persistent-action)
@@ -395,9 +396,7 @@ without dependencies")
                          default-directory))
          (dirs (f-directories (or alias-path root) (lambda(it) (not (or (s-contains? "node_modules" it)
                                                                    (s-matches? "/\\.[a-zZ-A]" it))))))
-
          (files (f-files priority-dir 'js-import-filter-pred t)))
-
     (mapc (lambda(dir) (setq files (append files (f-files dir 'js-import-filter-pred t))))
           (reverse dirs))
     files))
@@ -440,7 +439,6 @@ without dependencies")
                                          (js-import-jump-to-item-in-buffer (seq-find (lambda(elt) (string= elt it))
                                                                                      js-import-cached-exports-in-buffer it)))))
    (action :initform 'js-import-jump-to-item-in-buffer)))
-
 
 (defclass js-import-source-symbols-in-path(helm-source-sync)
   ((header-name :initform (lambda(name) (with-helm-current-buffer
@@ -489,7 +487,6 @@ without dependencies")
           (progress-reporter-done progress-reporter))))
     (gethash project-root js-import-dependencies-cache)))
 
-
 (defun js-import-preselect()
   "Preselect function for file sources"
   (if  (and (> (point-max) (point))
@@ -513,10 +510,6 @@ without dependencies")
 
 (defun js-import-display-to-real-exports(it)
   "Search for export item"
-
-
-
-
   (with-helm-current-buffer
     (seq-find (lambda(elt) (equal it elt))
               js-import-export-candidates-in-path)))
@@ -547,9 +540,7 @@ without dependencies")
           js-import-cached-imports-in-buffer
         (progn
           (setq js-import-cached-imports-in-buffer-tick tick)
-          (setq js-import-cached-imports-in-buffer (save-excursion
-                                                     (with-syntax-table (syntax-table)
-                                                       (js-import-extract-imports))))
+          (setq js-import-cached-imports-in-buffer (js-import-extract-imports))
           js-import-cached-imports-in-buffer)))))
 
 (defun js-import-exported-candidates-in-buffer(&optional buffer)
@@ -564,11 +555,8 @@ without dependencies")
           js-import-cached-exports-in-buffer
         (progn
           (setq js-import-cached-exports-in-buffer-tick tick)
-          (setq js-import-cached-exports-in-buffer (save-excursion
-                                                     (with-syntax-table (syntax-table)
-                                                       (js-import-extract-exports buffer-file-name))))
+          (setq js-import-cached-exports-in-buffer (js-import-extract-exports buffer-file-name))
           js-import-cached-exports-in-buffer)))))
-
 
 (defun js-import-exported-candidates-transformer(candidates)
   "Removes duplicates and imported members from from CANDIDATES plist."
@@ -583,8 +571,6 @@ without dependencies")
       (setq exports (mapcar (lambda(c) (js-import-propertize c 'display-path js-import-current-export-path))
                             exports)))))
 
-
-
 (defun js-import-filter-exports(exports imports)
   "Returns filtered EXPORTS plist with only those members that are not in IMPORTS plist.
 
@@ -597,8 +583,6 @@ without dependencies")
                                      imports))
                         (16 (< 0 (length imports)))))
               exports))
-
-
 
 (defun js-import-find-imported-files-in-buffer()
   "Plucks paths from import statements of current buffer and inserts them one by one divided by new line."
@@ -635,29 +619,27 @@ without dependencies")
       str
     (concat str "/")))
 
-
 (defun js-import-project-files-transformer(files &optional _source)
   "Filter FILES by extension and one of the aliases, if present."
   (with-current-buffer helm-current-buffer
-    (let ((alias-path (when js-import-current-alias (f-slash (f-join (js-import-find-package-json)
-                                                                     (plist-get js-import-alias-map js-import-current-alias))))))
+    (let ((alias-path (when js-import-current-alias
+                        (f-slash (f-join
+                                  (js-import-find-package-json)
+                                  (plist-get js-import-alias-map js-import-current-alias))))))
       (setq files (seq-uniq files))
       (when alias-path
-        (setq files (seq-filter (lambda(filename) (if (f-absolute? filename)
-                                                 (s-matches-p alias-path filename)
-                                               filename))
-                                files)))
-
+        (setq files (seq-filter
+                     (lambda(filename) (if (f-absolute? filename)
+                                      (s-matches-p alias-path filename)
+                                    filename))
+                     files)))
       (setq files (seq-remove (lambda(filename) (equal buffer-file-name filename)) files))
-      (if alias-path
-          (mapcar
-           (lambda(path) (js-import-normalize-path
-                     (s-replace-regexp alias-path (js-import-slash js-import-current-alias)
-                                       path)))
-           files)
-        (mapcar (lambda(path) (js-import-normalize-path (js-import-relative-one-by-one path)))
-                files)))))
-
+      (if alias-path (mapcar (lambda(path)
+                               (js-import-normalize-path
+                                (s-replace-regexp alias-path (js-import-slash js-import-current-alias)
+                                                  path)))
+                             files)
+        (mapcar (lambda(path) (js-import-normalize-path (js-import-relative-one-by-one path))) files)))))
 
 (defun js-import-switch-to-relative(&optional _cand)
   "Toggle displaying aliased files to relative."
@@ -668,7 +650,6 @@ without dependencies")
       (setq js-import-current-alias (car js-import-aliases)))
     (helm-refresh)))
 
-
 (defun js-import-switch-to-next-alias(&optional _cand)
   "Switch to next alias in `js-import-aliases' list"
   (interactive)
@@ -678,7 +659,6 @@ without dependencies")
       (setq js-import-current-alias (car js-import-aliases)))
     (helm-refresh)))
 
-
 (defun js-import-switch-to-prev-alias(&optional _cand)
   "Switch to previous alias in `js-import-aliases' list"
   (interactive)
@@ -687,7 +667,6 @@ without dependencies")
         (setq js-import-current-alias (car (cdr (member js-import-current-alias (reverse js-import-aliases)))))
       (setq js-import-current-alias (car (reverse js-import-aliases))))
     (helm-refresh)))
-
 
 (defun js-import-files-header-name(_name)
   "A function for display header name for project files."
@@ -700,8 +679,8 @@ without dependencies")
              "\s" (f-short dir) "/"
              (plist-get js-import-alias-map js-import-current-alias)))
         (if buffer-file-name
-            (format "relative to %s" (s-replace-regexp (js-import-slash dir) "" buffer-file-name)) "relative files")))))
-
+            (format "relative to %s" (s-replace-regexp (js-import-slash dir) "" buffer-file-name))
+          "relative files")))))
 
 (defun js-import-find-file-at-point()
   "Find a file when cursor are placed under stringified path."
@@ -774,7 +753,9 @@ without dependencies")
   "Return the path to node-modules."
   (if (f-absolute? js-import-node-modules-dir)
       js-import-node-modules-dir
-    (f-join (or project-dir (js-import-find-package-json)) js-import-node-modules-dir)))
+    (f-join (or project-dir
+                (js-import-find-package-json))
+            js-import-node-modules-dir)))
 
 (defun js-import-expand-node-modules(module &optional project-dir)
   (f-join (js-import-get-node-modules-path project-dir) module))
@@ -929,9 +910,8 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
 
 
 (defun js-import-alias-path-to-real(path)
-  (let ((aliases (js-import-get-aliases))
-        (alias)
-        (real-path))
+  (let (aliases alias real-path)
+    (setq aliases (js-import-get-aliases))
     (while aliases
       (setq alias (pop aliases))
       (let* ((alias-regexp (if (s-blank? alias)
@@ -944,8 +924,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
                              joined-path
                            (or (js-import-try-ext joined-path)
                                (js-import-try-ext (f-join joined-path "index"))))))
-
-
         (when (and found-path (f-exists? found-path))
           (setq real-path found-path)
           (setq aliases nil))))
@@ -960,15 +938,10 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
           dir
         (js-import-find-package-json parent)))))
 
-(defun js-import-real-path-to-alias(real-path alias)
-  (let ((alias-path (js-import-get-alias-path alias)))
-    (f-join alias (replace-regexp-in-string (concat "^" alias-path) "" real-path))))
-
 (defun js-import-get-alias-path(alias &optional project-root)
   (when alias
     (let ((root (or project-root (js-import-find-package-json))))
       (f-join root (plist-get js-import-alias-map alias)))))
-
 
 (defun js-import-is-dependency? (display-path &optional project-root)
   "Check if path is dependency"
@@ -1007,10 +980,8 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
   (when-let ((m (js-import-get-prop item 'marker))
              (js-buffer "*js-import persistent")
              (item-path (or (js-import-get-prop item 'real-path)
-                            (js-import-path-to-real (js-import-get-prop item 'display-path) default-directory))))
-
-
-
+                            (js-import-path-to-real (js-import-get-prop item 'display-path)
+                                                    default-directory))))
     (if (and m buffer-file-name (string= item-path buffer-file-name))
         (progn
           (goto-char m)
@@ -1041,7 +1012,8 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
   "Persistent action for quick delete CAND from import statement"
   (interactive)
   (with-helm-alive-p
-    (helm-attrset 'js-import-delete-whole-import '(js-import-delete-whole-import . never-split))
+    (helm-attrset 'js-import-delete-whole-import
+                  '(js-import-delete-whole-import . never-split))
     (helm-execute-persistent-action 'js-import-delete-whole-import)
     (helm-refresh)))
 
@@ -1049,7 +1021,8 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
   "Persistent action for quick delete CAND from import statement"
   (interactive)
   (with-helm-alive-p
-    (helm-attrset 'js-import-delete-imported-item '(js-import-delete-imported-item . never-split))
+    (helm-attrset 'js-import-delete-imported-item
+                  '(js-import-delete-imported-item . never-split))
     (helm-execute-persistent-action 'js-import-delete-imported-item)
     (js-import-init-exports-candidates)
     (helm-refresh)))
@@ -1067,10 +1040,8 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
          (p1)
          (p2)
          (overlay))
-
     (setq other-imports (remove candidate other-imports))
     (remove-overlays (car whole-import-bounds) (cdr whole-import-bounds))
-
     (unwind-protect
         (if (or (= type 16) (not other-imports))
             (progn
@@ -1107,7 +1078,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
               (remove-overlays p1 p2)
               (delete-region p1 p2))))
       (remove-overlays beg end))))
-
 
 (defun js-import-rename-item()
   "Persistent quick action to rename CANDIDATE in buffer."
@@ -1180,7 +1150,6 @@ In both cases the content will be copied without properties"
           (insert-file-contents path)
           (set-auto-mode))))))
 
-
 (defun js-import-insert-exports(default-name named-list path)
   (let ((names (if (stringp named-list)
                    named-list
@@ -1241,7 +1210,6 @@ In both cases the content will be copied without properties"
                                      marker)
   "Utility function to propertize js symbol. See also
 `js-import-propertize'."
-
   (setq candidate (js-import-strip-text-props candidate))
   (js-import-propertize candidate
                         'real-name real-name
@@ -1254,94 +1222,102 @@ In both cases the content will be copied without properties"
 (defun js-import-init-exports-candidates()
   "Extracts all exports from file specified in buffer local variable 'js-import-current-export-path"
   (with-current-buffer helm-current-buffer
-    (let ((default-candidates (list (js-import-make-index-item "* as" :type 16))))
+    (let ((default-candidates (list (js-import-make-index-item
+                                     "* as"
+                                     :type 16))))
       (if js-import-current-export-real-path
-          (progn (when-let* ((path js-import-current-export-real-path)
-                             (syntax (syntax-table))
-                             (str (stringp path)))
+          (when-let* ((path js-import-current-export-real-path)
+                      (str (stringp path)))
+            (setq js-import-export-candidates-in-path (append default-candidates
+                                                              (or (js-import-extract-exports path)
+                                                                  (list (js-import-make-index-item
+                                                                         "default"
+                                                                         :type 1))))))
+        (append default-candidates (list (js-import-make-index-item
+                                          "default"
+                                          :type 1)))))))
 
-                   (setq js-import-export-candidates-in-path (with-temp-buffer
-                                                               (erase-buffer)
-                                                               (with-syntax-table syntax
-                                                                 (js-import-insert-buffer-or-file path)
-                                                                 (append default-candidates
-                                                                         (or (js-import-extract-exports path)
-                                                                             (list (js-import-make-index-item "default" :type 1)))))))))
-        (append default-candidates (list (js-import-make-index-item "default" :type 1)))))))
 
 (defun js-import-extract-exports(&optional real-path)
   "Extracts all available exports. REAL-PATH used for resolving nested exports - `export * from ...`'"
-  (save-excursion
-    (goto-char (point-min))
-    (let (symbols)
-      (while (re-search-forward js-import-regexp-export-keyword nil t 1)
-        (let (path exports)
-          (unless (js-import-inside-comment?)
-            (save-excursion
-              (if (looking-at-p js-import-js-vars)
-                  (setq path real-path)
-                (progn (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
-                       (setq path (js-import-get-path-at-point)))))
-
-            (cond ((looking-at-p "*[ \s\t\n]+as[ \s\t\n]")
-                   (push (js-import-extract-all-as-exports real-path path) exports))
-                  ((looking-at-p "{")
-                   (setq exports (append exports
-                                         (js-import-extract-exports-in-brackets real-path path)))
-                   (re-search-forward "}"))
-                  ((looking-at-p js-import-regexp-name-set)
-                   (push (js-import-extract-named-or-default-export real-path) exports))
-                  ((looking-at-p "*[ \s\t]from")
-                   (when-let* ((curr-dir (f-dirname real-path))
-                               (table (syntax-table))
-                               (next-path (js-import-path-to-real path curr-dir)))
-                     (with-temp-buffer
-                       (setq path next-path)
-                       (with-syntax-table table
-                         (erase-buffer)
-                         (js-import-insert-buffer-or-file next-path)
-                         (setq symbols (append symbols (js-import-extract-exports next-path))))))))
-            (setq symbols (append symbols exports))))
-        (forward-line 1))
-      symbols)))
+  (with-temp-buffer
+    (erase-buffer)
+    (js-import-insert-buffer-or-file real-path)
+    (save-excursion
+      (goto-char (point-min))
+      (let (symbols)
+        (with-syntax-table js-import-mode-syntax-table
+          (while (re-search-forward js-import-regexp-export-keyword nil t 1)
+            (let (path exports)
+              (unless (js-import-inside-comment?)
+                (save-excursion
+                  (if (looking-at-p js-import-js-vars)
+                      (setq path real-path)
+                    (progn (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
+                           (setq path (js-import-get-path-at-point)))))
+                (cond ((looking-at-p "*[ \s\t\n]+as[ \s\t\n]")
+                       (when-let ((export-all (js-import-extract-all-as-exports real-path path)))
+                         (push export-all exports)))
+                      ((looking-at-p "{")
+                       (when-let ((items (js-import-extract-exports-in-brackets real-path path)))
+                         (setq exports (append exports items)))
+                       (re-search-forward "}"))
+                      ((looking-at-p js-import-regexp-name-set)
+                       (when-let ((name (js-import-extract-named-or-default-export real-path path)))
+                         (push name exports)))
+                      ((looking-at-p "*[ \s\t]from")
+                       (when-let* ((curr-dir (f-dirname real-path))
+                                   (next-path (js-import-path-to-real path curr-dir)))
+                         (setq symbols (append symbols (js-import-extract-exports next-path))))))
+                (setq symbols (append symbols exports))))
+            (forward-line 1)))
+        symbols))))
 
 (defun js-import-extract-all-as-exports(real-path &optional display-path)
   "Make export all as item"
   (re-search-forward "as[ \s\t\n]+\\([_$A-Za-z0-9]\\)" nil t 1)
   (let ((real-name (js-import-which-word)))
-    (js-import-make-index-item real-name
-                               :type 4
-                               :real-name real-name
-                               :var-type "export"
-                               :marker (point)
-                               :real-path real-path
-                               :display-path display-path)))
+    (js-import-make-index-item
+     real-name
+     :type 4
+     :real-name real-name
+     :var-type "export"
+     :marker (point)
+     :real-path real-path
+     :display-path display-path)))
 
-(defun js-import-extract-named-or-default-export(real-path)
-  "Returns propertizied named export"
-  (let (var-type real-name)
+(defun js-import-extract-named-or-default-export(real-path &optional display-path)
+  "Returns propertizied named or default export"
+  (let (var-type real-name stop default?)
     (setq var-type (js-import-which-word))
-    (skip-chars-forward var-type)
-    (skip-chars-forward "\s\t*")
-    (setq real-name (js-import-which-word))
-    (while (js-import-word-reserved? real-name)
-      (skip-chars-forward real-name)
+    (when (string= var-type "default")
+      (setq default? t))
+    (while (and (js-import-word-reserved? (js-import-which-word))
+                (not stop))
+      (skip-chars-forward js-import-regexp-name)
       (skip-chars-forward "\s\t*")
-      (setq real-name (js-import-which-word)))
-
-    (js-import-make-index-item real-name
-                               :type (if (string= var-type "default") 1 4)
-                               :real-name real-name
-                               :real-path real-path
-                               :var-type var-type
-                               :marker (point)
-                               :display-path real-path)))
+      (if (js-import-invalid-name? (js-import-which-word))
+          (setq stop t)
+        (setq real-name (js-import-which-word))))
+    (when (and default?
+               (or (not real-name)
+                   (js-import-invalid-name? real-name)
+                   (js-import-word-reserved? real-name)))
+      (setq real-name var-type))
+    (when real-name
+      (js-import-make-index-item
+       real-name
+       :type (if default? 1 4)
+       :real-name real-name
+       :real-path real-path
+       :var-type var-type
+       :marker (point)
+       :display-path display-path))))
 
 (defun js-import-extract-exports-in-brackets(real-path &optional display-path)
   "Extracts exports beetween brackets."
   (let (p1 p2 item items real-name full-name)
     (setq p1 (+ 1 (point)))
-
     (save-excursion (re-search-forward "}" nil t 1)
                     (setq p2 (- (point) 1)))
     (narrow-to-region p1 p2)
@@ -1360,15 +1336,14 @@ In both cases the content will be copied without properties"
           (setq real-name (js-import-which-word))
           (skip-chars-forward js-import-regexp-name)
           (setq p2 (point))))
-
       (setq full-name (string-trim (buffer-substring-no-properties p1 p2)))
-      (setq item (js-import-make-index-item full-name
-                                            :type 4
-                                            :real-name real-name
-                                            :display-path display-path
-                                            :real-path real-path
-                                            :marker p1))
-
+      (setq item (js-import-make-index-item
+                  full-name
+                  :type 4
+                  :real-name real-name
+                  :display-path display-path
+                  :real-path real-path
+                  :marker p1))
       (push item items))
     (widen)
     (reverse items)))
@@ -1377,60 +1352,60 @@ In both cases the content will be copied without properties"
   (save-excursion
     (goto-char 0)
     (let (symbols)
-      (while (re-search-forward js-import-regexp-import-keyword nil t 1)
-        (unless (js-import-inside-comment?)
-          (let (path imports)
-            (save-excursion
-              (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
-              (setq path (js-import-get-path-at-point)))
-
-            (cond ((looking-at-p "*")
-                   (let (m1 m2 renamed-name)
-                     (setq m1 (point))
-                     (forward-char)
-                     (skip-chars-forward "\s\t")
-                     (setq m2 (point))
-                     (when (string= "as" (js-import-which-word))
-                       (skip-chars-forward "as")
-                       (setq m2 (point))
+      (with-syntax-table js-import-mode-syntax-table
+        (while (re-search-forward js-import-regexp-import-keyword nil t 1)
+          (unless (js-import-inside-comment?)
+            (let (path imports)
+              (save-excursion
+                (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
+                (setq path (js-import-get-path-at-point)))
+              (cond ((looking-at-p "*")
+                     (let (m1 m2 renamed-name)
+                       (setq m1 (point))
+                       (forward-char)
                        (skip-chars-forward "\s\t")
-                       (setq renamed-name (js-import-which-word))
-
-                       (if (or (js-import-word-reserved? renamed-name)
-                               (s-matches? "[^_$A-Za-z0-9]" renamed-name))
-                           (setq renamed-name "")
-                         (skip-chars-forward js-import-regexp-name)))
-                     (setq m2 (point))
-                     (push (js-import-make-index-item (format "%s" (buffer-substring-no-properties m1 m2))
-                                                      :type 16
-                                                      :real-name renamed-name
-                                                      :marker m1
-                                                      :display-path path)
+                       (setq m2 (point))
+                       (when (string= "as" (js-import-which-word))
+                         (skip-chars-forward "as")
+                         (setq m2 (point))
+                         (skip-chars-forward "\s\t")
+                         (setq renamed-name (js-import-which-word))
+                         (if (or (js-import-word-reserved? renamed-name)
+                                 (js-import-invalid-name? renamed-name))
+                             (setq renamed-name "")
+                           (skip-chars-forward js-import-regexp-name)))
+                       (setq m2 (point))
+                       (push (js-import-make-index-item
+                              (format "%s" (buffer-substring-no-properties m1 m2))
+                              :type 16
+                              :real-name renamed-name
+                              :marker m1
+                              :display-path path)
+                             imports)
+                       (skip-chars-forward js-import-regexp-name-with-separators)))
+                    ((looking-at-p js-import-regexp-name-set)
+                     (push (js-import-make-index-item
+                            (js-import-which-word)
+                            :type 1
+                            :real-name (js-import-which-word)
+                            :marker (point)
+                            :display-path path)
                            imports)
                      (skip-chars-forward js-import-regexp-name-with-separators)))
-                  ((looking-at-p js-import-regexp-name-set)
-                   (push (js-import-make-index-item (js-import-which-word)
-                                                    :type 1
-                                                    :real-name (js-import-which-word)
-                                                    :marker (point)
-                                                    :display-path path)
-                         imports)
-                   (skip-chars-forward js-import-regexp-name-with-separators)))
-            (when (looking-at-p "{")
-              (setq imports (append imports (js-import-extract-imports-in-brackets path))))
-
-            (setq symbols (append symbols imports))))
-        (forward-line 1))
+              (when (looking-at-p "{")
+                (setq imports (append imports (js-import-extract-imports-in-brackets path))))
+              (setq symbols (append symbols imports))))
+          (forward-line 1)))
       symbols)))
 
 
 (defun js-import-extract-imports-in-brackets(display-path &optional real-path)
   "Extracts items beetween symbols"
-  (let (p1 p2 item items real-name full-name)
+  (let (p1 p2 items real-name full-name)
     (setq p1 (+ 1 (point)))
-
-    (save-excursion (re-search-forward "}" nil t 1)
-                    (setq p2 (- (point) 1)))
+    (save-excursion
+      (re-search-forward "}" nil t 1)
+      (setq p2 (- (point) 1)))
     (narrow-to-region p1 p2)
     (goto-char p1)
     (while (re-search-forward js-import-regexp-name-set nil t 1)
@@ -1445,16 +1420,15 @@ In both cases the content will be copied without properties"
           (re-search-forward "as[ \s\t\n]" nil t 1)
           (skip-chars-forward js-import-regexp-name)
           (setq p2 (point))))
-
       (setq full-name (string-trim (buffer-substring-no-properties p1 p2)))
-      (setq item (js-import-make-index-item full-name
-                                            :type 4
-                                            :real-name real-name
-                                            :display-path display-path
-                                            :real-path real-path
-                                            :marker p1))
-
-      (push item items))
+      (push (js-import-make-index-item
+             full-name
+             :type 4
+             :real-name real-name
+             :display-path display-path
+             :real-path real-path
+             :marker p1)
+            items))
     (widen)
     (reverse items)))
 
@@ -1472,7 +1446,6 @@ In both cases the content will be copied without properties"
 (defun js-import-join-names(symbols)
   (when (and (listp symbols) (<= 1 (length symbols)))
     (s-join ", " symbols)))
-
 
 (defun js-import-join-imports-names(default-name names)
   (let (parts)
@@ -1493,7 +1466,6 @@ In both cases the content will be copied without properties"
           (pos2 (js-import-goto-last-import)))
       (when (js-import-import-backward-exist? path)
         (re-search-forward "['\"]+;?" nil t 2)
-
         (setq pos2 (point))
         (re-search-backward js-import-regexp-import-keyword nil t)
         (setq pos1 (point)))
@@ -1577,35 +1549,30 @@ ITEM is not string."
       (if (string= word "from")
           (search-forward-regexp "['\"]" nil t 1)
         (search-forward-regexp "[ \s\t\n]+from[ \s\t\n]+['\"]" nil t 1)))
-
     (when (js-import-inside-string-q)
-      (let* (($inputStr (if (use-region-p)
-                            (buffer-substring-no-properties (region-beginning) (region-end))
-                          (let ($p0 $p1 $p2
-                                    ($pathStops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\"))
-                            (setq $p0 (point))
-                            (skip-chars-backward $pathStops)
-                            (setq $p1 (point))
-                            (goto-char $p0)
-                            (skip-chars-forward $pathStops)
-                            (setq $p2 (point))
-                            (goto-char $p0)
-                            (buffer-substring-no-properties $p1 $p2)))))
-
-        $inputStr))))
+      (if (use-region-p)
+          (buffer-substring-no-properties (region-beginning) (region-end))
+        (let (p0 p1 p2 stops)
+          (setq stops "^  \t\n\"`'‘’“”|[]{}「」<>〔〕〈〉《》【】〖〗«»‹›❮❯❬❭〘〙·。\\")
+          (setq p0 (point))
+          (skip-chars-backward stops)
+          (setq p1 (point))
+          (goto-char p0)
+          (skip-chars-forward stops)
+          (setq p2 (point))
+          (goto-char p0)
+          (buffer-substring-no-properties p1 p2))))))
 
 (defun js-import-inside-string-q ()
   "Returns non-nil if inside string, else nil.
 Result depends on syntax table's string quote character."
   (interactive)
-  (let ((result (nth 3 (syntax-ppss))))
-    result))
+  (nth 3 (syntax-ppss)))
 
 (defun js-import-inside-comment? ()
   "Returns value of comment character in syntax table's or nil otherwise"
   (interactive)
   (nth 4 (syntax-ppss)))
-
 
 (defun js-import-strip-duplicates (list)
   (let ((new-list nil))
@@ -1628,10 +1595,7 @@ Result depends on syntax table's string quote character."
           (progn (setq overlay (make-overlay beg end))
                  (make-overlay beg end)
                  (overlay-put overlay 'face 'ag-match-face)
-                 (setq new-name (string-trim (read-string
-                                              "Rename %s to"
-                                              (concat "\s" real-name)
-                                              nil)))
+                 (setq new-name (string-trim (read-string "Rename %s to" (concat "\s" real-name))))
                  (if (string-blank-p new-name)
                      (message "New name is blank")
                    (progn
@@ -1652,9 +1616,7 @@ Result depends on syntax table's string quote character."
                      (format "Rename %s %s" real-name as-word)
                    (format "Rename %s as" real-name)))
          (input (concat "\s" renamed-name))
-         (new-name (string-trim (read-string
-                                 prompt
-                                 input))))
+         (new-name (string-trim (read-string prompt input))))
     (when (and (not (string-blank-p new-name))
                marker
                (goto-char marker)
@@ -1665,24 +1627,27 @@ Result depends on syntax table's string quote character."
             (skip-chars-forward " \s\t\n")
             (skip-chars-forward "as")
             (skip-chars-forward " \s\t\n")
-            (when (and renamed-name
-                       (string= renamed-name (js-import-which-word)))
+            (when (and renamed-name (string= renamed-name (js-import-which-word)))
               (query-replace-regexp (concat "\\_<" renamed-name "\\_>") new-name)))
-
         (progn
           (insert (format " as %s" new-name))
           (query-replace-regexp (concat "\\_<" real-name "\\_>") new-name))))))
 
+(defun js-import-invalid-name?(str)
+  "Validates STR by matching any characters which are not allowed for variable name."
+  (s-matches? (concat "[" "^" js-import-regexp-name "]") str))
+
 
 (defun js-import-generate-name-from-path(path)
   "Generate name for default export from PATH"
-  (js-import-compose-from path
-                          '(lambda(words) (mapconcat 'capitalize words ""))
-                          '(lambda(it) (seq-take it 2))
-                          'reverse
-                          's-split-words
-                          '(lambda(str) (replace-regexp-in-string js-import-file-index-regexp "" str))
-                          'js-import-remove-ext))
+  (js-import-compose-from
+   path
+   '(lambda(words) (mapconcat 'capitalize words ""))
+   '(lambda(it) (seq-take it 2))
+   'reverse
+   's-split-words
+   '(lambda(str) (replace-regexp-in-string js-import-file-index-regexp "" str))
+   'js-import-remove-ext))
 
 (defun js-propose-import-name (candidate)
   (let* ((parts (split-string candidate))
@@ -1691,7 +1656,7 @@ Result depends on syntax table's string quote character."
          (display-path (js-import-get-prop candidate 'display-path))
          (proposed-symbol (pcase type
                             (1 (if (or (js-import-word-reserved? candidate)
-                                       (s-matches? (concat "[" "^" js-import-regexp-name "]") candidate))
+                                       (js-import-invalid-name? candidate))
                                    (js-import-generate-name-from-path display-path)
                                  candidate))
                             (4 (js-import-generate-name-from-path display-path))
@@ -1707,7 +1672,6 @@ Result depends on syntax table's string quote character."
            prompt
            proposed-symbol
            nil nil proposed-symbol))
-
          (new-name (car (split-string (string-trim read-symbols))))
          (name (pcase type
                  (1 new-name)
