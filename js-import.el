@@ -318,8 +318,6 @@
   (interactive)
   (with-current-buffer helm-current-buffer
     (when-let ((display-path (or (js-import-get-prop path 'display-path) path)))
-
-      (message "js-import-from-path " )
       (setq js-import-current-export-path display-path)
       (setq js-import-last-export-path display-path)
       (setq js-import-current-export-real-path
