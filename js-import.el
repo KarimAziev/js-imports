@@ -65,7 +65,8 @@
   :group 'js-import
   :type '(repeat string))
 
-(defcustom js-import-node-modules-priority-section-to-read '("jsnext:main" "module" "types")
+(defcustom js-import-node-modules-priority-section-to-read
+  '("jsnext:main" "module" "types")
   "Package-json sections to retrieve candidates from node_modules."
   :group 'js-import
   :type '(repeat string))
@@ -148,15 +149,40 @@
 (defvar js-import-files-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
+    (define-key map (kbd "<C-return>") 'js-import-find-file-and-exit)
+    (define-key map (kbd "C-c o") 'js-import-find-file-other-window-and-exit)
     (define-key map (kbd "C->") 'js-import-switch-to-next-alias)
     (define-key map (kbd "C-<") 'js-import-switch-to-prev-alias)
     (define-key map (kbd "C-r") 'js-import-switch-to-relative)
-    (define-key map (kbd "<C-return>") 'js-import-find-file-and-exit)
-    (define-key map (kbd "C-c o") 'js-import-find-file-other-window-and-exit)
     map)
   "Keymap for files sources in Helm.")
-
 (put 'js-import-files-map 'helm-only t)
+
+(defun js-import-with-files-map(name command)
+  (substitute-command-keys
+   (concat name "\s\\<js-import-files-map>`\\" "[" (symbol-name command) "]")))
+
+(defcustom js-import-file-actions
+  (helm-make-actions
+   (js-import-with-files-map "Import from file(s)"    'js-import-marked-files)
+   'js-import-marked-files
+   (js-import-with-files-map "Find file"              'js-import-find-file-and-exit)
+   'js-import-find-file-and-exit
+   (js-import-with-files-map "Find file other window" 'js-import-find-file-other-window-and-exit)
+   'js-import-find-file-other-window-and-exit
+   (js-import-with-files-map "Next alias"             'js-import-switch-to-next-alias)
+   'js-import-switch-to-next-alias
+   (js-import-with-files-map "Prev alias"             'js-import-switch-to-prev-alias)
+   'js-import-switch-to-prev-alias
+   (js-import-with-files-map "Relative"               'js-import-switch-to-relative)
+   'js-import-switch-to-relative)
+  "Default actions for files."
+  :group 'js-import
+  :type '(alist :key-type string :value-type function))
+
+(defun js-import-with-symbols-map(name command)
+  (substitute-command-keys
+   (concat name "\s\\<js-import-imported-symbols-map>`\\" "[" (symbol-name command) "]")))
 
 (defvar js-import-imported-symbols-map
   (let ((map (make-sparse-keymap)))
@@ -166,8 +192,33 @@
     (define-key map (kbd "M-r") 'js-import-rename-item)
     map)
   "Keymap for symdol sources.")
-
 (put 'js-import-imported-symbols-map 'helm-only t)
+
+(defcustom js-import-symbol-actions
+  (helm-make-actions
+   (js-import-with-symbols-map "Jump"                 'js-import-jump-to-item-in-buffer)
+   'js-import-jump-to-item-in-buffer
+   (js-import-with-symbols-map "Rename"               'js-import-rename-import)
+   'js-import-rename-import
+   (js-import-with-symbols-map "Add imports"          'js-import-from-path)
+   'js-import-from-path
+   (js-import-with-symbols-map "Quick delete"         'js-import-delete-persistent)
+   'js-import-delete-imported-item
+   (js-import-with-symbols-map "Delete whole import"  'js-import-delete-whole-import-persistent)
+   'js-import-delete-whole-import)
+  "Actions for imported symbols in buffer."
+  :group 'js-import
+  :type '(alist :key-type string :value-type function))
+
+(defcustom js-import-export-items-actions
+  (helm-make-actions
+   "Import"                       'js-import-insert-marked
+   "Import as "                   'js-import-insert-import-as
+   "Go"                           'js-import-jump-to-item-other-window)
+  "Actions for inserting exports."
+  :group 'js-import
+  :type '(alist :key-type string :value-type function))
+
 (defvar js-import-dependencies-cache (make-hash-table :test 'equal))
 (defvar js-import-dependencies-cache-tick nil)
 (defvar js-import-current-alias nil)
@@ -199,51 +250,18 @@
   "Buffer local variable for source of all imported files in a buffer.")
 (make-variable-buffer-local 'js-import-buffer-files-source)
 
-(defvar js-import-files-actions
-  (helm-make-actions
-   "Import from file" (lambda(_c) (mapc 'js-import-from-path (helm-marked-candidates)))
-   (substitute-command-keys
-    "Find file \\<js-import-files-map>`\\[js-import-find-file-and-exit]")
-   'js-import-find-file-and-exit
-   (substitute-command-keys
-    "Open file \\<js-import-files-map>`\\[js-import-find-file-other-window-and-exit]'")
-   'js-import-find-file-other-window-and-exit
-   (substitute-command-keys
-    "Next alias \\<js-import-files-map>`\\[js-import-switch-to-next-alias]'")
-   'js-import-switch-to-next-alias
-   (substitute-command-keys
-    "Prev alias \\<js-import-files-map>`\\[js-import-switch-to-prev-alias]'")
-   'js-import-switch-to-prev-alias
-   (substitute-command-keys
-    "Relative \\<js-import-files-map>`\\[js-import-switch-to-relative]'")
-   'js-import-switch-to-relative)
-  "File actions.")
-
-(defvar js-import-symbols-in-buffer-actions
-  (helm-make-actions
-   "Go" 'js-import-jump-to-item-in-buffer
-   (substitute-command-keys
-    "Rename \\<js-import-imported-symbols-map>`\\[js-import-rename-import]'")
-   'js-import-rename-import
-   "Add more imports" 'js-import-from-path
-   (substitute-command-keys
-    "Delete \\<js-import-imported-symbols-map>`\\[js-import-delete-persistent]'")
-   'js-import-delete-imported-item
-   (substitute-command-keys
-    "Delete whole import \\<js-import-imported-symbols-map>`\\[js-import-delete-whole-import-persistent]'")
-   'js-import-delete-whole-import)
-  "Actions for editing imported symbols in buffer.")
-
-(defvar js-import-export-items-actions
-  (helm-make-actions
-   "Import"  'js-import-insert-marked
-   "Import as " 'js-import-insert-import-as
-   "Go" 'js-import-jump-to-item-other-window)
-  "Actions for generating and inserting imports statements.")
+(defcustom js-import-files-source
+  '(js-import-buffer-files-source
+    js-import-project-files-source
+    js-import-node-modules-source)
+  "Preferred sources for command `js-import'"
+  :type '(repeat (choice symbol))
+  :group 'js-import)
 
 ;;;###autoload
 (defun js-import ()
-  "Init imports from your current project."
+  "Preconfigured helm for selecting files.
+Run all sources defined in option `js-import-files-source'."
   (interactive)
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
@@ -262,9 +280,7 @@
               'js-import-source-node-modules)))
   (save-excursion
     (helm
-     :sources '(js-import-buffer-files-source
-                js-import-project-files-source
-                js-import-node-modules-source)
+     :sources js-import-files-source
      :buffer js-import-buffer
      :preselect (js-import-preselect)
      :prompt "Select a file: ")))
@@ -306,13 +322,13 @@
   imports from current paths and deleting a symbol or whole import."
   (interactive)
   (let (sources)
-    (push (helm-make-source "*js exports*" 'js-import-exported-symbols-in-buffer) sources)
-    (push (helm-make-source "*js imports*" 'js-import-source-symbols-in-buffer) sources)
+    (push (helm-make-source "Exports" 'js-import-exported-symbols-in-buffer) sources)
+    (push (helm-make-source "Imports" 'js-import-source-symbols-in-buffer) sources)
     (helm
      :preselect (or (js-import-which-word) "")
      :sources sources)))
 
-
+;;;###autoload
 (defun js-import-from-path(path)
   "Propose to make import from PATH."
   (interactive)
@@ -323,8 +339,10 @@
       (setq js-import-current-export-real-path
             (js-import-path-to-real display-path default-directory))))
   (let (sources)
-    (push (helm-make-source "imported" 'js-import-source-symbols-in-buffer) sources)
-    (push (helm-make-source "js-exports" 'js-import-source-symbols-in-path) sources)
+    (push (helm-make-source "Imported" 'js-import-source-symbols-in-buffer)
+          sources)
+    (push (helm-make-source "Exports" 'js-import-source-symbols-in-path)
+          sources)
     (helm :sources sources)))
 
 (defclass js-import-source-imported-files(helm-source-in-buffer)
@@ -334,7 +352,7 @@
                                   (format "%s %s" name (file-name-base buffer-file-name))
                                 name))))
    (init :initform 'js-import-find-imported-files-in-buffer)
-   (action :initform 'js-import-files-actions)
+   (action :initform 'js-import-file-actions)
    (persistent-action :initform 'js-import-ff-persistent-action)
    (mode-line :initform (list "Imports"))
    (keymap :initform js-import-files-map)
@@ -349,7 +367,7 @@
    (filtered-candidate-transformer :initform 'js-import-project-files-transformer)
    (mode-line :initform (list "File(s)"))
    (keymap :initform js-import-files-map)
-   (action :initform 'js-import-files-actions)
+   (action :initform 'js-import-file-actions)
    (group :initform 'js-import)))
 
 (defun js-import-project-files()
@@ -370,7 +388,7 @@
 (defclass js-import-source-node-modules (helm-source-sync)
   ((candidates :initform 'js-import-node-modules-candidates)
    (candidate-number-limit :initform js-import-dependencies-number-limit)
-   (action :initform 'js-import-files-actions)
+   (action :initform 'js-import-file-actions)
    (mode-line :initform (list "Dependencies"))
    (keymap :initform js-import-files-map)
    (persistent-action :initform 'js-import-ff-persistent-action)
@@ -390,7 +408,7 @@
    (keymap :initform js-import-imported-symbols-map)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
                                        (js-import-display-to-real-imports c))))
-   (action :initform 'js-import-symbols-in-buffer-actions)))
+   (action :initform 'js-import-symbol-actions)))
 
 (defclass js-import-exported-symbols-in-buffer(helm-source-sync)
   ((candidates :initform 'js-import-exported-candidates-in-buffer)
@@ -400,8 +418,9 @@
                                        (seq-find (lambda(elt) (string= elt it))
                                                  js-import-cached-exports-in-buffer it))))
    (persistent-action :initform (lambda(it) (with-helm-current-buffer
-                                         (js-import-jump-to-item-in-buffer (seq-find (lambda(elt) (string= elt it))
-                                                                                     js-import-cached-exports-in-buffer it)))))
+                                         (js-import-jump-to-item-in-buffer
+                                          (seq-find (lambda(elt) (string= elt it))
+                                                    js-import-cached-exports-in-buffer it)))))
    (action :initform 'js-import-jump-to-item-in-buffer)))
 
 (defclass js-import-source-symbols-in-path(helm-source-sync)
@@ -417,6 +436,11 @@
    (action :initform 'js-import-export-items-actions)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-persistent
                                        (js-import-display-to-real-exports c))))))
+
+
+(defun js-import-marked-files(_c)
+  "Call command `js-import-from-path' for marked candidates."
+  (mapc 'js-import-from-path (helm-marked-candidates)))
 
 (defun js-import-node-modules-candidates(&optional project-root)
   "Return dependencies for $PROJECT-ROOT from package json."
@@ -770,23 +794,21 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
 Default value for PACKAGE-JSON-PATH is a result of calling `js-import-get-package-json-path'
 and default section is `dependencies'"
   (unless section (setq section "dependencies"))
-  (let ((package-json (or package-json-path (js-import-get-package-json-path)))
+  (let ((path (or package-json-path (js-import-get-package-json-path)))
         (json-object-type 'hash-table))
-    (when-let ((package-json-content (condition-case nil
-                                         (f-read-text package-json 'utf-8)
-                                       (error nil)))
-               (dependencies-hash (condition-case nil
-                                      (gethash section (json-read-from-string package-json-content))
-                                    (error nil))))
-      dependencies-hash)))
-
+    (when-let ((content (condition-case nil
+                            (f-read-text path 'utf-8)
+                          (error nil)))
+               (hash (condition-case nil
+                         (gethash section (json-read-from-string content))
+                       (error nil))))
+      hash)))
 
 (defun js-import-try-ext(path &optional dir extensions)
   "A function tries to join into PATH every element from EXTENSIONS
 from left to right until first existing file will be found or nil otherwise.
 
 If optional argument DIR is passed, PATH will be firstly expanded as relative to DIR."
-
   (unless extensions (setq extensions js-import-preffered-extensions))
   (let (ext real-path)
     (while extensions
@@ -808,13 +830,11 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
         (setq section nil)))
     section))
 
-
 (defun js-import-join-when-exists(path filename)
   "Returns joined PATH with FILENAME when exists."
   (let ((joined-path (f-join path filename)))
     (when (f-exists? joined-path)
       joined-path)))
-
 
 (defun js-import-try-find-real-path(path)
   (if (and (f-ext? path) (f-exists? path))
@@ -1429,7 +1449,6 @@ See also function `js-import-propertize'."
         (setq pos1 (point)))
       (cons pos1 pos2))))
 
-
 (defun js-import-delete-whole-import(candidate)
   "Remove CANDIDATE's import statement.
 CANDIDATE must be properizied with prop `display-path'"
@@ -1474,7 +1493,6 @@ ITEM is not string."
   (if (stringp item)
       (get-text-property 0 property item)))
 
-
 (defun js-import-which-word (&optional regexp)
   "Find closest to point whole word."
   (interactive)
@@ -1495,7 +1513,6 @@ ITEM is not string."
       (when (< p1 (point))
         (goto-char p1))
       (buffer-substring-no-properties p1 p2))))
-
 
 (defun js-import-get-path-at-point()
   (interactive)
@@ -1533,7 +1550,7 @@ Result depends on syntax table's string quote character."
   (nth 4 (syntax-ppss)))
 
 (defun js-import-strip-duplicates (list)
-  (let ((new-list nil))
+  (let (new-list)
     (while list
       (when (and (car list) (not (member (car list) new-list)))
         (setq new-list (cons (car list) new-list)))
@@ -1553,13 +1570,16 @@ Result depends on syntax table's string quote character."
           (progn (setq overlay (make-overlay beg end))
                  (make-overlay beg end)
                  (overlay-put overlay 'face 'ag-match-face)
-                 (setq new-name (string-trim (read-string "Rename %s to" (concat "\s" real-name))))
+                 (setq new-name (read-string
+                                 "Rename %s to" (concat "\s" real-name)))
+                 (setq new-name (string-trim new-name))
                  (if (string-blank-p new-name)
                      (message "New name is blank")
                    (progn
                      (remove-overlays beg end)
-                     (let ((case-fold-search nil))
-                       (query-replace-regexp (concat "\\_<" real-name "\\_>") new-name)))))
+                     (let ((case-fold-search nil)
+                           (regexp (concat "\\_<" real-name "\\_>")))
+                       (query-replace-regexp regexp new-name)))))
         (remove-overlays beg end)))))
 
 (defun js-import-rename-as(item)
