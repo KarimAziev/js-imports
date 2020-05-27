@@ -59,7 +59,7 @@
   :group 'js-import
   :type 'number)
 
-(defcustom js-import-dependencies-number-limit 200
+(defcustom js-import-dependencies-number-limit 400
   "The limit for number of dependencies files displayed."
   :group 'js-import
   :type 'number)
@@ -469,7 +469,8 @@ If PATH is a relative file, it will be returned without changes."
 (defun js-import-path-to-real(path &optional dir)
   (when (stringp path)
     (setq path (js-import-strip-text-props path))
-    (cond ((and (f-ext? path) (f-exists? path)
+    (cond ((and (js-import-string-match-p js-import-enabled-extension-regexp path)
+                (f-exists? path)
                 (not (js-import-is-relative? path)))
            path)
           ((js-import-is-relative? path)
@@ -493,7 +494,8 @@ If PATH is a relative file, it will be returned without changes."
                              (concat "^" alias "\\(/\\|$\\)" )))
              (alias-path (js-import-get-alias-path alias))
              (joined-path (f-join alias-path (replace-regexp-in-string alias-regexp "" path)))
-             (found-path (if (and (f-ext? joined-path)
+             (found-path (if (and (js-import-string-match-p
+                                   js-import-enabled-extension-regexp joined-path)
                                   (f-exists? joined-path))
                              joined-path
                            (or (js-import-try-ext joined-path)
@@ -513,8 +515,8 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
     (while extensions
       (setq ext (pop extensions))
       (setq real-path (if dir
-                          (f-expand (f-swap-ext path ext) dir)
-                        (f-swap-ext path ext)))
+                          (f-expand (concat path "." ext) dir)
+                        (concat path "." ext)))
       (if (f-exists? real-path)
           (setq extensions nil)
         (setq real-path nil)))
@@ -618,18 +620,18 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
 
 (defun js-import-maybe-expand-dependency(display-path &optional $real-path)
   (let ((real-path (or $real-path (js-import-expand-node-modules display-path))))
-    (unless (f-ext real-path)
+    (unless (js-import-string-match-p js-import-enabled-extension-regexp real-path)
       (setq real-path (js-import-try-find-real-path real-path))
       real-path)))
 
 (defun js-import-try-find-real-path(path)
-  (if (and (f-ext? path) (f-exists? path))
+  (if (and (js-import-string-match-p js-import-enabled-extension-regexp path) (f-exists? path))
       path
     (or (when-let* ((package-json (js-import-join-when-exists path "package.json"))
                     (module (js-import-try-json-sections
                              package-json
                              js-import-node-modules-priority-section-to-read)))
-          (if (f-ext? module)
+          (if (js-import-string-match-p js-import-enabled-extension-regexp module)
               (f-expand module path)
             (js-import-try-find-real-path (js-import-try-ext module path))))
         (js-import-try-ext path)
@@ -689,7 +691,8 @@ and default section is `dependencies'"
    (persistent-action :initform 'js-import-ff-persistent-action)
    (mode-line :initform (list "Imports"))
    (keymap :initform js-import-files-map)
-   (get-line :initform #'buffer-substring)))
+   (get-line :initform #'buffer-substring)
+   (group :initform 'js-import)))
 
 
 (defun js-import-match-strings-all (regex str)
