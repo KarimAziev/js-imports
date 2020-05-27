@@ -92,14 +92,6 @@
   :group 'js-import
   :type 'string)
 
-(defcustom js-import-ignored-files-regexp '("__tests__"
-                                            "[a-zZ-A]+\\.test[s]"
-                                            "[a-zZ-A0-9]*\\.#[a-zZ-A0-9/]")
-  "Regexp for excluding files."
-  :group 'js-import
-  :type '(repeat string))
-
-
 (defcustom js-import-symbols-faces
   '(("^\\(type\\|interface\\)$" . font-lock-type-face)
     ("^\\(function\\|function*\\)$" . font-lock-function-name-face)
@@ -724,11 +716,18 @@ ignored after the first."
 (defun js-import-find-imported-files-in-buffer()
   "Pluck paths from import statements of current buffer and inserts them one by one divided by new line."
   (with-current-buffer (helm-candidate-buffer 'global)
-    (let ((items (with-helm-current-buffer (buffer-substring-no-properties
-                                            (point-min)
-                                            (js-import-goto-last-import)))))
-      (setq items (js-import-match-strings-all js-import-import-regexp items))
-      (setq items (mapcar (lambda(name) (car (last name))) items))
+    (let ((items (with-helm-current-buffer
+                   (save-excursion
+                     (goto-char 0)
+                     (let (symbols)
+                       (with-syntax-table js-import-mode-syntax-table
+                         (while (re-search-forward js-import-regexp-import-keyword nil t 1)
+                           (backward-char)
+                           (unless (js-import-inside-comment?)
+                             (when-let ((path (js-import-get-path-at-point)))
+                               (push path symbols)))
+                           (forward-line 1)))
+                       (cl-remove-duplicates (reverse symbols) :test 'string=))))))
       (mapc (lambda(name) (insert name) (newline-and-indent)) items))
     (goto-char (point-min))))
 
@@ -955,7 +954,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                                                 imports))
 
       (setq exports (if imports (js-import-filter-exports candidates imports) candidates))
-      (setq exports (js-import-strip-duplicates exports))
+      (setq exports (cl-remove-duplicates exports :test 'string=))
       (setq exports (mapcar (lambda(c) (js-import-propertize c 'display-path js-import-current-export-path))
                             exports)))))
 
@@ -1346,6 +1345,7 @@ See also function `js-import-propertize'."
     (widen)
     (reverse items)))
 
+
 (defun js-import-extract-imports()
   (save-excursion
     (goto-char 0)
@@ -1597,14 +1597,6 @@ Result depends on syntax table's string quote character."
   (interactive)
   (nth 4 (syntax-ppss)))
 
-(defun js-import-strip-duplicates (list)
-  (let (new-list)
-    (while list
-      (when (and (car list) (not (member (car list) new-list)))
-        (setq new-list (cons (car list) new-list)))
-      (setq list (cdr list)))
-    (nreverse new-list)))
-
 (defun js-import-rename-default-item(item)
   "Renames default imported item "
   (let (real-name new-name overlay end beg)
@@ -1676,34 +1668,34 @@ Result depends on syntax table's string quote character."
     (mapconcat 'capitalize parts "")))
 
 (defun js-import-propose-name (candidate)
-(let* ((parts (split-string candidate))
-       (type (js-import-get-prop candidate 'type))
-       (current-name (car parts))
-       (display-path (js-import-get-prop candidate 'display-path))
-       (proposed-symbol (pcase type
-                          (1 (if (or (js-import-word-reserved? candidate)
-                                     (js-import-invalid-name? candidate))
-                                 (js-import-generate-name-from-path display-path)
-                               candidate))
-                          (4 (js-import-generate-name-from-path display-path))
-                          (16 (js-import-generate-name-from-path display-path))))
-       (prompt (format
-                (pcase type
-                  (1 "Import default as (default: %s): ")
-                  (4 "Import { (default: %s) }: ")
-                  (16 "Import all exports as (default: %s): "))
-                proposed-symbol))
-       (read-symbols
-        (read-string
-         prompt
-         proposed-symbol
-         nil nil proposed-symbol))
-       (new-name (car (split-string (string-trim read-symbols))))
-       (name (pcase type
-               (1 new-name)
-               (4 (format "%s as %s" current-name new-name))
-               (16 (format "* as %s" new-name)))))
-  name))
+  (let* ((parts (split-string candidate))
+         (type (js-import-get-prop candidate 'type))
+         (current-name (car parts))
+         (display-path (js-import-get-prop candidate 'display-path))
+         (proposed-symbol (pcase type
+                            (1 (if (or (js-import-word-reserved? candidate)
+                                       (js-import-invalid-name? candidate))
+                                   (js-import-generate-name-from-path display-path)
+                                 candidate))
+                            (4 (js-import-generate-name-from-path display-path))
+                            (16 (js-import-generate-name-from-path display-path))))
+         (prompt (format
+                  (pcase type
+                    (1 "Import default as (default: %s): ")
+                    (4 "Import { (default: %s) }: ")
+                    (16 "Import all exports as (default: %s): "))
+                  proposed-symbol))
+         (read-symbols
+          (read-string
+           prompt
+           proposed-symbol
+           nil nil proposed-symbol))
+         (new-name (car (split-string (string-trim read-symbols))))
+         (name (pcase type
+                 (1 new-name)
+                 (4 (format "%s as %s" current-name new-name))
+                 (16 (format "* as %s" new-name)))))
+    name))
 
 (defun js-import-compose-from(arg &rest funcs)
   "Performs right-to-left unary function composition."

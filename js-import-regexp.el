@@ -24,11 +24,6 @@
 
 ;;; Code:
 
-
-(defvar js-import-import-regexp
-  "^import[ \t\\n]+\\([a-zZ-A0-9_$]+\\|*[\t\n\s]+as[\t\n\s][a-zZ-A0-9_$]\\)*[ \t\\n]?,?[ \t\\n]?+\\({[^}]+}\\)?[ \t\\n]from[ \t]+['\"']\\([^['\"]*\\)"
-  "Regexp for searching import declarations")
-
 (defconst js-import-js-vars "\\(const\\|let\\|var\\|function[*]?\\|interface\\|type\\|class\\|default\\)")
 
 (defconst js-import-regexp-name
