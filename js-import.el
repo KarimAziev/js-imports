@@ -4,7 +4,7 @@
 
 ;; Author: Karim Aziiev <karim.aziev@gmail.com>
 ;; URL: https://github.com/KarimAziev/js-import
-;; Keywords: conveniences
+;; Keywords: convenience, matching, languages
 ;; Version: 0.1.1
 ;; Package-Requires: ((emacs "26.1"))
 
@@ -32,7 +32,6 @@
 (require 'helm)
 (require 'cl-lib)
 (require 'f)
-(require 's)
 (require 'json)
 (require 'js-import-regexp)
 (eval-when-compile
@@ -156,7 +155,7 @@
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
     (define-key map (kbd "<C-return>") 'js-import-find-file-and-exit)
-    (define-key map (kbd "C-c o") 'js-import-find-file-other-window-and-exit)
+    (define-key map (kbd "C-c C-o") 'js-import-find-file-other-window-and-exit)
     (define-key map (kbd "C->") 'js-import-switch-to-next-alias)
     (define-key map (kbd "C-<") 'js-import-switch-to-prev-alias)
     (define-key map (kbd "C-r") 'js-import-switch-to-relative)
@@ -228,9 +227,6 @@
 (defvar js-import-dependencies-cache (make-hash-table :test 'equal))
 (defvar js-import-dependencies-cache-tick nil)
 (defvar js-import-current-alias nil)
-(defvar js-import-dependency-source-name "node modules")
-(defvar js-import-buffer-source-name "imported in")
-(defvar js-import-files-source-name "js-import-files")
 (defvar js-import-aliases nil)
 (make-variable-buffer-local 'js-import-aliases)
 (defvar js-import-current-export-path nil)
@@ -248,6 +244,10 @@
 (defvar js-import-last-export-path nil)
 (make-variable-buffer-local 'js-import-last-export-path)
 
+
+(defvar js-import-dependency-source-name "Node Modules")
+(defvar js-import-buffer-source-name "Imports in")
+(defvar js-import-files-source-name "Project files")
 (defvar js-import-node-modules-source nil
   "Variable keeps source files from node_modules.")
 (defvar js-import-project-files-source nil
@@ -356,7 +356,7 @@ Optional argument RECURSIVE non-nil means to search recursive."
       (if js-import-current-alias
           (progn
             (concat
-             (propertize js-import-current-alias 'face 'font-lock-function-name-face)
+             (propertize js-import-current-alias 'face 'font-lock-builtin-face)
              "\s" (f-short dir) "/"
              (plist-get js-import-alias-map js-import-current-alias)))
         (if buffer-file-name
@@ -379,8 +379,8 @@ Optional argument RECURSIVE non-nil means to search recursive."
          (priority-dir (if (and alias-path (not (f-parent-of? root alias-path)))
                            alias-path
                          default-directory))
-         (dirs (f-directories (or alias-path root) (lambda(it) (not (or (s-contains? "node_modules" it)
-                                                                   (s-matches? "/\\.[a-zZ-A]" it))))))
+         (dirs (f-directories (or alias-path root) (lambda(it) (not (or (js-import-string-contains-p "node_modules" it)
+                                                                   (js-import-string-match-p "/\\.[a-zZ-A]" it))))))
          (files (js-import-directory-files priority-dir t)))
     (mapc (lambda(dir) (setq files (append files (js-import-directory-files dir t))))
           (reverse dirs))
@@ -402,7 +402,7 @@ Optional argument RECURSIVE non-nil means to search recursive."
       (when alias-path
         (setq files (seq-filter
                      (lambda(filename) (if (f-absolute? filename)
-                                      (s-matches-p alias-path filename)
+                                      (js-import-string-match-p alias-path filename)
                                     filename))
                      files)))
       (setq files (seq-remove (lambda(filename) (equal buffer-file-name filename)) files))
@@ -426,7 +426,7 @@ If PATH is a relative file, it will be returned without changes."
 
 (defun js-import-slash(str)
   "Append slash to non-empty STR unless one already."
-  (if (or (null str) (s-matches? "/$" str) (s-blank? str))
+  (if (or (null str) (js-import-string-match-p "/$" str) (js-import-string-blank-p str))
       str
     (concat str "/")))
 
@@ -449,16 +449,16 @@ If PATH is a relative file, it will be returned without changes."
   (replace-regexp-in-string js-import-file-ext-regexp "" path))
 
 (defun js-import-is-index-file?(path)
-  (s-matches? js-import-file-index-regexp path))
+  (js-import-string-match-p js-import-file-index-regexp path))
 
 (defun js-import-is-relative?(path)
-  (s-matches? "^\\.+/" path))
+  (js-import-string-match-p "^\\.+/" path))
 
 (defun js-import-is-index-trimmable?(path)
   "Check if PATH index can be trimmed"
   (if (js-import-is-relative? path)
       (and (js-import-is-index-file? path)
-           (< 1 (s-count-matches "/" path)))
+           (< 1 (js-import-count-matches "/" path)))
     (js-import-is-index-file? path)))
 
 (defun js-import-get-aliases ()
@@ -496,7 +496,7 @@ If PATH is a relative file, it will be returned without changes."
     (setq aliases (js-import-get-aliases))
     (while aliases
       (setq alias (pop aliases))
-      (let* ((alias-regexp (if (s-blank? alias)
+      (let* ((alias-regexp (if (js-import-string-blank-p alias)
                                (concat "^" alias)
                              (concat "^" alias "\\(/\\|$\\)" )))
              (alias-path (js-import-get-alias-path alias))
@@ -587,7 +587,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
           (dotimes (k max)
             (let ((elt (nth k modules)))
               (sit-for 0.01)
-              (unless (s-contains? "/" elt)
+              (unless (js-import-string-contains-p "/" elt)
                 (setq submodules (append submodules (js-import-find-interfaces elt))))
               (progress-reporter-update progress-reporter k)))
           (setq modules (append modules submodules))
@@ -596,11 +596,12 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
           (progress-reporter-done progress-reporter))))
     (gethash project-root js-import-dependencies-cache)))
 
+
 (defun js-import-find-interfaces(display-path)
   (when-let* ((real-path (js-import-expand-node-modules display-path))
               (exists (f-exists-p real-path))
               (files (f-files real-path (lambda(path)
-                                          (and (s-matches? ".d.ts$" path)
+                                          (and (js-import-string-match-p "\\.d.ts$" path)
                                                (not (js-import-is-index-file? path)))))))
     (mapcar (lambda(it) (f-join display-path (f-filename (js-import-remove-ext it)))) files)))
 
@@ -608,6 +609,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
   "Check if path is dependency"
   (let ((dependencies (js-import-node-modules-candidates project-root))
         (dirname (car (split-string display-path "/"))))
+
     (or (member dirname dependencies)
         (f-exists? (js-import-expand-node-modules dirname project-root)))))
 
@@ -645,7 +647,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
                     (files (js-import-directory-files dir)))
           (if (= 1 (length files))
               (car files)
-            (seq-find (lambda(it) (s-matches? js-import-file-index-regexp it))
+            (seq-find (lambda(it) (js-import-string-match-p js-import-file-index-regexp it))
                       files))))))
 
 (defun js-import-read-package-json-section (&optional package-json-path section)
@@ -697,13 +699,35 @@ and default section is `dependencies'"
    (keymap :initform js-import-files-map)
    (get-line :initform #'buffer-substring)))
 
+
+(defun js-import-match-strings-all (regex str)
+  "Return a list of matches for REGEX in STRING.
+
+Each element itself is a list of matches, as per
+`match-string'. Multiple matches at the same position will be
+ignored after the first."
+  (save-match-data
+    (let ((all-strings ())
+          (i 0))
+      (while (and (< i (length str))
+                  (string-match regex str i))
+        (setq i (1+ (match-beginning 0)))
+        (let (strings
+              (num-matches (/ (length (match-data)) 2))
+              (match 0))
+          (while (/= match num-matches)
+            (push (match-string match str) strings)
+            (setq match (1+ match)))
+          (push (nreverse strings) all-strings)))
+      (nreverse all-strings))))
+
 (defun js-import-find-imported-files-in-buffer()
   "Pluck paths from import statements of current buffer and inserts them one by one divided by new line."
   (with-current-buffer (helm-candidate-buffer 'global)
     (let ((items (with-helm-current-buffer (buffer-substring-no-properties
                                             (point-min)
                                             (js-import-goto-last-import)))))
-      (setq items (s-match-strings-all js-import-import-regexp items))
+      (setq items (js-import-match-strings-all js-import-import-regexp items))
       (setq items (mapcar (lambda(name) (car (last name))) items))
       (mapc (lambda(name) (insert name) (newline-and-indent)) items))
     (goto-char (point-min))))
@@ -1093,8 +1117,8 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
   (let* ((type (js-import-get-prop candidate 'type))
          (normalized-path (js-import-get-prop candidate 'display-path))
          (real-name (js-import-get-prop candidate 'real-name))
-         (renamed-name (s-trim (read-string
-                                (format "import %s as " real-name))))
+         (renamed-name (car (split-string (read-string
+                                           (format "import %s as " real-name)))))
          (full-name (concat real-name " as " renamed-name)))
     (pcase type
       (1 (js-import-insert-exports renamed-name nil normalized-path))
@@ -1419,13 +1443,13 @@ See also function `js-import-propertize'."
 
 (defun js-import-join-names(symbols)
   (when (and (listp symbols) (<= 1 (length symbols)))
-    (s-join ", " symbols)))
+    (js-import-join ", " symbols)))
 
 (defun js-import-join-imports-names(default-name names)
   (let (parts)
     (when (stringp names) (push (concat "{ " names" }") parts))
     (when (stringp default-name) (push default-name parts))
-    (s-join ", " (seq-remove (lambda(it) (null it)) parts))))
+    (js-import-join ", " (seq-remove (lambda(it) (null it)) parts))))
 
 (defun js-import-goto-last-import()
   (goto-char (point-min))
@@ -1534,6 +1558,34 @@ ITEM is not string."
           (goto-char p0)
           (buffer-substring-no-properties p1 p2))))))
 
+
+(defun js-import-string-match-p (regexp str &optional start)
+  "Return t if STR matches REGEXP, otherwise return nil."
+  (not (null (string-match-p regexp str start))))
+
+(defun js-import-join (separator strings)
+  "Join strings in STRINGS with SEPARATOR."
+  (mapconcat 'identity strings separator))
+
+(defun js-import-string-contains-p (needle str &optional ignore-case)
+  "Return t if STR contains NEEDLE, otherwise return nil.
+
+If IGNORE-CASE is non-nil, the comparison will ignore case differences."
+  (let ((case-fold-search ignore-case))
+    (not (null (string-match-p (regexp-quote needle) str)))))
+
+(defun js-import-string-blank-p (str)
+  "Return t if STR is nil or empty, otherwise return nil."
+  (or (null str) (string= "" str)))
+
+(defun js-import-count-matches (regexp str &optional start end)
+  "Count occurrences of REGEXP in STR."
+  (save-match-data
+    (with-temp-buffer
+      (insert str)
+      (goto-char (point-min))
+      (count-matches regexp (or start 1) (or end (point-max))))))
+
 (defun js-import-inside-string-q ()
   "Returns non-nil if inside string, else nil.
 Result depends on syntax table's string quote character."
@@ -1609,7 +1661,7 @@ Result depends on syntax table's string quote character."
 
 (defun js-import-invalid-name?(str)
   "Validates STR by matching any characters which are not allowed for variable name."
-  (s-matches? (concat "[" "^" js-import-regexp-name "]") str))
+  (js-import-string-match-p (concat "[" "^" js-import-regexp-name "]") str))
 
 (defun js-import-generate-name-from-path(path)
   "Generate name for default or module import from PATH"
