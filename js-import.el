@@ -228,15 +228,15 @@
 
 (defconst js-import-regexp-name-with-separators
   (concat js-import-regexp-name ",\s\n\t")
-  "Regexp matching js identifier's chars with separators")
+  "Regexp matching js identifier's chars with separators.")
 
 (defconst js-import-regexp-import-keyword
   "\\(^\\| +\\)import[ \t\n]+"
-  "Regexp matching keyword import")
+  "Regexp matching keyword import.")
 
 (defconst js-import-regexp-export-keyword
-  "\\(^\\| +\\)export[ \t\n]+"
-  "Regexp matching keyword export")
+  "\\(^\\| +\\)export[ \t]+"
+  "Regexp matching keyword export.")
 
 (defconst js-import-file-ext-regexp
   "\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)$"
@@ -256,10 +256,10 @@
     "readonly" "return" "set" "static" "string" "super" "switch"
     "this" "throw" "true" "try" "type" "typeof" "unknown"
     "var" "void" "while" "yield")
-  "List of reserved words in javascript")
+  "List of reserved words in javascript.")
 
 (defun js-import-reserved-word-p(str &optional reserved-list)
-  "Check if STR is js reserved word"
+  "Check if STR is js reserved word."
   (unless reserved-list (setq reserved-list js-import-reserved-js-words))
   (when (stringp str)
     (member str reserved-list)))
@@ -299,7 +299,7 @@
 (defcustom js-import-files-source '(js-import-buffer-files-source
                                     js-import-project-files-source
                                     js-import-node-modules-source)
-  "Preferred sources for command `js-import'"
+  "Preferred sources for command `js-import'."
   :type '(repeat (choice symbol))
   :group 'js-import)
 
@@ -420,7 +420,6 @@ Run all sources defined in option `js-import-files-source'."
           dirs)
     files))
 
-
 (defun js-import-get-alias-path(alias &optional project-root)
   (when alias
     (let ((root (or project-root (js-import-find-project-root))))
@@ -519,6 +518,13 @@ If PATH is a relative file, it will be returned without changes."
       (replace-regexp-in-string js-import-file-index-regexp "" path)
     path))
 
+(defun js-import-index-trimmable-p(path)
+  "Check if PATH index can be trimmed."
+  (if (js-import-relative-p path)
+      (and (js-import-is-index-file-p path)
+           (< 1 (js-import-count-matches "/" path)))
+    (js-import-is-index-file-p path)))
+
 (defun js-import-remove-ext(path)
   (replace-regexp-in-string js-import-file-ext-regexp "" path))
 
@@ -527,13 +533,6 @@ If PATH is a relative file, it will be returned without changes."
 
 (defun js-import-relative-p(path)
   (js-import-string-match-p "^\\.+/" path))
-
-(defun js-import-index-trimmable-p(path)
-  "Check if PATH index can be trimmed"
-  (if (js-import-relative-p path)
-      (and (js-import-is-index-file-p path)
-           (< 1 (js-import-count-matches "/" path)))
-    (js-import-is-index-file-p path)))
 
 (defun js-import-get-aliases ()
   "Get list of aliases."
@@ -575,7 +574,8 @@ If PATH is a relative file, it will be returned without changes."
                                (concat "^" alias)
                              (concat "^" alias "\\(/\\|$\\)" )))
              (alias-path (js-import-get-alias-path alias))
-             (joined-path (js-import-join-file alias-path (replace-regexp-in-string alias-regexp "" path)))
+             (joined-path (js-import-join-file alias-path
+                                               (replace-regexp-in-string alias-regexp "" path)))
              (found-path (if (and (js-import-string-match-p
                                    js-import-enabled-extension-regexp joined-path)
                                   (file-exists-p joined-path))
@@ -587,6 +587,11 @@ If PATH is a relative file, it will be returned without changes."
           (setq aliases nil))))
     real-path))
 
+(defun js-import-add-ext(path ext)
+  (if (js-import-string-match-p js-import-enabled-extension-regexp path)
+      path
+    (concat path "." ext)))
+
 (defun js-import-try-ext(path &optional dir extensions)
   "A function tries to join into PATH every element from EXTENSIONS
 from left to right until first existing file will be found or nil otherwise.
@@ -596,9 +601,9 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
   (let (ext real-path)
     (while extensions
       (setq ext (pop extensions))
-      (setq real-path (if dir
-                          (expand-file-name (concat path "." ext) dir)
-                        (concat path "." ext)))
+      (setq real-path (js-import-add-ext path ext))
+      (when dir
+        (setq real-path (expand-file-name real-path dir)))
       (if (file-exists-p real-path)
           (setq extensions nil)
         (setq real-path nil)))
@@ -676,7 +681,8 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
 (defun js-import-find-interfaces(display-path)
   (when-let* ((real-path (js-import-expand-node-modules display-path))
               (exists (file-exists-p real-path))
-              (files (js-import-directory-files real-path nil "\\.d.ts$")))
+              (files (seq-remove 'js-import-is-index-file-p
+                                 (js-import-directory-files real-path nil "\\.d.ts$"))))
     (mapcar (lambda(it) (js-import-join-file display-path (js-import-compose-from it
                                                                              'file-name-nondirectory
                                                                              'directory-file-name
@@ -684,7 +690,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
             files)))
 
 (defun js-import-dependency-p (display-path &optional project-root)
-  "Check if path is dependency"
+  "Check if path is dependency."
   (let ((dependencies (js-import-node-modules-candidates project-root))
         (dirname (car (split-string display-path "/"))))
 
@@ -769,7 +775,6 @@ and default section is `dependencies'"
     (when (file-exists-p joined-path)
       joined-path)))
 
-
 (defclass js-import-source-imported-files(helm-source-in-buffer)
   ((header-name :initform (lambda(name)
                             (with-helm-current-buffer
@@ -783,28 +788,6 @@ and default section is `dependencies'"
    (keymap :initform js-import-files-map)
    (get-line :initform #'buffer-substring)
    (group :initform 'js-import)))
-
-
-(defun js-import-match-strings-all (regex str)
-  "Return a list of matches for REGEX in STRING.
-
-Each element itself is a list of matches, as per
-`match-string'. Multiple matches at the same position will be
-ignored after the first."
-  (save-match-data
-    (let ((all-strings ())
-          (i 0))
-      (while (and (< i (length str))
-                  (string-match regex str i))
-        (setq i (1+ (match-beginning 0)))
-        (let (strings
-              (num-matches (/ (length (match-data)) 2))
-              (match 0))
-          (while (/= match num-matches)
-            (push (match-string match str) strings)
-            (setq match (1+ match)))
-          (push (nreverse strings) all-strings)))
-      (nreverse all-strings))))
 
 (defun js-import-find-imported-files-in-buffer()
   "Pluck paths from import statements of current buffer and inserts them one by one divided by new line."
@@ -891,7 +874,6 @@ ignored after the first."
 (defun js-import-marked-files(_c)
   "Call command `js-import-from-path' for marked candidates."
   (mapc 'js-import-from-path (helm-marked-candidates)))
-
 
 ;;;###autoload
 (defun js-import-from-path(path)
@@ -1022,7 +1004,7 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
           js-import-cached-imports-in-buffer
         (progn
           (setq js-import-cached-imports-in-buffer-tick tick)
-          (setq js-import-cached-imports-in-buffer (js-import-extract-imports))
+          (setq js-import-cached-imports-in-buffer (seq-remove 'js-import-reserved-word-p (js-import-extract-imports)))
           js-import-cached-imports-in-buffer)))))
 
 (defun js-import-exported-candidates-in-buffer(&optional buffer)
@@ -1058,7 +1040,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
               items))
 
 (defun js-import-filter-exports(exports imports)
-  "Returns filtered EXPORTS plist with only those members that are not in IMPORTS plist.
+  "Return EXPORTS plist with only those members that are not in IMPORTS plist.
 
    For named exports (with property `type' 4) the test for equality is done by `real-name' and for default export by `type'."
 
@@ -1185,6 +1167,60 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
         (4 (js-import-rename-as candidate))
         (16 (js-import-rename-as candidate))))))
 
+(defun js-import-rename-default-item(item)
+  "Renames default imported ITEM."
+  (let (real-name new-name overlay end beg)
+    (setq real-name (or (js-import-get-prop item 'real-name)
+                        (js-import-strip-text-props item)))
+    (setq beg (js-import-get-prop item 'marker))
+    (goto-char beg)
+    (when (string= real-name (js-import-which-word))
+      (setq end (+ (point) (length (js-import-which-word))))
+      (unwind-protect
+          (progn (setq overlay (make-overlay beg end))
+                 (make-overlay beg end)
+                 (overlay-put overlay 'face 'ag-match-face)
+                 (setq new-name (read-string
+                                 "Rename %s to" (concat "\s" real-name)))
+                 (setq new-name (string-trim new-name))
+                 (if (string-blank-p new-name)
+                     (message "New name is blank")
+                   (progn
+                     (remove-overlays beg end)
+                     (let ((case-fold-search nil)
+                           (regexp (concat "\\_<" real-name "\\_>")))
+                       (query-replace-regexp regexp new-name)))))
+        (remove-overlays beg end)))))
+
+(defun js-import-rename-as(item)
+  "Rename named imports and module imports."
+  (let* ((marker (js-import-get-prop item 'marker))
+         (full-name (js-import-strip-text-props item))
+         (parts (split-string full-name))
+         (real-name (nth 0 parts))
+         (as-word (nth 1 parts))
+         (renamed-name (nth 2 parts))
+         (prompt (if as-word
+                     (format "Rename %s %s" real-name as-word)
+                   (format "Rename %s as" real-name)))
+         (input (concat "\s" renamed-name))
+         (new-name (string-trim (read-string prompt input))))
+    (when (and (not (string-blank-p new-name))
+               marker
+               (goto-char marker)
+               (string= real-name (js-import-which-word)))
+      (skip-chars-forward real-name)
+      (if as-word
+          (progn
+            (skip-chars-forward " \s\t\n")
+            (skip-chars-forward "as")
+            (skip-chars-forward " \s\t\n")
+            (when (and renamed-name (string= renamed-name (js-import-which-word)))
+              (query-replace-regexp (concat "\\_<" renamed-name "\\_>") new-name)))
+        (progn
+          (insert (format " as %s" new-name))
+          (query-replace-regexp (concat "\\_<" real-name "\\_>") new-name))))))
+
 (defun js-import-insert-import(candidate)
   "Insert CANDIDATE into existing or new import statement."
   (save-excursion
@@ -1232,19 +1268,6 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
     item))
 
 
-(defun js-import-insert-buffer-or-file(path)
-  "A function inserts content either from buffer or file
-depending whether buffer with the given PATH exists.
-
-In both cases the content will be copied without properties"
-  (when (and path (file-exists-p path))
-    (if (get-file-buffer path)
-        (insert-buffer-substring-no-properties (get-file-buffer path))
-      (progn
-        (let ((buffer-file-name path))
-          (insert-file-contents path)
-          (set-auto-mode))))))
-
 (defun js-import-insert-exports(default-name named-list path)
   (let ((names (if (stringp named-list)
                    named-list
@@ -1291,27 +1314,9 @@ In both cases the content will be copied without properties"
           (js-import-add-to-brackets names)
         (insert "{" names "}")))))
 
-(cl-defun js-import-make-index-item (candidate
-                                     &key
-                                     type
-                                     display-path
-                                     var-type
-                                     real-path
-                                     real-name
-                                     marker)
-  "Utility function to propertize js symbol.
-See also function `js-import-propertize'."
-  (setq candidate (js-import-strip-text-props candidate))
-  (js-import-propertize candidate
-                        'real-name real-name
-                        'display-path display-path
-                        'real-path real-path
-                        'type type
-                        'var-type var-type
-                        'marker marker))
 
 (defun js-import-init-exports-candidates()
-  "Extract exports from file specified in a variable `js-import-current-export-path.'"
+  "Extract exports from file specified in a variable `js-import-current-export-path.'."
   (with-current-buffer helm-current-buffer
     (let ((default-candidates (list (js-import-make-index-item
                                      "* as"
@@ -1363,6 +1368,19 @@ See also function `js-import-propertize'."
                 (setq symbols (append symbols exports))))
             (forward-line 1)))
         symbols))))
+
+(defun js-import-insert-buffer-or-file(path)
+  "A function inserts content either from buffer or file
+depending whether buffer with the given PATH exists.
+
+In both cases the content will be copied without properties"
+  (when (and path (file-exists-p path))
+    (if (get-file-buffer path)
+        (insert-buffer-substring-no-properties (get-file-buffer path))
+      (progn
+        (let ((buffer-file-name path))
+          (insert-file-contents path)
+          (set-auto-mode))))))
 
 (defun js-import-extract-all-as-exports(real-path &optional display-path)
   "Make export all as item."
@@ -1488,7 +1506,7 @@ See also function `js-import-propertize'."
                 (setq imports (append imports (js-import-extract-imports-in-brackets path))))
               (setq symbols (append symbols imports))))
           (forward-line 1)))
-      symbols)))
+      (cl-remove-duplicates symbols :test 'string=))))
 
 
 (defun js-import-extract-imports-in-brackets(display-path &optional real-path)
@@ -1572,6 +1590,41 @@ CANDIDATE must be properizied with prop `display-path'"
     (join-line)))
 
 
+(cl-defun js-import-make-index-item (candidate
+                                     &key
+                                     type
+                                     display-path
+                                     var-type
+                                     real-path
+                                     real-name
+                                     marker)
+  "Utility function to propertize js symbol.
+See also function `js-import-propertize'."
+  (setq candidate (js-import-strip-text-props candidate))
+  (js-import-propertize candidate
+                        'real-name real-name
+                        'display-path display-path
+                        'real-path real-path
+                        'type type
+                        'var-type var-type
+                        'marker marker))
+
+(defun js-import-propertize (item &rest properties)
+  "Same as `propertize' except that this avoids overriding
+existed name with `nil' property."
+  (cl-loop for (k v) on properties by 'cddr
+           if v append (list k v) into props
+           finally return
+           (apply 'propertize
+                  (js-import-stringify item)
+                  props)))
+
+(defun js-import-get-prop (item property)
+  "Same as `get-text-property' except that this returns nil if
+ITEM is not string."
+  (if (stringp item)
+      (get-text-property 0 property item)))
+
 (defun js-import-strip-text-props(str)
   "Remove all text properties from string or stringifies symbol"
   (cond ((stringp str)
@@ -1590,22 +1643,6 @@ This is faster than `prin1-to-string' in many cases."
     (integer (number-to-string x))
     (float (number-to-string x))
     (t (format "%s" x))))
-
-(defun js-import-propertize (item &rest properties)
-  "Same as `propertize' except that this avoids overriding
-existed name with `nil' property."
-  (cl-loop for (k v) on properties by 'cddr
-           if v append (list k v) into props
-           finally return
-           (apply 'propertize
-                  (js-import-stringify item)
-                  props)))
-
-(defun js-import-get-prop (item property)
-  "Same as `get-text-property' except that this returns nil if
-ITEM is not string."
-  (if (stringp item)
-      (get-text-property 0 property item)))
 
 (defun js-import-which-word (&optional regexp)
   "Find closest to point whole word."
@@ -1687,83 +1724,13 @@ Result depends on syntax table's string quote character."
   (nth 3 (syntax-ppss)))
 
 (defun js-import-inside-comment-p ()
-  "Returns value of comment character in syntax table's or nil otherwise"
+  "Return value of comment character in syntax table's or nil otherwise."
   (interactive)
   (nth 4 (syntax-ppss)))
-
-(defun js-import-rename-default-item(item)
-  "Renames default imported item "
-  (let (real-name new-name overlay end beg)
-    (setq real-name (or (js-import-get-prop item 'real-name)
-                        (js-import-strip-text-props item)))
-    (setq beg (js-import-get-prop item 'marker))
-    (goto-char beg)
-    (when (string= real-name (js-import-which-word))
-      (setq end (+ (point) (length (js-import-which-word))))
-      (unwind-protect
-          (progn (setq overlay (make-overlay beg end))
-                 (make-overlay beg end)
-                 (overlay-put overlay 'face 'ag-match-face)
-                 (setq new-name (read-string
-                                 "Rename %s to" (concat "\s" real-name)))
-                 (setq new-name (string-trim new-name))
-                 (if (string-blank-p new-name)
-                     (message "New name is blank")
-                   (progn
-                     (remove-overlays beg end)
-                     (let ((case-fold-search nil)
-                           (regexp (concat "\\_<" real-name "\\_>")))
-                       (query-replace-regexp regexp new-name)))))
-        (remove-overlays beg end)))))
-
-(defun js-import-rename-as(item)
-  "Rename named imports and module imports."
-  (let* ((marker (js-import-get-prop item 'marker))
-         (full-name (js-import-strip-text-props item))
-         (parts (split-string full-name))
-         (real-name (nth 0 parts))
-         (as-word (nth 1 parts))
-         (renamed-name (nth 2 parts))
-         (prompt (if as-word
-                     (format "Rename %s %s" real-name as-word)
-                   (format "Rename %s as" real-name)))
-         (input (concat "\s" renamed-name))
-         (new-name (string-trim (read-string prompt input))))
-    (when (and (not (string-blank-p new-name))
-               marker
-               (goto-char marker)
-               (string= real-name (js-import-which-word)))
-      (skip-chars-forward real-name)
-      (if as-word
-          (progn
-            (skip-chars-forward " \s\t\n")
-            (skip-chars-forward "as")
-            (skip-chars-forward " \s\t\n")
-            (when (and renamed-name (string= renamed-name (js-import-which-word)))
-              (query-replace-regexp (concat "\\_<" renamed-name "\\_>") new-name)))
-        (progn
-          (insert (format " as %s" new-name))
-          (query-replace-regexp (concat "\\_<" real-name "\\_>") new-name))))))
 
 (defun js-import-invalid-name-p(str)
   "Validates STR by matching any characters which are not allowed for variable name."
   (js-import-string-match-p (concat "[" "^" js-import-regexp-name "]") str))
-
-(defun js-import-split-path(str)
-  (split-string (replace-regexp-in-string
-                 (concat "[" "^" "/" "." js-import-regexp-name "]") "" str) "[/.]"))
-
-(defun js-import-generate-name-from-path(path)
-  "Generate name for default or module import from PATH"
-  (let ((parts (js-import-compose-from
-                path
-                'reverse
-                'js-import-split-path
-                'js-import-maybe-remove-path-index
-                'js-import-remove-ext)))
-
-    (setq parts (seq-take parts 2))
-    (mapconcat 'capitalize parts "")))
 
 (defun js-import-propose-name (candidate)
   (let* ((parts (split-string candidate))
@@ -1794,6 +1761,21 @@ Result depends on syntax table's string quote character."
                  (4 (format "%s as %s" current-name new-name))
                  (16 (format "* as %s" new-name)))))
     name))
+
+(defun js-import-generate-name-from-path(path)
+  "Generate name for default or module import from PATH."
+  (let* ((split-path (lambda(str) (split-string str "[ \f\t\n\r\v-/.]")))
+         (map-capitalize (lambda(p) (mapcar 'capitalize p)))
+         (take-two (lambda(parts) (seq-take parts 2))))
+    (js-import-compose-from path
+                            'string-join
+                            take-two
+                            'reverse
+                            map-capitalize
+                            'seq-uniq
+                            split-path
+                            'js-import-maybe-remove-path-index
+                            'js-import-remove-ext)))
 
 (defun js-import-compose-from(arg &rest funcs)
   "Performs right-to-left unary function composition."
