@@ -1,3 +1,4 @@
+[![License GPL 3][badge-license]](http://www.gnu.org/licenses/gpl-3.0.txt)
 
 # Table of Contents
 * [Requirements](#org8bb2ccf)
@@ -20,9 +21,8 @@ An Emacs package for import JavaScript and TypeScript modules with [helm](<https
 
 ## Requirements
 
--   Emacs 24.4 or higher
+-   Emacs 26.1 or higher
 -   Helm 3.0 or higher
--   [Projectile](<https://github.com/bbatsov/projectile> "projectile")
 -   [Quelpa](<https://github.com/quelpa/quelpa> "quelpa") - while package is under develop and is not available on Melpa
 
 
@@ -112,3 +112,9 @@ In this case `js-import-alias-map` should be `("@" "src" "UI" "src/components/UI
 
 ```
 Or configure it globally with `M-x customize-variable js-import-alias-map`.
+
+## License
+
+Copyright © 2020 Karim Aziiev
+Distributed under the GNU General Public License, version 3
+[badge-license]: https://img.shields.io/badge/license-GPLv3-blue
