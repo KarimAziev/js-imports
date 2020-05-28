@@ -1,3 +1,4 @@
+[![License GPL 3][badge-license]](http://www.gnu.org/licenses/gpl-3.0.txt)
 
 # Table of Contents
 * [Requirements](#org8bb2ccf)
@@ -111,3 +112,9 @@ In this case `js-import-alias-map` should be `("@" "src" "UI" "src/components/UI
 
 ```
 Or configure it globally with `M-x customize-variable js-import-alias-map`.
+
+## License
+
+Copyright © 2020 Karim Aziiev
+Distributed under the GNU General Public License, version 3
+[badge-license]: https://img.shields.io/badge/license-GPLv3-blue
