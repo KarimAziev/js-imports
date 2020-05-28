@@ -389,8 +389,6 @@ Run all sources defined in option `js-import-files-source'."
 
 (defun js-import-init-project-files()
   "Init project files."
-
-  (message "JS-IMPORT-CURRENT-ALIAS==%s \nall %s" js-import-current-alias (js-import-get-aliases))
   (with-current-buffer helm-current-buffer
     (setq js-import-aliases (js-import-get-aliases))
     (when (and js-import-current-alias
