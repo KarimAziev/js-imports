@@ -20,9 +20,8 @@ An Emacs package for import JavaScript and TypeScript modules with [helm](<https
 
 ## Requirements
 
--   Emacs 24.4 or higher
+-   Emacs 26.1 or higher
 -   Helm 3.0 or higher
--   [Projectile](<https://github.com/bbatsov/projectile> "projectile")
 -   [Quelpa](<https://github.com/quelpa/quelpa> "quelpa") - while package is under develop and is not available on Melpa
 
 
