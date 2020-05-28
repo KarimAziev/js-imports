@@ -389,6 +389,8 @@ Run all sources defined in option `js-import-files-source'."
 
 (defun js-import-init-project-files()
   "Init project files."
+
+  (message "JS-IMPORT-CURRENT-ALIAS==%s \nall %s" js-import-current-alias (js-import-get-aliases))
   (with-current-buffer helm-current-buffer
     (setq js-import-aliases (js-import-get-aliases))
     (when (and js-import-current-alias
@@ -398,8 +400,7 @@ Run all sources defined in option `js-import-files-source'."
 (defun js-import-find-project-files()
   "Return project files without dependencies."
   (let* ((root (js-import-slash (js-import-find-project-root)))
-         (alias-path (and js-import-current-alias
-                          (js-import-get-alias-path js-import-current-alias)))
+         (alias-path (js-import-get-alias-path js-import-current-alias root))
          (dirs (directory-files (or alias-path root) t))
          (priority-dir (if (and alias-path
                                 (js-import-string-match-p (concat "^" root) alias-path))
@@ -421,36 +422,33 @@ Run all sources defined in option `js-import-files-source'."
     files))
 
 (defun js-import-get-alias-path(alias &optional project-root)
-  (when alias
-    (let ((root (or project-root (js-import-find-project-root))))
-      (js-import-join-file root (plist-get js-import-alias-map alias)))))
+  (when-let ((alias-path (plist-get js-import-alias-map alias)))
+    (if (file-exists-p alias-path)
+        alias-path
+      (js-import-join-file (or project-root (js-import-find-project-root)) alias-path))))
 
 (defun js-import-project-files-transformer(files &optional _source)
   "Filter FILES by extension and one of the aliases, if present."
+  (setq files (seq-uniq files))
   (with-current-buffer helm-current-buffer
-    (let ((alias-path (when js-import-current-alias
-                        (js-import-slash (js-import-join-file (js-import-find-project-root)
-                                                              (plist-get js-import-alias-map js-import-current-alias))))))
-      (setq files (seq-uniq files))
-      (when alias-path
-        (setq files (seq-filter
-                     (lambda(filename) (if (file-name-absolute-p filename)
-                                      (js-import-string-match-p alias-path filename)
-                                    filename))
-                     files)))
-      (setq files (seq-remove (lambda(filename) (equal buffer-file-name filename)) files))
-      (if alias-path (mapcar (lambda(path)
-                               (js-import-normalize-path
-                                (replace-regexp-in-string alias-path (js-import-slash js-import-current-alias)
-                                                          path)))
-                             files)
+    (let ((slashed-alias (js-import-slash js-import-current-alias))
+          (alias-path (js-import-slash (js-import-get-alias-path js-import-current-alias))))
+      (setq files (seq-remove (lambda(filename) (string= buffer-file-name filename)) files))
+      (if alias-path
+          (progn (setq files (seq-filter (lambda(filename) (if (file-name-absolute-p filename)
+                                                          (js-import-string-match-p alias-path filename)
+                                                        filename))
+                                         files))
+                 (mapcar (lambda(path) (js-import-normalize-path
+                                   (replace-regexp-in-string alias-path slashed-alias path)))
+                         files))
         (mapcar (lambda(path) (js-import-normalize-path (js-import-path-to-relative path))) files)))))
 
 (defun js-import-find-project-root (&optional dir)
   (unless dir (setq dir default-directory))
   (let ((parent (expand-file-name ".." dir)))
-    (unless (or (equal parent dir)
-                (equal dir "/"))
+    (unless (or (string= parent dir)
+                (string= dir "/"))
       (if (file-exists-p (expand-file-name "package.json" dir))
           dir
         (js-import-find-project-root parent)))))
@@ -459,7 +457,6 @@ Run all sources defined in option `js-import-files-source'."
   "Return files in DIR which match pattern from variable `js-import-enabled-extension-regexp'.
 Optional argument RECURSIVE non-nil means to search recursive."
   (unless regexp (setq regexp js-import-enabled-extension-regexp))
-
   (if recursive
       (directory-files-recursively dir regexp nil)
     (directory-files dir t regexp t)))
@@ -502,7 +499,6 @@ If PATH is a relative file, it will be returned without changes."
           (js-import-string-blank-p str))
       str
     (concat str "/")))
-
 
 (defun js-import-normalize-path(path)
   (js-import-compose-from path

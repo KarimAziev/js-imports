@@ -1,34 +1,31 @@
-[![License GPL 3][badge-license]](http://www.gnu.org/licenses/gpl-3.0.txt)
+[![License GPL3](https://img.shields.io/badge/license-GPLv3-blue)](http://www.gnu.org/licenses/gpl-3.0.txt)
 
-# Table of Contents
+
+## js-import
+
+An Emacs package for import JavaScript and TypeScript modules with [helm](<https://github.com/emacs-helm/helm> "helm") interface.
+
+<a id="org7a05a1c"></a>
+
+![](js-import-demo.gif)
+
+
+## Table of Contents
 * [Requirements](#org8bb2ccf)
 * [Installation](#org66d242b)
 * [Usage](#orgd8bdc4e)
 * [Alias setup](#orgc8d9f05)
 
-
-<a id="org7a05a1c"></a>
-
-# js-import
-
-An Emacs package for import JavaScript and TypeScript modules with [helm](<https://github.com/emacs-helm/helm> "helm") interface.
-
-
-![](js-import-demo.gif).
-
-
 <a id="org8bb2ccf"></a>
 
-## Requirements
+### Requirements
 
 -   Emacs 26.1 or higher
 -   Helm 3.0 or higher
--   [Quelpa](<https://github.com/quelpa/quelpa> "quelpa") - while package is under develop and is not available on Melpa
-
 
 <a id="org66d242b"></a>
 
-## Installation
+### Installation
 
 Until `js-import` is not published on Melpa you can install the package from [quelpa](<https://github.com/quelpa/quelpa> "quelpa").
 
@@ -52,7 +49,7 @@ Or if you want to always get the latest version:
 
 <a id="orgd8bdc4e"></a>
 
-## Usage
+### Usage
 
 1.  Select a module with one of these commands
     * `M-x js-import` to include alias, relative and node_modules files
@@ -84,7 +81,7 @@ Or if you want to always get the latest version:
 
 <a id="orgc8d9f05"></a>
 
-## Alias setup
+### Alias setup
 
 To use webpack-aliases customize variable `js-import-alias-map`. It is a list of strings with `("aliasA" "pathA" "aliasB" "pathB")`. Default is value `("" "src")`.
 
@@ -113,8 +110,8 @@ In this case `js-import-alias-map` should be `("@" "src" "UI" "src/components/UI
 ```
 Or configure it globally with `M-x customize-variable js-import-alias-map`.
 
-## License
+### License
 
-Copyright © 2020 Karim Aziiev
+Copyright © 2020 Karim Aziiev.
+
 Distributed under the GNU General Public License, version 3
-[badge-license]: https://img.shields.io/badge/license-GPLv3-blue
