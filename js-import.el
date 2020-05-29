@@ -268,7 +268,7 @@
 (defvar js-import-dependencies-cache-tick nil)
 (defvar js-import-current-alias nil)
 (defvar js-import-aliases nil)
-(make-variable-buffer-local 'js-import-aliases)
+
 (defvar js-import-current-export-path nil)
 (make-variable-buffer-local 'js-import-current-export-path)
 (defvar js-import-current-export-real-path nil)
@@ -308,6 +308,11 @@
   "Preconfigured helm for selecting files.
 Run all sources defined in option `js-import-files-source'."
   (interactive)
+  (unless js-import-node-modules-source
+    (setq js-import-node-modules-source
+          (helm-make-source
+              js-import-dependency-source-name
+              'js-import-source-node-modules)))
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
           (helm-make-source
@@ -318,11 +323,6 @@ Run all sources defined in option `js-import-files-source'."
           (helm-make-source
               js-import-files-source-name
               'js-import-source-project-files)))
-  (unless js-import-node-modules-source
-    (setq js-import-node-modules-source
-          (helm-make-source
-              js-import-dependency-source-name
-              'js-import-source-node-modules)))
   (save-excursion
     (helm
      :sources js-import-files-source
@@ -362,14 +362,14 @@ Run all sources defined in option `js-import-files-source'."
 
 (defclass js-import-source-project-files (helm-source-sync)
   ((header-name :initform 'js-import-files-header-name)
-   (init :initform 'js-import-init-project-files)
-   (candidates :initform 'js-import-find-project-files)
-   (candidate-number-limit :initform js-import-files-number-limit)
+   (init :initform #'js-import-init-project-files)
+   (candidates :initform #'js-import-find-project-files)
+   (filtered-candidate-transformer :initform #'js-import-project-files-transformer)
+   (action :initform 'js-import-file-actions)
    (persistent-action :initform 'js-import-ff-persistent-action)
-   (filtered-candidate-transformer :initform 'js-import-project-files-transformer)
+   (candidate-number-limit :initform js-import-files-number-limit)
    (mode-line :initform (list "File(s)"))
    (keymap :initform js-import-files-map)
-   (action :initform 'js-import-file-actions)
    (group :initform 'js-import)))
 
 
@@ -389,11 +389,10 @@ Run all sources defined in option `js-import-files-source'."
 
 (defun js-import-init-project-files()
   "Init project files."
-  (with-current-buffer helm-current-buffer
-    (setq js-import-aliases (js-import-get-aliases))
-    (when (and js-import-current-alias
-               (not (member js-import-current-alias js-import-aliases)))
-      (setq js-import-current-alias nil))))
+  (setq js-import-aliases (js-import-get-aliases))
+  (when (and js-import-current-alias
+             (not (member js-import-current-alias js-import-aliases)))
+    (setq js-import-current-alias nil)))
 
 (defun js-import-find-project-files()
   "Return project files without dependencies."
@@ -470,7 +469,8 @@ Optional argument RECURSIVE non-nil means to search recursive."
 (defun js-import-dirname (path)
   "Return the parent directory to PATH."
   (let (parent)
-    (setq parent (file-name-directory (directory-file-name (expand-file-name path default-directory))))
+    (setq parent (file-name-directory
+                  (directory-file-name (expand-file-name path default-directory))))
     (when (and (file-exists-p path)
                (file-exists-p parent)
                (not (equal
@@ -529,7 +529,7 @@ If PATH is a relative file, it will be returned without changes."
   (js-import-string-match-p "^\\.+/" path))
 
 (defun js-import-get-aliases ()
-  "Get list of aliases."
+  "Get list of aliases without real paths."
   (let ((root (js-import-find-project-root))
         (pl js-import-alias-map)
         (vals))
@@ -560,6 +560,7 @@ If PATH is a relative file, it will be returned without changes."
       (js-import-try-ext (js-import-join-file path "index") dir)))
 
 (defun js-import-alias-path-to-real(path)
+  "Convert aliased PATH to absolute file name."
   (let (aliases alias real-path)
     (setq aliases (js-import-get-aliases))
     (while aliases
@@ -568,14 +569,16 @@ If PATH is a relative file, it will be returned without changes."
                                (concat "^" alias)
                              (concat "^" alias "\\(/\\|$\\)" )))
              (alias-path (js-import-get-alias-path alias))
-             (joined-path (js-import-join-file alias-path
-                                               (replace-regexp-in-string alias-regexp "" path)))
+             (joined-path (js-import-join-file
+                           alias-path
+                           (replace-regexp-in-string alias-regexp "" path)))
              (found-path (if (and (js-import-string-match-p
                                    js-import-enabled-extension-regexp joined-path)
                                   (file-exists-p joined-path))
                              joined-path
                            (or (js-import-try-ext joined-path)
-                               (js-import-try-ext (js-import-join-file joined-path "index"))))))
+                               (js-import-try-ext
+                                (js-import-join-file joined-path "index"))))))
         (when (and found-path (file-exists-p found-path))
           (setq real-path found-path)
           (setq aliases nil))))
@@ -630,9 +633,8 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
       (setq js-import-current-alias (car (reverse js-import-aliases))))
     (helm-refresh)))
 
-
 (defclass js-import-source-node-modules (helm-source-sync)
-  ((candidates :initform 'js-import-node-modules-candidates)
+  ((candidates :initform #'js-import-node-modules-candidates)
    (candidate-number-limit :initform js-import-dependencies-number-limit)
    (action :initform 'js-import-file-actions)
    (mode-line :initform (list "Dependencies"))
@@ -641,7 +643,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
    (group :initform 'js-import)))
 
 (defun js-import-node-modules-candidates(&optional project-root)
-  "Return dependencies for PROJECT-ROOT from package json."
+  "Return dependencies of PROJECT-ROOT from package json."
   (unless project-root (setq project-root (js-import-find-project-root)))
   (unless js-import-dependencies-cache
     (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
@@ -677,14 +679,16 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
               (exists (file-exists-p real-path))
               (files (seq-remove 'js-import-is-index-file-p
                                  (js-import-directory-files real-path nil "\\.d.ts$"))))
-    (mapcar (lambda(it) (js-import-join-file display-path (js-import-compose-from it
-                                                                             'file-name-nondirectory
-                                                                             'directory-file-name
-                                                                             'js-import-remove-ext)))
+    (mapcar (lambda(it) (js-import-join-file display-path
+                                        (js-import-compose-from it
+                                                                'file-name-nondirectory
+                                                                'directory-file-name
+                                                                'js-import-remove-ext)))
             files)))
 
 (defun js-import-dependency-p (display-path &optional project-root)
-  "Check if path is dependency."
+  "Check if DISPLAY-PATH is dependency in PROJECT-ROOT.
+Dependencies are recognized by `package.json' or `node_modules' of PROJECT-ROOT's dir."
   (let ((dependencies (js-import-node-modules-candidates project-root))
         (dirname (car (split-string display-path "/"))))
 
@@ -764,7 +768,7 @@ and default section is `dependencies'"
     section))
 
 (defun js-import-join-when-exists(path filename)
-  "Returns joined PATH with FILENAME when exists."
+  "Return joined PATH with FILENAME when exists."
   (let ((joined-path (js-import-join-file path filename)))
     (when (file-exists-p joined-path)
       joined-path)))
@@ -784,7 +788,7 @@ and default section is `dependencies'"
    (group :initform 'js-import)))
 
 (defun js-import-find-imported-files-in-buffer()
-  "Pluck paths from import statements of current buffer and inserts them one by one divided by new line."
+  "Extract imported paths of current buffer into helm buffer."
   (with-current-buffer (helm-candidate-buffer 'global)
     (let ((items (with-helm-current-buffer
                    (save-excursion
@@ -871,7 +875,7 @@ and default section is `dependencies'"
 
 ;;;###autoload
 (defun js-import-from-path(path)
-  "Propose to make import from PATH."
+  "Insert import statement with marked symbols, exported from PATH."
   (interactive)
   (with-current-buffer helm-current-buffer
     (when-let ((display-path (or (js-import-get-prop path 'display-path) path)))
@@ -1012,7 +1016,8 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
           js-import-cached-exports-in-buffer
         (progn
           (setq js-import-cached-exports-in-buffer-tick tick)
-          (setq js-import-cached-exports-in-buffer (js-import-extract-exports buffer-file-name))
+          (setq js-import-cached-exports-in-buffer
+                (js-import-extract-exports buffer-file-name))
           js-import-cached-exports-in-buffer)))))
 
 (defun js-import-exported-candidates-transformer(candidates)
@@ -1504,7 +1509,6 @@ In both cases the content will be copied without properties"
 
 
 (defun js-import-extract-imports-in-brackets(display-path &optional real-path)
-  "Extracts items beetween symbols."
   (let (p1 p2 items real-name full-name)
     (setq p1 (1+ (point)))
     (save-excursion
@@ -1565,6 +1569,7 @@ In both cases the content will be copied without properties"
   (point))
 
 (defun js-import-get-import-positions(path)
+  "Return a cons with bounds of import stament of PATH."
   (save-excursion
     (let ((pos1 (point-min))
           (pos2 (js-import-goto-last-import)))
@@ -1576,8 +1581,8 @@ In both cases the content will be copied without properties"
       (cons pos1 pos2))))
 
 (defun js-import-delete-whole-import(candidate)
-  "Remove CANDIDATE's import statement.
-CANDIDATE must be properizied with prop `display-path'"
+  "Remove whole import statement of CANDIDATE.
+CANDIDATE should be propertizied with property `display-path'."
   (when-let* ((path (js-import-get-prop candidate 'display-path))
               (bounds (js-import-get-import-positions path)))
     (delete-region (car bounds) (cdr bounds))
@@ -1604,8 +1609,7 @@ See also function `js-import-propertize'."
                         'marker marker))
 
 (defun js-import-propertize (item &rest properties)
-  "Same as `propertize' except that this avoids overriding
-existed name with `nil' property."
+  "Stringify and `propertize' ITEM with PROPERTIES."
   (cl-loop for (k v) on properties by 'cddr
            if v append (list k v) into props
            finally return
@@ -1613,24 +1617,24 @@ existed name with `nil' property."
                   (js-import-stringify item)
                   props)))
 
-(defun js-import-get-prop (item property)
-  "Same as `get-text-property' except that this returns nil if
-ITEM is not string."
+(defun js-import-get-prop (str property)
+  "Return the value of zero position's PROPERTY in STR."
   (if (stringp item)
       (get-text-property 0 property item)))
 
-(defun js-import-strip-text-props(str)
-  "Remove all text properties from string or stringifies symbol"
-  (cond ((stringp str)
-         (set-text-properties 0 (length str) nil str)
-         str)
-        ((and str (symbolp str))
-         (symbol-name str))
-        (nil str)))
+(defun js-import-strip-text-props(item)
+  "If ITEM is string, return it without text properties.
+   If ITEM is symbol, return it is `symbol-name.'
+   Otherwise return nil."
+  (cond ((stringp item)
+         (set-text-properties 0 (length item) nil item)
+         item)
+        ((and item (symbolp item))
+         (symbol-name item))
+        (nil item)))
 
 (defun js-import-stringify (x)
-  "Convert any object to string effeciently.
-This is faster than `prin1-to-string' in many cases."
+  "Convert any object to string."
   (cl-typecase x
     (string x)
     (symbol (symbol-name x))
