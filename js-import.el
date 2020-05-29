@@ -294,7 +294,6 @@
   "Variable for source of relative and aliased files without dependencies.")
 (defvar js-import-buffer-files-source nil
   "Buffer local variable for source of all imported files in a buffer.")
-(make-variable-buffer-local 'js-import-buffer-files-source)
 
 (defcustom js-import-files-source '(js-import-buffer-files-source
                                     js-import-project-files-source
@@ -308,21 +307,22 @@
   "Preconfigured helm for selecting files.
 Run all sources defined in option `js-import-files-source'."
   (interactive)
-  (unless js-import-node-modules-source
-    (setq js-import-node-modules-source
-          (helm-make-source
-              js-import-dependency-source-name
-              'js-import-source-node-modules)))
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
           (helm-make-source
               js-import-buffer-source-name
               'js-import-source-imported-files)))
+  (unless js-import-node-modules-source
+    (setq js-import-node-modules-source
+          (helm-make-source
+              js-import-dependency-source-name
+              'js-import-source-node-modules)))
   (unless js-import-project-files-source
     (setq js-import-project-files-source
           (helm-make-source
               js-import-files-source-name
               'js-import-source-project-files)))
+  (helm-attr 'candidates js-import-node-modules-source t)
   (save-excursion
     (helm
      :sources js-import-files-source
@@ -713,7 +713,8 @@ Dependencies are recognized by `package.json' or `node_modules' of PROJECT-ROOT'
       real-path)))
 
 (defun js-import-try-find-real-path(path)
-  (if (and (js-import-string-match-p js-import-enabled-extension-regexp path) (file-exists-p path))
+  (if (or (null path) (and (js-import-string-match-p js-import-enabled-extension-regexp path)
+                           (file-exists-p path)))
       path
     (or (when-let* ((package-json (js-import-join-when-exists path "package.json"))
                     (module (js-import-try-json-sections
@@ -1619,8 +1620,8 @@ See also function `js-import-propertize'."
 
 (defun js-import-get-prop (str property)
   "Return the value of zero position's PROPERTY in STR."
-  (if (stringp item)
-      (get-text-property 0 property item)))
+  (if (stringp str)
+      (get-text-property 0 property str)))
 
 (defun js-import-strip-text-props(item)
   "If ITEM is string, return it without text properties.
@@ -1690,7 +1691,8 @@ See also function `js-import-propertize'."
 
 (defun js-import-string-match-p (regexp str &optional start)
   "Return t if STR matches REGEXP, otherwise return nil."
-  (not (null (string-match-p regexp str start))))
+  (when (and (not (null str)) (stringp str))
+    (not (null (string-match-p regexp str start)))))
 
 (defun js-import-join (separator strings)
   "Join strings in STRINGS with SEPARATOR."
