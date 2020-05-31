@@ -592,7 +592,6 @@ If PATH is a relative file, it will be returned without changes."
 (defun js-import-try-ext(path &optional dir extensions)
   "A function tries to join into PATH every element from EXTENSIONS
 from left to right until first existing file will be found or nil otherwise.
-
 If optional argument DIR is passed, PATH will be firstly expanded as relative to DIR."
   (unless extensions (setq extensions js-import-preffered-extensions))
   (let (ext real-path)
@@ -691,7 +690,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
 Dependencies are recognized by `package.json' or `node_modules' of PROJECT-ROOT's dir."
   (let ((dependencies (js-import-node-modules-candidates project-root))
         (dirname (car (split-string display-path "/"))))
-
     (or (member dirname dependencies)
         (file-exists-p (js-import-expand-node-modules dirname project-root)))))
 
@@ -735,7 +733,6 @@ Dependencies are recognized by `package.json' or `node_modules' of PROJECT-ROOT'
 
 (defun js-import-read-package-json-section (&optional package-json-path section)
   "Reads a SECTION from PACKAGE-JSON-PATH and returns its hash.
-
 Default value for PACKAGE-JSON-PATH is a result of calling `js-import-find-package-json'
 and default section is `dependencies'"
   (unless section (setq section "dependencies"))
@@ -938,7 +935,6 @@ and default section is `dependencies'"
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
   "Show imported symbols from current buffer.
-
   Available actions includes jumping to item in buffer, renaming, adding more
   imports from current paths and deleting a symbol or whole import."
   (interactive)
@@ -995,7 +991,6 @@ and default section is `dependencies'"
 (defun js-import-imported-candidates-in-buffer(&optional buffer)
   "Returns imported symbols in BUFFER which are cached and stored
 in a buffer local variable `js-import-cached-imports-in-buffer'.
-
    Cache are invalidated when `buffer-modified-tick' is changed."
   (with-current-buffer (or buffer helm-current-buffer)
     (let ((tick (buffer-modified-tick)))
@@ -1009,7 +1004,6 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
 (defun js-import-exported-candidates-in-buffer(&optional buffer)
   "Returns imported symbols in BUFFER which are cached and stored
 in a buffer local variable `js-import-cached-exports-in-buffer'.
-
    Cache are invalidated when `buffer-modified-tick' is changed."
   (with-current-buffer (or buffer helm-current-buffer)
     (let ((tick (buffer-modified-tick)))
@@ -1028,7 +1022,6 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
       (setq imports (js-import-imported-candidates-in-buffer helm-current-buffer))
       (setq imports (js-import-filter-with-prop 'display-path js-import-current-export-path
                                                 imports))
-
       (setq exports (if imports (js-import-filter-exports candidates imports) candidates))
       (setq exports (cl-remove-duplicates exports :test 'string=))
       (setq exports (mapcar (lambda(c) (js-import-propertize c 'display-path js-import-current-export-path))
@@ -1041,9 +1034,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
 
 (defun js-import-filter-exports(exports imports)
   "Return EXPORTS plist with only those members that are not in IMPORTS plist.
-
    For named exports (with property `type' 4) the test for equality is done by `real-name' and for default export by `type'."
-
   (seq-remove (lambda(elt) (pcase (js-import-get-prop elt 'type)
                         (1 (seq-find (lambda(imp) (eq 1 (and (js-import-get-prop imp 'type)))) imports))
                         (4 (seq-find (lambda(imp) (string= (js-import-get-prop elt 'real-name)
@@ -1068,9 +1059,8 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                          (switch-to-buffer-other-window js-buffer)
                          (setq inhibit-read-only t)
                          (erase-buffer)
-                         (insert-file-contents item-path)
-                         (let ((buffer-file-name item-path))
-                           (set-auto-mode))
+                         (js-import-insert-buffer-or-file item-path)
+                         (let ((buffer-file-name item-path)))
                          (font-lock-ensure)
                          (setq inhibit-read-only nil)))
         (if (and (helm-attr 'previewp)
@@ -1372,15 +1362,13 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
 (defun js-import-insert-buffer-or-file(path)
   "A function inserts content either from buffer or file
 depending whether buffer with the given PATH exists.
-
 In both cases the content will be copied without properties"
   (when (and path (file-exists-p path))
     (if (get-file-buffer path)
         (insert-buffer-substring-no-properties (get-file-buffer path))
       (progn
         (let ((buffer-file-name path))
-          (insert-file-contents path)
-          (set-auto-mode))))))
+          (insert-file-contents path))))))
 
 (defun js-import-extract-all-as-exports(real-path &optional display-path)
   "Make export all as item."
@@ -1700,7 +1688,6 @@ See also function `js-import-propertize'."
 
 (defun js-import-string-contains-p (needle str &optional ignore-case)
   "Return t if STR contains NEEDLE, otherwise return nil.
-
 If IGNORE-CASE is non-nil, the comparison will ignore case differences."
   (let ((case-fold-search ignore-case))
     (not (null (string-match-p (regexp-quote needle) str)))))
@@ -1721,12 +1708,19 @@ If IGNORE-CASE is non-nil, the comparison will ignore case differences."
   "Returns non-nil if inside string, else nil.
 Result depends on syntax table's string quote character."
   (interactive)
-  (nth 3 (syntax-ppss)))
+  (and (nth 3 (syntax-ppss))
+       (not (save-excursion (re-search-backward "['\"]" nil t 1)
+                            (backward-char)
+                            (looking-at-p "\\[")))))
 
 (defun js-import-inside-comment-p ()
   "Return value of comment character in syntax table's or nil otherwise."
-  (interactive)
-  (nth 4 (syntax-ppss)))
+  (with-syntax-table js-import-mode-syntax-table
+    (let ((comment-start "//")
+          (comment-start-skip "\\(//+\\|/\\*+\\)\\s *")
+          (comment-use-syntax t)
+          (result (nth 4 (syntax-ppss))))
+      result)))
 
 (defun js-import-invalid-name-p(str)
   "Validates STR by matching any characters which are not allowed for variable name."
