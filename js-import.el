@@ -959,7 +959,7 @@ and default section is `dependencies'"
     (push (helm-make-source "Exports" 'js-import-source-exported-symbols) sources)
     (push (helm-make-source "Imports" 'js-import-source-imported-symbols) sources)
     (helm
-     :preselect (or (js-import-which-word) "")
+     :preselect (js-import-preselect-symbol)
      :sources sources)))
 
 
@@ -970,6 +970,15 @@ and default section is `dependencies'"
                          js-import-last-export-path)))
       (or (js-import-get-path-at-point)
           js-import-last-export-path) ""))
+
+(defun js-import-preselect-symbol()
+  "Preselect function for symbols."
+  (or (when-let ((pos (> (point-max) (point)))
+                 (symbol (js-import-which-word)))
+        (unless (or (js-import-invalid-name-p symbol)
+                    (js-import-reserved-word-p symbol))
+          symbol))
+      ""))
 
 (defun js-import-reset-all-sources()
   "Reset all files sources."
@@ -1384,7 +1393,6 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
         symbols))))
 
 
-
 (defun js-import-extract-cjs-exports-in-brackets(&optional real-path display-path)
   "Extracts exports beetween brackets."
   (save-restriction
@@ -1451,8 +1459,8 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                     (progn (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
                            (setq display-path (js-import-get-path-at-point)))))
                 (cond ((looking-at-p "*[ \s\t\n]+as[ \s\t\n]")
-                       (when-let ((export-all (js-import-extract-all-as-exports path display-path)))
-                         (push export-all exports)))
+                       (when-let ((namespace-export (js-import-extract-namespace-exports path display-path)))
+                         (push namespace-export exports)))
                       ((looking-at-p "{")
                        (when-let ((items (js-import-extract-exports-in-brackets path display-path)))
                          (setq exports (append exports items)))
@@ -1481,7 +1489,7 @@ In both cases the content will be copied without properties"
           (insert-file-contents path))))
     (set-auto-mode)))
 
-(defun js-import-extract-all-as-exports(real-path &optional display-path)
+(defun js-import-extract-namespace-exports(real-path &optional display-path)
   "Make export all as item."
   (re-search-forward "as[ \s\t\n]+\\([_$A-Za-z0-9]\\)" nil t 1)
   (let ((real-name (js-import-which-word)))
