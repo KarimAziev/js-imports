@@ -1396,7 +1396,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
 (defun js-import-extract-cjs-exports-in-brackets(&optional real-path display-path)
   "Extracts exports beetween brackets."
   (save-restriction
-    (let (p1 p2 stack stop)
+    (let (p1 p2 stack)
       (progn
         (re-search-forward "{" nil t 1)
         (backward-char)
@@ -1405,28 +1405,18 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
         (setq p2 (point))
         (narrow-to-region p1 p2)
         (goto-char p1)
+        (setq stack (reverse (js-import-parse-object-keys p2)))
+        (setq stack (mapcar (lambda(cell) (let ((name (car cell))
+                                           (pos (cdr cell)))
+                                       (js-import-make-index-item name
+                                                                  :marker pos
+                                                                  :type 4
+                                                                  :real-path real-path
+                                                                  :display-path display-path
+                                                                  :real-name name)))
+                            stack))
         (forward-char))
-      (while (and (re-search-forward "['\"]?[_$A-Za-z0-9]+\\([\s\t]?+\\)['\"]?[:,]" nil t 1)
-                  (not stop))
-        (re-search-backward js-import-regexp-name-set)
-        (when-let* ((name (js-import-which-word))
-                    (item (js-import-make-index-item
-                           name
-                           :type 4
-                           :real-name name
-                           :real-path real-path
-                           :marker (point)
-                           :display-path display-path)))
-          (re-search-forward "[:,]")
-          (skip-chars-forward "\s\t")
-          (skip-chars-forward js-import-regexp-name-set)
-          (while (looking-at-p "[[{(]")
-            (forward-list)
-            (skip-chars-forward "\s\t"))
-          (if (member item stack)
-              (setq stop t)
-            (push item stack))))
-      (reverse stack))))
+      stack)))
 
 (defun js-import-cjs-extract-named-or-default-export(real-path &optional display-path)
   "Returns propertizied named or default export."
@@ -1909,6 +1899,34 @@ Result depends on syntax table's string quote character."
   (seq-reduce (lambda (xs fn)
                 (funcall fn xs))
               (reverse funcs) arg))
+
+(defun js-import-parse-object-keys(end)
+  "Return object keys. "
+  (let (stack)
+    (while (and (< (point) end)
+                (re-search-forward (concat js-import-regexp-name-set "+[(,:]") nil t 1))
+      (when (save-excursion
+              (backward-char)
+              (looking-at-p "("))
+        (backward-char))
+      (unless (js-import-inside-comment-p)
+        (save-excursion
+          (backward-char)
+          (when-let  ((word (js-import-which-word)))
+            (push (cons word (- (point) (length word))) stack))))
+      (unless (save-excursion
+                (backward-char)
+                (looking-at-p ","))
+        (skip-chars-forward "\s\t\n")
+        (while (not (or (looking-at-p ",")
+                        (looking-at-p "[ \s\t\n]+}")))
+          (forward-sexp))))
+    (when (looking-at-p (concat ",[\s\t\n]+" js-import-regexp-name-set "*[\s\t\n]}"))
+      (skip-chars-forward ",\s\t\n")
+      (when-let  ((word (js-import-which-word)))
+        (unless (js-import-invalid-name-p word)
+          (push (cons word (point)) stack))))
+    stack))
 
 (provide 'js-import)
 ;;; js-import.el ends here
