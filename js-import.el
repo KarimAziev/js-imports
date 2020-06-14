@@ -550,7 +550,7 @@ If PATH is a relative file, it will be returned without changes."
     (nreverse vals)))
 
 (defun js-import-path-to-real(path &optional dir)
-  (when (stringp path)
+  (when (and path (stringp path))
     (setq path (js-import-strip-text-props path))
     (cond ((and (js-import-string-match-p js-import-enabled-extension-regexp path)
                 (file-exists-p path)
@@ -559,7 +559,7 @@ If PATH is a relative file, it will be returned without changes."
           ((js-import-relative-p path)
            (js-import-relative-to-real path dir))
           ((js-import-dependency-p path (js-import-find-project-root))
-           (js-import-maybe-expand-dependency path))
+           (js-import-node-module-to-real path))
           (t (js-import-alias-path-to-real path)))))
 
 (defun js-import-relative-to-real(path &optional dir)
@@ -657,36 +657,35 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
     (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
   (when (js-import-string-match-p js-import-node-modules-regexp project-root)
     (setq project-root (car (split-string project-root js-import-node-modules-regexp))))
-  (let* ((package-json-path (js-import-join-file project-root "package.json"))
-         (tick (file-attribute-modification-time (file-attributes package-json-path 'string)))
+  (let* ((package-json (js-import-join-file project-root "package.json"))
+         (package-json-tick (file-attribute-modification-time (file-attributes package-json 'string)))
          (project-cache (gethash project-root js-import-dependencies-cache)))
-    (when (or (not (equal js-import-dependencies-cache-tick tick))
+    (when (or (not (equal js-import-dependencies-cache-tick package-json-tick))
               (not project-cache))
-      (let (submodules modules)
-        (remhash project-root js-import-dependencies-cache)
-        (mapc (lambda(section)
-                (when-let ((hash (js-import-read-package-json-section package-json-path section)))
-                  (setq modules (append modules (hash-table-keys hash)))))
-              js-import-package-json-sections)
-        (let* ((max (length modules))
-               (progress-reporter
-                (make-progress-reporter "Scaning node modules" 0  max)))
+      (remhash project-root js-import-dependencies-cache)
+      (let (submodules modules progress-reporter max)
+        (dolist-with-progress-reporter (section js-import-package-json-sections modules)
+            "Reading package.json"
+          (when-let ((hash (js-import-read-package-json-section package-json section)))
+            (setq modules (append modules (hash-table-keys hash)))))
+        (setq max (length modules))
+        (setq progress-reporter (make-progress-reporter "Scaning node modules" 0  max))
+        (when-let ((node-modules (js-import-find-node-modules project-root)))
           (dotimes (k max)
-            (let ((elt (nth k modules)))
+            (let ((element (nth k modules)))
               (sit-for 0.01)
-              (unless (js-import-string-contains-p "/" elt)
-                (setq submodules (append submodules (js-import-find-interfaces elt))))
-              (progress-reporter-update progress-reporter k)))
-          (setq modules (append modules submodules))
-          (puthash project-root modules js-import-dependencies-cache)
-          (setq js-import-dependencies-cache-tick tick)
-          (progress-reporter-done progress-reporter))))
+              (unless (js-import-string-contains-p "/" element)
+                (setq submodules (append submodules (js-import-find-interfaces element node-modules))))
+              (progress-reporter-update progress-reporter k))))
+        (setq modules (append modules submodules))
+        (puthash project-root modules js-import-dependencies-cache)
+        (setq js-import-dependencies-cache-tick package-json-tick)
+        (progress-reporter-done progress-reporter)))
     (gethash project-root js-import-dependencies-cache)))
 
 
-(defun js-import-find-interfaces(display-path)
-  (when-let* ((real-path (js-import-expand-node-modules display-path))
-              (exists (file-exists-p real-path))
+(defun js-import-find-interfaces(display-path dir)
+  (when-let* ((real-path (js-import-join-when-exists dir display-path))
               (files (seq-remove 'js-import-is-index-file-p
                                  (js-import-directory-files real-path nil "\\.d.ts$"))))
     (mapcar (lambda(it) (js-import-join-file display-path
@@ -696,29 +695,32 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
                                                                 'js-import-remove-ext)))
             files)))
 
-(defun js-import-dependency-p (display-path &optional project-root)
-  "Check if DISPLAY-PATH is dependency in PROJECT-ROOT.
-Dependencies are recognized by `package.json' or `node_modules' of PROJECT-ROOT's dir."
-  (let ((dependencies (js-import-node-modules-candidates project-root))
-        (dirname (car (split-string display-path "/"))))
-    (or (member dirname dependencies)
-        (file-exists-p (js-import-expand-node-modules dirname project-root)))))
-
-(defun js-import-get-node-modules-path (&optional project-dir)
+(defun js-import-find-node-modules (&optional project-dir)
   "Return the path to node-modules."
   (if (file-name-absolute-p js-import-node-modules-dir)
       js-import-node-modules-dir
-    (when-let ((root (car (split-string (or project-dir (js-import-find-project-root)) js-import-node-modules-regexp))))
+    (when-let ((root (or project-dir (js-import-find-project-root))))
+      (setq root (car (split-string root js-import-node-modules-regexp)))
       (js-import-join-when-exists root js-import-node-modules-dir))))
 
-(defun js-import-expand-node-modules(module &optional project-dir)
-  (js-import-join-file (js-import-get-node-modules-path project-dir) module))
-
-(defun js-import-maybe-expand-dependency(display-path &optional $real-path)
-  (let ((real-path (or $real-path (js-import-expand-node-modules display-path))))
+(defun js-import-node-module-to-real(module &optional project-root)
+  (when-let* ((node-modules (or (js-import-find-node-modules project-root)
+                                (js-import-find-node-modules)))
+              (real-path (js-import-join-file node-modules module)))
     (unless (js-import-string-match-p js-import-enabled-extension-regexp real-path)
       (setq real-path (js-import-try-find-real-path real-path))
       real-path)))
+
+(defun js-import-dependency-p (module &optional project-root)
+  "Check if DISPLAY-PATH is dependency in PROJECT-ROOT.
+Dependencies are recognized by `package.json' or `node_modules' of PROJECT-ROOT's dir."
+  (let ((dependencies (js-import-node-modules-candidates project-root))
+        (dirname (car (split-string module "/"))))
+    (or (member module dependencies)
+        (member dirname dependencies)
+        (when-let ((node-dir (js-import-find-node-modules project-root)))
+          (or (js-import-join-when-exists node-dir module)
+              (js-import-join-when-exists node-dir dirname))))))
 
 (defun js-import-try-find-real-path(path)
   (if (or (null path) (and (js-import-string-match-p js-import-enabled-extension-regexp path)
@@ -784,7 +786,7 @@ and default section is `dependencies'"
 
 (defun js-import-join-when-exists(path filename)
   "Return joined PATH with FILENAME when exists."
-  (let ((joined-path (js-import-join-file path filename)))
+  (let ((joined-path (and path filename (js-import-join-file path filename))))
     (when (file-exists-p joined-path)
       joined-path)))
 
@@ -921,7 +923,7 @@ and default section is `dependencies'"
    (display-to-real :initform 'js-import-display-to-real-imports)
    (keymap :initform js-import-imported-symbols-map)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
-                                       (js-import-display-to-real-imports c))))
+                                            (js-import-display-to-real-imports c))))
    (action :initform 'js-import-symbol-actions)))
 
 (defclass js-import-source-exported-symbols(helm-source-sync)
@@ -929,19 +931,19 @@ and default section is `dependencies'"
    (marked-with-props :initform 'withprop)
    (persistent-help :initform "Show symbol")
    (display-to-real :initform (lambda(it) (with-helm-current-buffer
-                                       (seq-find (lambda(elt) (string= elt it))
-                                                 js-import-cached-exports-in-buffer it))))
+                                            (seq-find (lambda(elt) (string= elt it))
+                                                      js-import-cached-exports-in-buffer it))))
    (persistent-action :initform (lambda(it) (with-helm-current-buffer
-                                         (js-import-jump-to-item-in-buffer
-                                          (seq-find (lambda(elt) (string= elt it))
-                                                    js-import-cached-exports-in-buffer it)))))
+                                              (js-import-jump-to-item-in-buffer
+                                               (seq-find (lambda(elt) (string= elt it))
+                                                         js-import-cached-exports-in-buffer it)))))
    (action :initform 'js-import-jump-to-item-in-buffer)))
 
 (defclass js-import-source-symbols-in-path(helm-source-sync)
   ((header-name :initform (lambda(name) (with-helm-current-buffer
-                                     (if js-import-current-export-path
-                                         (format "exports in %s" js-import-current-export-path)
-                                       "No exports"))))
+                                          (if js-import-current-export-path
+                                              (format "exports in %s" js-import-current-export-path)
+                                            "No exports"))))
    (candidates :initform 'js-import-init-exports-candidates)
    (candidate-transformer :initform 'js-import-exported-candidates-transformer)
    (marked-with-props :initform 'withprop)
@@ -1436,13 +1438,13 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
         (goto-char p1)
         (setq stack (reverse (js-import-parse-object-keys p2)))
         (setq stack (mapcar (lambda(cell) (let ((name (car cell))
-                                           (pos (cdr cell)))
-                                       (js-import-make-index-item name
-                                                                  :pos pos
-                                                                  :type 4
-                                                                  :real-path real-path
-                                                                  :display-path display-path
-                                                                  :real-name name)))
+                                                (pos (cdr cell)))
+                                            (js-import-make-index-item name
+                                                                       :pos pos
+                                                                       :type 4
+                                                                       :real-path real-path
+                                                                       :display-path display-path
+                                                                       :real-name name)))
                             stack))
         (forward-char))
       stack)))
