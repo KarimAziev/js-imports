@@ -215,8 +215,11 @@
   :type '(alist :key-type string :value-type function))
 
 (defconst js-import-enabled-extension-regexp "\\.[jt]s\\(x\\)?$")
+(defconst js-import-delcaration-keywords
+  '("const" "var" "let" "function" "function*" "interface" "type" "class" "default"))
 
-(defconst js-import-js-vars "\\(const\\|let\\|var\\|function[*]?\\|interface\\|type\\|class\\|default\\)")
+(defconst js-import-delcaration-keywords--re
+  (regexp-opt js-import-delcaration-keywords))
 
 (defconst js-import-regexp-name
   "_$A-Za-z0-9"
@@ -1011,14 +1014,6 @@ and default section is `dependencies'"
     (seq-find (lambda(elt) (string= elt item))
               js-import-cached-imports-in-buffer item)))
 
-(defun js-import-jump-to-item-in-buffer(item)
-  "Jumps to ITEM in buffer. ITEM must be propertized with a property `pos'."
-  (when-let ((m (js-import-get-prop item 'pos)))
-    (goto-char m)
-    (recenter-top-bottom)
-    (helm-highlight-current-line)
-    item))
-
 (defun js-import-imported-candidates-in-buffer(&optional buffer)
   "Returns imported symbols in BUFFER which are cached and stored
 in a buffer local variable `js-import-cached-imports-in-buffer'.
@@ -1077,35 +1072,36 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
 
 (defun js-import-jump-to-item-persistent(item)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop 'pos."
-  (when-let ((m (js-import-get-prop item 'pos))
-             (js-buffer "*js-import persistent")
-             (item-path (or (js-import-get-prop item 'real-path)
-                            (js-import-path-to-real (js-import-get-prop item 'display-path)
-                                                    default-directory))))
-    (if (and m buffer-file-name (string= item-path buffer-file-name))
-        (progn
-          (goto-char m)
-          (recenter-top-bottom)
-          (helm-highlight-current-line))
-      (cl-flet ((preview (item-path)
-                         (switch-to-buffer-other-window js-buffer)
-                         (setq inhibit-read-only t)
-                         (erase-buffer)
-                         (js-import-insert-buffer-or-file item-path)
-                         (let ((buffer-file-name item-path))
-                           (set-auto-mode))
-                         (font-lock-ensure)
-                         (setq inhibit-read-only nil)))
+  (let ((js-buffer (get-buffer-create "*js-import persistent")))
+    (if (and buffer-file-name (string= (js-import-get-prop item 'real-path) buffer-file-name))
+        (js-import-jump-to-item-in-buffer item js-buffer)
+      (cl-flet ((preview (item)
+                         (when-let ((item-path (or (js-import-get-prop item 'real-path)
+                                                   (js-import-path-to-real (js-import-get-prop item 'display-path)
+                                                                           default-directory))))
+                           (switch-to-buffer-other-window js-buffer)
+                           (setq inhibit-read-only t)
+                           (erase-buffer)
+                           (js-import-insert-buffer-or-file item-path)
+                           (let ((buffer-file-name item-path))
+                             (set-auto-mode))
+                           (font-lock-ensure)
+                           (setq inhibit-read-only nil)
+                           (js-import-jump-to-item-in-buffer item js-buffer))))
         (if (and (helm-attr 'previewp)
-                 (string= item-path (helm-attr 'current-candidate)))
+                 (string= item (helm-attr 'current-candidate)))
             (progn
               (kill-buffer js-buffer)
               (helm-attrset 'previewp nil))
-          (preview item-path)
-          (helm-attrset 'previewp t)
-          (goto-char m)
-          (recenter-top-bottom)
-          (helm-highlight-current-line))))
+          (preview item)
+          (helm-attrset 'previewp t))))
+    item))
+
+(defun js-import-jump-to-item-in-buffer(item &optional buffer)
+  "Jumps to ITEM in buffer. ITEM must be propertized with a property `pos'."
+  (when-let ((pos (js-import-get-prop item 'pos)))
+    (js-import-highlight-word pos buffer)
+    (recenter-top-bottom)
     item))
 
 (defun js-import-delete-whole-import-persistent (&optional _cand)
@@ -1278,15 +1274,14 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
 
 (defun js-import-jump-to-item-other-window(item)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop 'pos."
-  (when-let ((m (js-import-get-prop item 'pos))
+  (unless (js-import-get-prop item 'pos)
+    (setq item (js-import-display-to-real-exports item)))
+  (when-let ((pos (js-import-get-prop item 'pos))
              (item-path (or (js-import-get-prop item 'real-path)
                             (js-import-path-to-real (js-import-get-prop item 'display-path)))))
     (unless (and buffer-file-name (string= item-path buffer-file-name))
       (find-file-other-window item-path))
-    (progn
-      (goto-char m)
-      (recenter-top-bottom)
-      (helm-highlight-current-line))
+    (js-import-jump-to-item-in-buffer item)
     item))
 
 (defun js-import-insert-exports(default-name named-list path)
@@ -1438,13 +1433,13 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
         (goto-char p1)
         (setq stack (reverse (js-import-parse-object-keys p2)))
         (setq stack (mapcar (lambda(cell) (let ((name (car cell))
-                                                (pos (cdr cell)))
-                                            (js-import-make-index-item name
-                                                                       :pos pos
-                                                                       :type 4
-                                                                       :real-path real-path
-                                                                       :display-path display-path
-                                                                       :real-name name)))
+                                           (pos (cdr cell)))
+                                       (js-import-make-index-item name
+                                                                  :pos pos
+                                                                  :type 4
+                                                                  :real-path real-path
+                                                                  :display-path display-path
+                                                                  :real-name name)))
                             stack))
         (forward-char))
       stack)))
@@ -1475,7 +1470,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
               (unless (or (js-import-inside-comment-p)
                           (js-import-inside-string-q))
                 (save-excursion
-                  (if (looking-at-p js-import-js-vars)
+                  (if (looking-at-p js-import-delcaration-keywords--re)
                       (setq display-path path)
                     (progn (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
                            (setq display-path (js-import-get-path-at-point)))))
@@ -1609,13 +1604,13 @@ In both cases the content will be copied without properties"
               (save-excursion
                 (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
                 (setq path (js-import-get-path-at-point)))
-              (cond ((looking-at-p "*")
+              (cond ((js-import-looking-at "*")
                      (let (m1 m2 renamed-name)
                        (setq m1 (point))
                        (forward-char)
                        (skip-chars-forward "\s\t")
                        (setq m2 (point))
-                       (when (string= "as" (js-import-which-word))
+                       (when (js-import-looking-at "as")
                          (skip-chars-forward "as")
                          (setq m2 (point))
                          (skip-chars-forward "\s\t")
@@ -1799,11 +1794,14 @@ See also function `js-import-propertize'."
           (right-char)
           (skip-chars-forward regexp)
           (setq p2 (point))))
-      (setq mark-active nil)
       (when (< p1 (point))
         (goto-char p1))
       (setq word (buffer-substring-no-properties p1 p2))
       word)))
+
+(defun js-import-looking-at(str &optional regexp)
+  (when-let ((word (js-import-which-word regexp)))
+    (string= word str)))
 
 (defun js-import-get-path-at-point()
   (interactive)
@@ -1959,6 +1957,30 @@ Result depends on syntax table's string quote character."
         (unless (js-import-invalid-name-p word)
           (push (cons word (point)) stack))))
     stack))
+
+(defun js-import-highlight-word(beg &optional buffer)
+  "Jumps to BEG and highlight word at point."
+  (unless buffer (setq buffer (current-buffer)))
+  (with-current-buffer (get-buffer-create buffer)
+    (let (end overlay buffer-name)
+      (goto-char beg)
+      (setq end (+ beg (length (js-import-which-word))))
+      (if (bufferp buffer)
+          (setq buffer-name (intern (buffer-name buffer)))
+        (setq buffer-name (intern buffer)))
+      (setq overlay (get buffer-name 'overlay))
+      (when overlay
+        (delete-overlay overlay))
+      (setq overlay (make-overlay beg end buffer))
+      (put buffer-name 'overlay overlay)
+      (overlay-put overlay 'face 'js-import-deletion-face)
+      (unwind-protect
+          (when (and overlay (overlayp overlay))
+            (move-overlay overlay beg end))
+        (run-with-timer 1 nil (lambda(o) (when (and (not (null o))
+                                               (overlayp o))
+                                      (delete-overlay o)))
+                        overlay)))))
 
 (provide 'js-import)
 ;;; js-import.el ends here
