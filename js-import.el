@@ -975,9 +975,12 @@ and default section is `dependencies'"
   "Preselect function for file sources."
   (if  (and (> (point-max) (point))
             (stringp (or (js-import-get-path-at-point)
-                         js-import-last-export-path)))
-      (or (js-import-get-path-at-point)
-          js-import-last-export-path) ""))
+                         js-import-last-export-path
+                         js-import-current-export-path)))
+      (regexp-quote (or (js-import-get-path-at-point)
+                        js-import-last-export-path
+                        js-import-current-export-path))
+    ""))
 
 (defun js-import-preselect-symbol()
   "Preselect function for symbols."
