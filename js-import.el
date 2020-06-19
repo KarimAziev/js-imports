@@ -102,8 +102,8 @@
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
-(defface js-import-deletion-face '((t (:background "#e52b50" :foreground "white")))
-  "Face used to highlight deleletion"
+(defface js-import-highlight-face '((t (:background "#e52b50" :foreground "white")))
+  "Face used to highlight symbol."
   :group 'js-import)
 
 (defvar js-import-mode-map
@@ -1103,7 +1103,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
 (defun js-import-jump-to-item-in-buffer(item &optional buffer)
   "Jumps to ITEM in buffer. ITEM must be propertized with a property `pos'."
   (when-let ((pos (js-import-get-prop item 'pos)))
-    (js-import-highlight-word pos buffer)
+    (js-import-highlight-word :pos pos :buffer buffer :jump t)
     (recenter-top-bottom)
     item))
 
@@ -1144,7 +1144,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
         (if (or (= type 16) (not other-imports))
             (progn
               (setq overlay (make-overlay beg end))
-              (overlay-put overlay 'face 'js-import-deletion-face)
+              (overlay-put overlay 'face 'js-import-highlight-face)
               (when (yes-or-no-p "Delete whole import?")
                 (remove-overlays beg end)
                 (delete-region beg end)))
@@ -1168,7 +1168,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
               (when (looking-at-p ",")
                 (setq p1 (point))))
             (setq overlay (make-overlay p1 p2))
-            (overlay-put overlay 'face 'js-import-deletion-face)
+            (overlay-put overlay 'face 'js-import-highlight-face)
             (when (yes-or-no-p "Delete?")
               (remove-overlays p1 p2)
               (delete-region p1 p2))))
@@ -1961,28 +1961,31 @@ Result depends on syntax table's string quote character."
           (push (cons word (point)) stack))))
     stack))
 
-(defun js-import-highlight-word(beg &optional buffer)
+(cl-defun js-import-highlight-word(&key pos limit buffer face secs jump)
   "Jumps to BEG and highlight word at point."
   (unless buffer (setq buffer (current-buffer)))
-  (with-current-buffer (get-buffer-create buffer)
-    (let (end overlay buffer-name)
-      (goto-char beg)
-      (setq end (+ beg (length (js-import-which-word))))
-      (if (bufferp buffer)
-          (setq buffer-name (intern (buffer-name buffer)))
-        (setq buffer-name (intern buffer)))
-      (setq overlay (get buffer-name 'overlay))
+  (setq buffer (get-buffer-create buffer))
+  (unless pos (setq pos (point)))
+  (when (and jump (not (= pos (point))))
+    (goto-char pos))
+  (unless face (setq face 'js-import-highlight-face))
+  (with-current-buffer buffer
+    (let* ((buffer-name (if (bufferp buffer) (intern (buffer-name buffer))
+                          (intern buffer)))
+           (end (+ pos (or limit (length (js-import-which-word)))))
+           (overlay (get buffer-name 'overlay)))
       (when overlay
         (delete-overlay overlay))
-      (setq overlay (make-overlay beg end buffer))
+      (setq overlay (make-overlay pos end buffer))
       (put buffer-name 'overlay overlay)
-      (overlay-put overlay 'face 'js-import-deletion-face)
+      (overlay-put overlay 'face face)
       (unwind-protect
-          (when (and overlay (overlayp overlay))
-            (move-overlay overlay beg end))
-        (run-with-timer 1 nil (lambda(o) (when (and (not (null o))
-                                               (overlayp o))
-                                      (delete-overlay o)))
+          (progn
+            (when (and overlay (overlayp overlay))
+              (move-overlay overlay pos end)))
+        (run-with-timer (or 1 secs) nil (lambda(o) (when (and (not (null o))
+                                                         (overlayp o))
+                                                (delete-overlay o)))
                         overlay)))))
 
 (provide 'js-import)
