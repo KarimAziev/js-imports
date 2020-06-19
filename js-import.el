@@ -1027,8 +1027,102 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
           js-import-cached-imports-in-buffer
         (progn
           (setq js-import-cached-imports-in-buffer-tick tick)
-          (setq js-import-cached-imports-in-buffer (seq-remove 'js-import-reserved-word-p (js-import-extract-imports)))
+          (setq js-import-cached-imports-in-buffer
+                (seq-remove 'js-import-reserved-word-p
+                            (js-import-extract-imports buffer-file-name)))
           js-import-cached-imports-in-buffer)))))
+
+(defun js-import-extract-imports(&optional real-path)
+  (with-temp-buffer
+    (erase-buffer)
+    (js-import-insert-buffer-or-file real-path)
+    (save-excursion
+      (goto-char 0)
+      (let (symbols)
+        (with-syntax-table js-import-mode-syntax-table
+          (while (re-search-forward js-import-regexp-import-keyword nil t 1)
+            (unless (or (js-import-inside-comment-p)
+                        (js-import-inside-string-q))
+              (let (display-path imports)
+                (save-excursion
+                  (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
+                  (setq display-path (js-import-get-path-at-point)))
+                (cond ((js-import-looking-at "*")
+                       (let (m1 m2 renamed-name)
+                         (setq m1 (point))
+                         (forward-char)
+                         (skip-chars-forward "\s\t")
+                         (setq m2 (point))
+                         (when (js-import-looking-at "as")
+                           (skip-chars-forward "as")
+                           (setq m2 (point))
+                           (skip-chars-forward "\s\t")
+                           (setq renamed-name (js-import-which-word))
+                           (if (or (js-import-reserved-word-p renamed-name)
+                                   (js-import-invalid-name-p renamed-name))
+                               (setq renamed-name "")
+                             (skip-chars-forward js-import-regexp-name)))
+                         (setq m2 (point))
+                         (push (js-import-make-index-item
+                                (format "%s" (buffer-substring-no-properties m1 m2))
+                                :type 16
+                                :real-name renamed-name
+                                :pos m1
+                                :display-path display-path)
+                               imports)
+                         (skip-chars-forward js-import-regexp-name-with-separators)))
+                      ((looking-at-p js-import-regexp-name-set)
+                       (push (js-import-make-index-item
+                              (js-import-which-word)
+                              :type 1
+                              :real-name (js-import-which-word)
+                              :pos (point)
+                              :display-path display-path)
+                             imports)
+                       (skip-chars-forward js-import-regexp-name-with-separators))
+                      ((looking-at-p "[\"']")
+                       (forward-char)
+                       (when-let* ((display-path (js-import-get-path-at-point))
+                                   (real-path (js-import-path-to-real display-path (js-import-dirname real-path)))
+                                   (extracted-symbols (js-import-extract-imports real-path)))
+                         (setq symbols (append symbols extracted-symbols)))))
+                (when (looking-at-p "{")
+                  (setq imports (append imports (js-import-extract-imports-in-brackets display-path))))
+                (setq symbols (append symbols imports))))
+            (forward-line 1)))
+        (cl-remove-duplicates symbols :test 'string=)))))
+
+(defun js-import-extract-imports-in-brackets(display-path &optional real-path)
+  (let (p1 p2 items real-name full-name)
+    (setq p1 (1+ (point)))
+    (save-excursion
+      (re-search-forward "}" nil t 1)
+      (setq p2 (- (point) 1)))
+    (narrow-to-region p1 p2)
+    (goto-char p1)
+    (while (re-search-forward js-import-regexp-name-set nil t 1)
+      (setq p1 (match-beginning 0))
+      (goto-char p1)
+      (setq real-name (js-import-which-word))
+      (skip-chars-forward js-import-regexp-name)
+      (setq p2 (point))
+      (skip-chars-forward " \s\t\n")
+      (when (looking-at-p "as[ \s\t\n]")
+        (progn
+          (re-search-forward "as[ \s\t\n]" nil t 1)
+          (skip-chars-forward js-import-regexp-name)
+          (setq p2 (point))))
+      (setq full-name (string-trim (buffer-substring-no-properties p1 p2)))
+      (push (js-import-make-index-item
+             full-name
+             :type 4
+             :real-name real-name
+             :display-path display-path
+             :real-path real-path
+             :pos p1)
+            items))
+    (widen)
+    (reverse items)))
 
 (defun js-import-exported-candidates-in-buffer(&optional buffer)
   "Returns imported symbols in BUFFER which are cached and stored
@@ -1595,89 +1689,6 @@ In both cases the content will be copied without properties"
     (widen)
     (reverse items)))
 
-
-(defun js-import-extract-imports()
-  (save-excursion
-    (goto-char 0)
-    (let (symbols)
-      (with-syntax-table js-import-mode-syntax-table
-        (while (re-search-forward js-import-regexp-import-keyword nil t 1)
-          (unless (js-import-inside-comment-p)
-            (let (path imports)
-              (save-excursion
-                (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
-                (setq path (js-import-get-path-at-point)))
-              (cond ((js-import-looking-at "*")
-                     (let (m1 m2 renamed-name)
-                       (setq m1 (point))
-                       (forward-char)
-                       (skip-chars-forward "\s\t")
-                       (setq m2 (point))
-                       (when (js-import-looking-at "as")
-                         (skip-chars-forward "as")
-                         (setq m2 (point))
-                         (skip-chars-forward "\s\t")
-                         (setq renamed-name (js-import-which-word))
-                         (if (or (js-import-reserved-word-p renamed-name)
-                                 (js-import-invalid-name-p renamed-name))
-                             (setq renamed-name "")
-                           (skip-chars-forward js-import-regexp-name)))
-                       (setq m2 (point))
-                       (push (js-import-make-index-item
-                              (format "%s" (buffer-substring-no-properties m1 m2))
-                              :type 16
-                              :real-name renamed-name
-                              :pos m1
-                              :display-path path)
-                             imports)
-                       (skip-chars-forward js-import-regexp-name-with-separators)))
-                    ((looking-at-p js-import-regexp-name-set)
-                     (push (js-import-make-index-item
-                            (js-import-which-word)
-                            :type 1
-                            :real-name (js-import-which-word)
-                            :pos (point)
-                            :display-path path)
-                           imports)
-                     (skip-chars-forward js-import-regexp-name-with-separators)))
-              (when (looking-at-p "{")
-                (setq imports (append imports (js-import-extract-imports-in-brackets path))))
-              (setq symbols (append symbols imports))))
-          (forward-line 1)))
-      (cl-remove-duplicates symbols :test 'string=))))
-
-
-(defun js-import-extract-imports-in-brackets(display-path &optional real-path)
-  (let (p1 p2 items real-name full-name)
-    (setq p1 (1+ (point)))
-    (save-excursion
-      (re-search-forward "}" nil t 1)
-      (setq p2 (- (point) 1)))
-    (narrow-to-region p1 p2)
-    (goto-char p1)
-    (while (re-search-forward js-import-regexp-name-set nil t 1)
-      (setq p1 (match-beginning 0))
-      (goto-char p1)
-      (setq real-name (js-import-which-word))
-      (skip-chars-forward js-import-regexp-name)
-      (setq p2 (point))
-      (skip-chars-forward " \s\t\n")
-      (when (looking-at-p "as[ \s\t\n]")
-        (progn
-          (re-search-forward "as[ \s\t\n]" nil t 1)
-          (skip-chars-forward js-import-regexp-name)
-          (setq p2 (point))))
-      (setq full-name (string-trim (buffer-substring-no-properties p1 p2)))
-      (push (js-import-make-index-item
-             full-name
-             :type 4
-             :real-name real-name
-             :display-path display-path
-             :real-path real-path
-             :pos p1)
-            items))
-    (widen)
-    (reverse items)))
 
 (defun js-import-kill-thing-at-point (&optional $thing)
   "Kill the `thing-at-point' for the specified kind of THING."
