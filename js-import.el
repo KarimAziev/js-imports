@@ -102,7 +102,8 @@
            (regexp :tag "Js import type regexp pattern")
            (sexp :tag "Face"))))
 
-(defface js-import-highlight-face '((t (:background "#e52b50" :foreground "white")))
+(defface js-import-highlight-face
+  '((t (:background "#e52b50" :foreground "white")))
   "Face used to highlight symbol."
   :group 'js-import)
 
@@ -295,7 +296,6 @@
 (defvar js-import-last-export-path nil)
 (make-variable-buffer-local 'js-import-last-export-path)
 
-
 (defvar js-import-dependency-source-name "Node Modules")
 (defvar js-import-buffer-source-name "Imports in")
 (defvar js-import-files-source-name "Project files")
@@ -369,7 +369,6 @@ Run all sources defined in option `js-import-files-source'."
   (save-excursion
     (helm :sources js-import-node-modules-source
           :preselect (js-import-preselect))))
-
 
 (defclass js-import-source-project-files (helm-source-sync)
   ((header-name :initform 'js-import-files-header-name)
@@ -652,7 +651,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
    (persistent-action :initform 'js-import-ff-persistent-action)
    (group :initform 'js-import)))
 
-
 (defun js-import-node-modules-candidates(&optional project-root)
   "Return dependencies of PROJECT-ROOT from package json."
   (unless project-root (setq project-root (js-import-find-project-root)))
@@ -913,7 +911,6 @@ and default section is `dependencies'"
           sources)
     (helm :sources sources)))
 
-
 (defclass js-import-source-imported-symbols(helm-source-sync)
   ((candidates :initform 'js-import-imported-candidates-in-buffer)
    (candidate-transformer :initform (lambda(candidates)
@@ -969,7 +966,6 @@ and default section is `dependencies'"
     (helm
      :preselect (js-import-preselect-symbol)
      :sources sources)))
-
 
 (defun js-import-preselect()
   "Preselect function for file sources."
@@ -1454,7 +1450,6 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
       (insert " " names)
     (insert ", " names)))
 
-
 (defun js-import-init-exports-candidates()
   "Extract exports from file specified in a variable `js-import-current-export-path.'."
   (with-current-buffer helm-current-buffer
@@ -1514,7 +1509,6 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                 (setq symbols (append symbols exports))))
             (forward-line 1)))
         symbols))))
-
 
 (defun js-import-extract-cjs-exports-in-brackets(&optional real-path display-path)
   "Extracts exports beetween brackets."
@@ -1615,7 +1609,6 @@ In both cases the content will be copied without properties"
      :real-path real-path
      :display-path display-path)))
 
-
 (defun js-import-skip-reserved-words(&optional separators)
   (unless separators (setq separators "\s\t\".='*"))
   (let* ((stack)
@@ -1689,7 +1682,6 @@ In both cases the content will be copied without properties"
     (widen)
     (reverse items)))
 
-
 (defun js-import-kill-thing-at-point (&optional $thing)
   "Kill the `thing-at-point' for the specified kind of THING."
   (let* ((thing (or $thing 'sexp))
@@ -1737,7 +1729,6 @@ CANDIDATE should be propertizied with property `display-path'."
               (bounds (js-import-get-import-positions path)))
     (delete-region (car bounds) (cdr bounds))
     (join-line)))
-
 
 (cl-defun js-import-make-index-item (candidate
                                      &key
@@ -1841,7 +1832,6 @@ See also function `js-import-propertize'."
           (goto-char p0)
           (buffer-substring-no-properties p1 p2))))))
 
-
 (defun js-import-string-match-p (regexp str &optional start)
   "Return t if STR matches REGEXP, otherwise return nil."
   (when (and (not (null str)) (stringp str))
@@ -1922,7 +1912,6 @@ Result depends on syntax table's string quote character."
                  (16 (format "* as %s" new-name)))))
     name))
 
-
 (defun js-import-generate-name-from-path(path)
   "Generate name for default or module import from PATH."
   (let* ((split-path (lambda(str) (split-string str "[ \f\t\n\r\v-/.]")))
@@ -1945,7 +1934,7 @@ Result depends on syntax table's string quote character."
               (reverse funcs) arg))
 
 (defun js-import-parse-object-keys(end)
-  "Return object keys. "
+  "Return object keys."
   (let (stack)
     (while (and (< (point) end)
                 (re-search-forward (concat js-import-regexp-name-set "+[(,:]") nil t 1))
@@ -1998,6 +1987,5 @@ Result depends on syntax table's string quote character."
                                                          (overlayp o))
                                                 (delete-overlay o)))
                         overlay)))))
-
 (provide 'js-import)
 ;;; js-import.el ends here
