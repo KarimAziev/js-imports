@@ -220,7 +220,7 @@
   '("const" "var" "let" "function" "function*" "interface" "type" "class" "default"))
 
 (defconst js-import-delcaration-keywords--re
-  (regexp-opt js-import-delcaration-keywords))
+  (concat "\\_<" (regexp-opt js-import-delcaration-keywords t) "\\_>"))
 
 (defconst js-import-regexp-name
   "_$A-Za-z0-9"
@@ -381,7 +381,6 @@ Run all sources defined in option `js-import-files-source'."
    (mode-line :initform (list "File(s)"))
    (keymap :initform js-import-files-map)
    (group :initform 'js-import)))
-
 
 (defun js-import-files-header-name(_name)
   "A function for display header name for project files."
@@ -683,7 +682,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative to
         (setq js-import-dependencies-cache-tick package-json-tick)
         (progress-reporter-done progress-reporter)))
     (gethash project-root js-import-dependencies-cache)))
-
 
 (defun js-import-find-interfaces(display-path dir)
   (when-let* ((real-path (js-import-join-when-exists dir display-path))
@@ -1468,7 +1466,6 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
         (append default-candidates (list (js-import-make-index-item
                                           "default"
                                           :type 1)))))))
-
 
 (defun js-import-extract-cjs-exports(&optional path)
   "Return exports in PATH defined with CommonJs syntax."
