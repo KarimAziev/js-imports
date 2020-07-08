@@ -1205,7 +1205,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                            (switch-to-buffer-other-window js-buffer)
                            (setq inhibit-read-only t)
                            (erase-buffer)
-                           (js-import-insert-buffer-or-file item-path)
+                           (js-import-insert-buffer-or-file item-path t)
                            (let ((buffer-file-name item-path))
                              (set-auto-mode))
                            (font-lock-ensure)
@@ -1624,17 +1624,50 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
             (forward-line 1)))
         symbols))))
 
-(defun js-import-insert-buffer-or-file(path)
-  "A function inserts content either from buffer or file
-depending whether buffer with the given PATH exists.
-In both cases the content will be copied without properties"
+(defun js-import-get-comments-bounds(&optional pos)
+  (unless (setq pos (setq pos (point-min))))
+  (save-excursion
+    (save-restriction
+      (let (comments)
+        (goto-char pos)
+        (while (re-search-forward "\\(/\\*\\)\\|\\(//\\)" nil t 1)
+          (save-excursion
+            (backward-char 1)
+            (if (looking-at-p "\\*")
+                (progn
+                  (let* ((p1 (1- (point)))
+                         (p2 (re-search-forward "\\(\\*/\\)" nil t 1)))
+                    (push (cons p1 p2) comments)))
+              (let* ((p1 (1- (point)))
+                     (p2 (point-at-eol)))
+                (push (cons p1 p2) comments)))))
+        comments))))
+
+(defun js-import-remove-comments()
+  "Replaces comments in buffer with empty lines."
+  (let ((comments (js-import-get-comments-bounds)))
+    (dotimes (idx (length comments))
+      (let* ((cell (nth idx comments))
+             (p1 (car cell))
+             (p2 (cdr cell)))
+        (replace-region-contents p1 p2 (lambda()
+                                         (let* ((content-length (length (buffer-substring-no-properties (point-min) (point-max))))
+                                                (vect (make-vector (1+ content-length) ""))
+                                                (replacement (append vect nil)))
+                                           (mapconcat 'identity replacement "\s"))))))))
+
+(defun js-import-insert-buffer-or-file(path &optional keep-comments)
+  "A function inserts content either from buffer or file.
+It depends whether buffer with the given PATH exists.
+Without argument KEEP-COMMENTS content will inserted without comments."
   (when (and path (file-exists-p path))
     (if (get-file-buffer path)
-        (insert-buffer-substring-no-properties (get-file-buffer path))
+        (progn
+          (insert-buffer-substring-no-properties (get-file-buffer path)))
       (progn
         (let ((buffer-file-name path))
-          (insert-file-contents path)
-          (set-auto-mode))))))
+          (insert-file-contents path))))
+    (unless keep-comments (js-import-remove-comments))))
 
 (defun js-import-extract-namespace-exports(real-path &optional display-path)
   "Make export all as item."
@@ -2088,21 +2121,34 @@ Without optional argument POSITION value of `point' is used."
                                                 (delete-overlay o)))
                         overlay)))))
 
-(defun js-import-previous-declaration-or-skope()
+(defun js-import-get-buffer-content-no-comments(&optional beg end)
+  (unless beg (setq beg (point-min)))
+  (unless end (setq end (point-max)))
+  (let ((content (buffer-substring-no-properties beg end)))
+    (with-temp-buffer (insert content)
+                      (js-import-remove-comments)
+                      (buffer-substring-no-properties (point-min) (point-max)))))
+
+(defun js-import-previous-declaration-or-skope(&optional content pos)
   (interactive)
+  (unless pos (setq pos (point)))
+  (unless content (setq content (js-import-get-buffer-content-no-comments)))
   (let (declaration-start scope-start scope-end winner)
-    (save-excursion (when (re-search-backward (regexp-opt (list "]" "}" ")")) nil t 1)
-                      (forward-char)
-                      (setq scope-end (point))
-                      (backward-list)
-                      (setq scope-start (point))
-                      (skip-chars-backward "\s\t\n,")
-                      (while (looking-back (regexp-opt (list "]" "}" ")")) 1)
+    (with-temp-buffer
+      (insert content)
+      (goto-char pos)
+      (save-excursion (when (re-search-backward (regexp-opt (list "]" "}" ")")) nil t 1)
+                        (forward-char)
+                        (setq scope-end (point))
                         (backward-list)
                         (setq scope-start (point))
-                        (skip-chars-backward "\s\t\n,"))))
-    (save-excursion (when (re-search-backward js-import-delcaration-keywords--re nil t 1)
-                      (setq declaration-start (point))))
+                        (skip-chars-backward "\s\t\n,")
+                        (while (looking-back (regexp-opt (list "]" "}" ")")) 1)
+                          (backward-list)
+                          (setq scope-start (point))
+                          (skip-chars-backward "\s\t\n,"))))
+      (save-excursion (when (re-search-backward js-import-delcaration-keywords--re nil t 1)
+                        (setq declaration-start (point)))))
     (when declaration-start
       (setq winner (if (and scope-start scope-end
                             (< scope-start declaration-start) (> scope-end declaration-start))
@@ -2110,31 +2156,36 @@ Without optional argument POSITION value of `point' is used."
                      declaration-start)))
     (when winner (goto-char winner))))
 
-(defun js-import-next-declaration-or-scope()
+(defun js-import-next-declaration-or-scope(&optional content pos)
   (interactive)
+  (unless pos (setq pos (point)))
+  (unless content (setq content (js-import-get-buffer-content-no-comments)))
   (let (declaration-start scope-start scope-end winner depth declaration-depth)
-    (setq depth (nth 0 (syntax-ppss)))
-    (save-excursion (when (re-search-forward (regexp-opt (list "[" "{" "(")) nil t 1)
-                      (backward-char)
-                      (setq scope-start (point))
-                      (forward-list)
-                      (setq scope-end (point))
-                      (skip-chars-forward "\s\t\n,=>")
-                      (while (looking-at (regexp-opt (list "[" "{" "(" "=>")))
-                        (when (looking-at "=>")
-                          (skip-chars-forward "\s\t\n=>"))
+    (with-temp-buffer
+      (insert content)
+      (goto-char pos)
+      (setq depth (nth 0 (syntax-ppss)))
+      (save-excursion (when (re-search-forward (regexp-opt (list "[" "{" "(")) nil t 1)
+                        (backward-char)
+                        (setq scope-start (point))
                         (forward-list)
-                        (setq scope-end (point)))
-                      (when (looking-at ";")
-                        (skip-chars-forward ";")
-                        (setq scope-end (point)))))
-    (save-excursion
-      (when (looking-at js-import-delcaration-keywords--re)
-        (skip-chars-forward js-import-delcaration-keywords--re))
-      (when (re-search-forward js-import-delcaration-keywords--re nil t 1)
-        (setq declaration-depth (nth 0 (syntax-ppss)))
-        (skip-chars-backward js-import-delcaration-keywords--re)
-        (setq declaration-start (point))))
+                        (setq scope-end (point))
+                        (skip-chars-forward "\s\t\n,=>")
+                        (while (looking-at (regexp-opt (list "[" "{" "(" "=>")))
+                          (when (looking-at "=>")
+                            (skip-chars-forward "\s\t\n=>"))
+                          (forward-list)
+                          (setq scope-end (point)))
+                        (when (looking-at ";")
+                          (skip-chars-forward ";")
+                          (setq scope-end (point)))))
+      (save-excursion
+        (when (looking-at js-import-delcaration-keywords--re)
+          (skip-chars-forward js-import-delcaration-keywords--re))
+        (when (re-search-forward js-import-delcaration-keywords--re nil t 1)
+          (setq declaration-depth (nth 0 (syntax-ppss)))
+          (skip-chars-backward js-import-delcaration-keywords--re)
+          (setq declaration-start (point)))))
     (if declaration-start
         (setq winner (if (and scope-start scope-end
                               (or (and (< scope-start declaration-start) (> scope-end declaration-start))
@@ -2151,37 +2202,45 @@ Without optional argument POSITION value of `point' is used."
     word))
 
 (defun js-import-search-backward-identifiers()
-  (save-excursion
-    (let (ids)
-      (while (js-import-previous-declaration-or-skope)
-        (when-let ((token-start (looking-at js-import-delcaration-keywords--re))
-                   (token (js-import-which-word)))
-          (save-excursion
-            (skip-chars-forward js-import-delcaration-keywords--re)
-            (skip-chars-forward "\s\t\n")
-            (when-let* ((word (js-import-which-word))
-                        (pos (point)))
-              (if (js-import-valid-identifier-p word)
-                  (push (js-import-make-index-item word
-                                                   :pos pos
-                                                   :var-type token
-                                                   :real-name word
-                                                   :local-name word)
-                        ids)
-                (cond
-                 ((string= word "{")
-                  (let (parent children)
-                    (when (looking-at-p "{")
-                      (save-excursion
-                        (forward-list)
-                        (when (looking-at-p "[\s\t\n]*=[\s\t\n]*")
-                          (re-search-forward "[\s\t\n]*=[\s\t\n]*" nil t 1)
-                          (setq parent (js-import-which-word))))
-                      (setq children (mapcar
-                                      (lambda(it) (js-import-propertize it 'var-type token 'parent parent))
-                                      (js-import-parse-destructive))))
-                    (setq ids (append ids children))))))))))
-      ids)))
+  (let (init-p content)
+    (setq init-p (point))
+    (setq content (buffer-substring-no-properties (point-min) (point-max)))
+    (with-temp-buffer
+      (insert content)
+      (js-import-remove-comments)
+      (setq content (buffer-substring-no-properties (point-min) (point-max)))
+      (goto-char init-p)
+      (save-excursion
+        (let (ids)
+          (while (js-import-previous-declaration-or-skope content)
+            (when-let ((token-start (looking-at js-import-delcaration-keywords--re))
+                       (token (js-import-which-word)))
+              (save-excursion
+                (skip-chars-forward js-import-delcaration-keywords--re)
+                (skip-chars-forward "\s\t\n")
+                (when-let* ((word (js-import-which-word))
+                            (pos (point)))
+                  (if (js-import-valid-identifier-p word)
+                      (push (js-import-make-index-item word
+                                                       :pos pos
+                                                       :var-type token
+                                                       :real-name word
+                                                       :local-name word)
+                            ids)
+                    (cond
+                     ((string= word "{")
+                      (let (parent children)
+                        (when (looking-at-p "{")
+                          (save-excursion
+                            (forward-list)
+                            (when (looking-at-p "[\s\t\n]*=[\s\t\n]*")
+                              (re-search-forward "[\s\t\n]*=[\s\t\n]*" nil t 1)
+                              (setq parent (js-import-which-word))))
+                          (setq children (mapcar
+                                          (lambda(it) (js-import-propertize it 'var-type token 'parent parent))
+                                          (js-import-parse-destructive))))
+                        (setq ids (append ids children))))))))))
+          ids)))))
 
 (defun js-import-jump-to-definition(&optional real-name)
   "Find a file when cursor are placed under stringified path."
@@ -2237,6 +2296,7 @@ Without optional argument POSITION value of `point' is used."
                (items (with-temp-buffer
                         (save-excursion
                           (js-import-insert-buffer-or-file path)
+                          (js-import-remove-comments)
                           (goto-char pos)
                           (js-import-search-backward-identifiers)))))
           (setq definition-item (js-import-find-by-prop 'local-name name items))
