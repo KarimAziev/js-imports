@@ -1157,8 +1157,8 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
         (progn
           (setq js-import-cached-exports-in-buffer-tick tick)
           (setq js-import-cached-exports-in-buffer
-                (or (js-import-extract-esm-exports buffer-file-name)
-                    (js-import-extract-cjs-exports buffer-file-name)))
+                (seq-uniq (append (js-import-extract-esm-exports buffer-file-name)
+                                  (js-import-extract-cjs-exports buffer-file-name))))
           js-import-cached-exports-in-buffer)))))
 
 (defun js-import-exported-candidates-transformer(candidates)
@@ -2131,69 +2131,71 @@ Without optional argument POSITION value of `point' is used."
 
 (defun js-import-previous-declaration-or-skope(&optional content pos)
   (interactive)
-  (unless pos (setq pos (point)))
-  (unless content (setq content (js-import-get-buffer-content-no-comments)))
-  (let (declaration-start scope-start scope-end winner)
-    (with-temp-buffer
-      (insert content)
-      (goto-char pos)
-      (save-excursion (when (re-search-backward (regexp-opt (list "]" "}" ")")) nil t 1)
-                        (forward-char)
-                        (setq scope-end (point))
-                        (backward-list)
-                        (setq scope-start (point))
-                        (skip-chars-backward "\s\t\n,")
-                        (while (looking-back (regexp-opt (list "]" "}" ")")) 1)
+  (ignore-errors
+    (unless pos (setq pos (point)))
+    (unless content (setq content (js-import-get-buffer-content-no-comments)))
+    (let (declaration-start scope-start scope-end winner)
+      (with-temp-buffer
+        (insert content)
+        (goto-char pos)
+        (save-excursion (when (re-search-backward (regexp-opt (list "]" "}" ")")) nil t 1)
+                          (forward-char)
+                          (setq scope-end (point))
                           (backward-list)
                           (setq scope-start (point))
-                          (skip-chars-backward "\s\t\n,"))))
-      (save-excursion (when (re-search-backward js-import-delcaration-keywords--re nil t 1)
-                        (setq declaration-start (point)))))
-    (when declaration-start
-      (setq winner (if (and scope-start scope-end
-                            (< scope-start declaration-start) (> scope-end declaration-start))
-                       scope-start
-                     declaration-start)))
-    (when winner (goto-char winner))))
+                          (skip-chars-backward "\s\t\n,")
+                          (while (looking-back (regexp-opt (list "]" "}" ")")) 1)
+                            (backward-list)
+                            (setq scope-start (point))
+                            (skip-chars-backward "\s\t\n,"))))
+        (save-excursion (when (re-search-backward js-import-delcaration-keywords--re nil t 1)
+                          (setq declaration-start (point)))))
+      (when declaration-start
+        (setq winner (if (and scope-start scope-end
+                              (< scope-start declaration-start) (> scope-end declaration-start))
+                         scope-start
+                       declaration-start)))
+      (when winner (goto-char winner)))))
 
 (defun js-import-next-declaration-or-scope(&optional content pos)
   (interactive)
-  (unless pos (setq pos (point)))
-  (unless content (setq content (js-import-get-buffer-content-no-comments)))
-  (let (declaration-start scope-start scope-end winner depth declaration-depth)
-    (with-temp-buffer
-      (insert content)
-      (goto-char pos)
-      (setq depth (nth 0 (syntax-ppss)))
-      (save-excursion (when (re-search-forward (regexp-opt (list "[" "{" "(")) nil t 1)
-                        (backward-char)
-                        (setq scope-start (point))
-                        (forward-list)
-                        (setq scope-end (point))
-                        (skip-chars-forward "\s\t\n,=>")
-                        (while (looking-at (regexp-opt (list "[" "{" "(" "=>")))
-                          (when (looking-at "=>")
-                            (skip-chars-forward "\s\t\n=>"))
+  (ignore-errors
+    (unless pos (setq pos (point)))
+    (unless content (setq content (js-import-get-buffer-content-no-comments)))
+    (let (declaration-start scope-start scope-end winner depth declaration-depth)
+      (with-temp-buffer
+        (insert content)
+        (goto-char pos)
+        (setq depth (nth 0 (syntax-ppss)))
+        (save-excursion (when (re-search-forward (regexp-opt (list "[" "{" "(")) nil t 1)
+                          (backward-char)
+                          (setq scope-start (point))
                           (forward-list)
-                          (setq scope-end (point)))
-                        (when (looking-at ";")
-                          (skip-chars-forward ";")
-                          (setq scope-end (point)))))
-      (save-excursion
-        (when (looking-at js-import-delcaration-keywords--re)
-          (skip-chars-forward js-import-delcaration-keywords--re))
-        (when (re-search-forward js-import-delcaration-keywords--re nil t 1)
-          (setq declaration-depth (nth 0 (syntax-ppss)))
-          (skip-chars-backward js-import-delcaration-keywords--re)
-          (setq declaration-start (point)))))
-    (if declaration-start
-        (setq winner (if (and scope-start scope-end
-                              (or (and (< scope-start declaration-start) (> scope-end declaration-start))
-                                  (> declaration-depth depth)))
-                         scope-end
-                       declaration-start))
-      (setq winner scope-end))
-    (when winner (goto-char winner))))
+                          (setq scope-end (point))
+                          (skip-chars-forward "\s\t\n,=>")
+                          (while (looking-at (regexp-opt (list "[" "{" "(" "=>")))
+                            (when (looking-at "=>")
+                              (skip-chars-forward "\s\t\n=>"))
+                            (forward-list)
+                            (setq scope-end (point)))
+                          (when (looking-at ";")
+                            (skip-chars-forward ";")
+                            (setq scope-end (point)))))
+        (save-excursion
+          (when (looking-at js-import-delcaration-keywords--re)
+            (skip-chars-forward js-import-delcaration-keywords--re))
+          (when (re-search-forward js-import-delcaration-keywords--re nil t 1)
+            (setq declaration-depth (nth 0 (syntax-ppss)))
+            (skip-chars-backward js-import-delcaration-keywords--re)
+            (setq declaration-start (point)))))
+      (if declaration-start
+          (setq winner (if (and scope-start scope-end
+                                (or (and (< scope-start declaration-start) (> scope-end declaration-start))
+                                    (> declaration-depth depth)))
+                           scope-end
+                         declaration-start))
+        (setq winner scope-end))
+      (when winner (goto-char winner)))))
 
 (defun js-import-get-word-if-valid()
   "Return word at point if it is valid and not reservered, otherwise nil."
