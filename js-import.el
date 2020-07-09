@@ -110,7 +110,7 @@
 (defvar js-import-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-i") 'js-import)
-    (define-key map (kbd "C-c C-.") 'js-import-edit-buffer-imports)
+    (define-key map (kbd "C-c C-.") 'js-import-show-symbols)
     (define-key map (kbd "C-c C-d") 'js-import-dependency)
     (define-key map (kbd "C-c C-a") 'js-import-alias)
     (define-key map (kbd "C-c C-j") 'js-import-jump-to-definition)
@@ -971,9 +971,8 @@ and default section is `dependencies'"
    (cleanup :initform 'js-import-exports-cleanup)
    (volatile :initform t)
    (action :initform 'js-import-export-items-actions)
-   (persistent-action :initform (lambda(c)
-                                  (when-let ((props (js-import-display-to-real-exports c)))
-                                    (js-import-jump-to-item-persistent props))))))
+   (persistent-action :initform (lambda(c) (when-let ((props (js-import-display-to-real-exports c)))
+                                        (js-import-jump-to-item-persistent props))))))
 
 ;;;###autoload
 (defun js-import-edit-buffer-imports()
@@ -1194,40 +1193,6 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                           (16 (< 0 (length imports))))))
               exports))
 
-(defun js-import-jump-to-item-persistent(item)
-  "Jumps to ITEM in buffer. ITEM must be propertized with prop 'pos."
-  (let ((js-buffer (get-buffer-create "*js-import persistent")))
-    (if (and buffer-file-name (string= (js-import-get-prop item 'real-path) buffer-file-name))
-        (js-import-jump-to-item-in-buffer item js-buffer)
-      (cl-flet ((preview (item)
-                         (when-let ((item-path (or (js-import-get-prop item 'real-path)
-                                                   (js-import-path-to-real (js-import-get-prop item 'display-path)
-                                                                           default-directory))))
-                           (switch-to-buffer-other-window js-buffer)
-                           (setq inhibit-read-only t)
-                           (erase-buffer)
-                           (js-import-insert-buffer-or-file item-path t)
-                           (let ((buffer-file-name item-path))
-                             (set-auto-mode))
-                           (font-lock-ensure)
-                           (setq inhibit-read-only nil)
-                           (js-import-jump-to-item-in-buffer item js-buffer))))
-        (if (and (helm-attr 'previewp)
-                 (string= item (helm-attr 'current-candidate)))
-            (progn
-              (kill-buffer js-buffer)
-              (helm-attrset 'previewp nil))
-          (preview item)
-          (helm-attrset 'previewp t))))
-    item))
-
-(defun js-import-jump-to-item-in-buffer(item &optional buffer)
-  "Jumps to ITEM in buffer. ITEM must be propertized with a property `pos'."
-  (when-let ((pos (js-import-get-prop item 'pos)))
-    (js-import-highlight-word :pos pos :buffer buffer :jump t)
-    (recenter-top-bottom)
-    item))
-
 (defun js-import-delete-whole-import-persistent (&optional _cand)
   "Persistent action for quick delete CAND from import statement."
   (interactive)
@@ -1395,18 +1360,6 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
       (1 (js-import-insert-exports renamed-name nil normalized-path))
       (4 (js-import-insert-exports nil full-name normalized-path))
       (16 (js-import-insert-exports full-name nil normalized-path)))))
-
-(defun js-import-jump-to-item-other-window(item)
-  "Jumps to ITEM in buffer. ITEM must be propertized with prop 'pos."
-  (unless (js-import-get-prop item 'pos)
-    (setq item (js-import-display-to-real-exports item)))
-  (when-let ((pos (js-import-get-prop item 'pos))
-             (item-path (or (js-import-get-prop item 'real-path)
-                            (js-import-path-to-real (js-import-get-prop item 'display-path)))))
-    (unless (and buffer-file-name (string= item-path buffer-file-name))
-      (find-file-other-window item-path))
-    (js-import-jump-to-item-in-buffer item)
-    item))
 
 (defun js-import-insert-exports(default-name named-list path)
   (let ((names (if (stringp named-list)
@@ -2137,6 +2090,7 @@ Result depends on syntax table's string quote character."
       (with-temp-buffer
         (insert content)
         (goto-char pos)
+        (js-import-skip-string)
         (save-excursion (when (re-search-backward (regexp-opt (list "]" "}" ")")) nil t 1)
                           (forward-char)
                           (setq scope-end (point))
@@ -2148,7 +2102,10 @@ Result depends on syntax table's string quote character."
                             (setq scope-start (point))
                             (skip-chars-backward "\s\t\n,"))))
         (save-excursion (when (re-search-backward js-import-delcaration-keywords--re nil t 1)
-                          (setq declaration-start (point)))))
+                          (if (js-import-inside-string-p)
+                              (progn (js-import-skip-string)
+                                     (backward-sexp))
+                            (setq declaration-start (point))))))
       (when declaration-start
         (setq winner (if (and scope-start scope-end
                               (< scope-start declaration-start) (> scope-end declaration-start))
@@ -2165,6 +2122,7 @@ Result depends on syntax table's string quote character."
       (with-temp-buffer
         (insert content)
         (goto-char pos)
+        (js-import-skip-string)
         (setq depth (nth 0 (syntax-ppss)))
         (save-excursion (when (re-search-forward (regexp-opt (list "[" "{" "(")) nil t 1)
                           (backward-char)
@@ -2182,11 +2140,13 @@ Result depends on syntax table's string quote character."
                             (setq scope-end (point)))))
         (save-excursion
           (when (looking-at js-import-delcaration-keywords--re)
-            (skip-chars-forward js-import-delcaration-keywords--re))
+            (skip-chars-forward js-import-regexp-name))
           (when (re-search-forward js-import-delcaration-keywords--re nil t 1)
-            (setq declaration-depth (nth 0 (syntax-ppss)))
-            (skip-chars-backward js-import-delcaration-keywords--re)
-            (setq declaration-start (point)))))
+            (if (js-import-inside-string-p)
+                (js-import-skip-string)
+              (progn (setq declaration-depth (nth 0 (syntax-ppss)))
+                     (skip-chars-backward js-import-regexp-name)
+                     (setq declaration-start (point)))))))
       (if declaration-start
           (setq winner (if (and scope-start scope-end
                                 (or (and (< scope-start declaration-start) (> scope-end declaration-start))
@@ -2237,11 +2197,57 @@ Result depends on syntax table's string quote character."
                             (when (looking-at-p "[\s\t\n]*=[\s\t\n]*")
                               (re-search-forward "[\s\t\n]*=[\s\t\n]*" nil t 1)
                               (setq parent (js-import-which-word))))
-                          (setq children (mapcar
-                                          (lambda(it) (js-import-propertize it 'var-type token 'parent parent))
-                                          (js-import-parse-destructive))))
+                          (setq children (mapcar (lambda(it) (js-import-propertize it 'var-type token 'parent parent))
+                                                 (js-import-parse-destructive))))
                         (setq ids (append ids children))))))))))
           ids)))))
+
+(defun js-import-jump-to-item-other-window(item)
+  "Jumps to ITEM in buffer. ITEM must be propertized with prop 'pos."
+  (unless (js-import-get-prop item 'pos)
+    (setq item (js-import-display-to-real-exports item)))
+  (when-let ((pos (js-import-get-prop item 'pos))
+             (item-path (or (js-import-get-prop item 'real-path)
+                            (js-import-path-to-real (js-import-get-prop item 'display-path)))))
+    (unless (and buffer-file-name (string= item-path buffer-file-name))
+      (find-file-other-window item-path))
+    (js-import-jump-to-item-in-buffer item)
+    item))
+
+(defun js-import-jump-to-item-persistent(item)
+  "Jumps to ITEM in buffer. ITEM must be propertized with prop 'pos."
+  (setq item (or (js-import-try-find-definition item) item))
+  (let ((js-buffer (get-buffer-create "*js-import persistent")))
+    (if (and buffer-file-name (string= (js-import-get-prop item 'real-path) buffer-file-name))
+        (js-import-jump-to-item-in-buffer item js-buffer)
+      (cl-flet ((preview (item)
+                         (when-let ((item-path (or (js-import-get-prop item 'real-path)
+                                                   (js-import-path-to-real (js-import-get-prop item 'display-path)
+                                                                           default-directory))))
+                           (switch-to-buffer-other-window js-buffer)
+                           (setq inhibit-read-only t)
+                           (erase-buffer)
+                           (js-import-insert-buffer-or-file item-path t)
+                           (let ((buffer-file-name item-path))
+                             (set-auto-mode))
+                           (font-lock-ensure)
+                           (setq inhibit-read-only nil)
+                           (js-import-jump-to-item-in-buffer item js-buffer))))
+        (if (and (helm-attr 'previewp)
+                 (string= item (helm-attr 'current-candidate)))
+            (progn
+              (kill-buffer js-buffer)
+              (helm-attrset 'previewp nil))
+          (preview item)
+          (helm-attrset 'previewp t))))
+    item))
+
+(defun js-import-jump-to-item-in-buffer(item &optional buffer)
+  "Jumps to ITEM in buffer. ITEM must be propertized with a property `pos'."
+  (when-let ((pos (js-import-get-prop item 'pos)))
+    (js-import-highlight-word :pos pos :buffer buffer :jump t)
+    (recenter-top-bottom)
+    item))
 
 (defun js-import-jump-to-definition(&optional real-name)
   "Find a file when cursor are placed under stringified path."
@@ -2272,7 +2278,9 @@ Result depends on syntax table's string quote character."
               (recenter-top-bottom))))))))
 
 (defun js-import-try-find-definition(item)
-  (let* ((export-item (js-import-find-in-exports item (js-import-get-prop item 'real-path)))
+  (let* ((export-item (if (js-import-get-prop item 'external-path)
+                          item
+                        (js-import-find-in-exports item (js-import-get-prop item 'real-path))))
          (import-item)
          (definition-item))
     (while (and export-item
@@ -2313,7 +2321,7 @@ Result depends on syntax table's string quote character."
                          (setq import-item (js-import-propertize import-item 'real-path real-path))
                          (setq definition-item (js-import-try-find-definition import-item))
                          definition-item)))))
-          definition-item)))))
+          (or definition-item export-item))))))
 
 (defun js-import-find-in-exports(item path)
   (let* ((exports (or (js-import-extract-esm-exports path)
@@ -2351,9 +2359,11 @@ Result depends on syntax table's string quote character."
                                           (js-import-search-backward-identifiers)))
          (sources (list (js-import-build-symbols-source "imports" imports)
                         (js-import-build-symbols-source "exports" exports)
-                        (js-import-build-symbols-source "scoped defs" visible-defs)
+                        (js-import-build-symbols-source "visible symbols" visible-defs)
                         (js-import-build-symbols-source "all defs" top-definitions))))
-    (helm :sources sources)))
+    (helm
+     :preselect (js-import-preselect-symbol)
+     :sources sources)))
 
 (defun js-import--print-item(item)
   (unless (null item)
