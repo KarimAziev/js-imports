@@ -410,15 +410,6 @@ Run all sources defined in option `js-import-files-source'."
             (format "relative to %s" (replace-regexp-in-string (js-import-slash dir) "" buffer-file-name))
           "relative files")))))
 
-(defun js-import-init-project-files()
-  "Init project files."
-  (setq js-import-current-buffer (current-buffer))
-  (setq js-import-current-project-root (js-import-find-project-root))
-  (setq js-import-aliases (js-import-get-aliases js-import-current-project-root))
-  (when (and js-import-current-alias
-             (not (member js-import-current-alias js-import-aliases)))
-    (setq js-import-current-alias nil)))
-
 (defun js-import-find-project-files()
   "Return project files without dependencies."
   (let* ((root (js-import-slash (js-import-find-project-root)))
@@ -928,7 +919,7 @@ and default section is `dependencies'"
   (let (sources)
     (push (helm-make-source "Imported" 'js-import-source-imported-symbols)
           sources)
-    (push (helm-make-source "Exports" 'js-import-source-symbols-in-path)
+    (push (helm-make-source "JS import exports" 'js-import-source-symbols-in-path)
           sources)
     (helm :sources sources)))
 
@@ -983,6 +974,17 @@ and default section is `dependencies'"
   (let (sources)
     (push (helm-make-source "Exports" 'js-import-source-exported-symbols) sources)
     (push (helm-make-source "Imports" 'js-import-source-imported-symbols) sources)
+    (helm
+     :preselect (js-import-preselect-symbol)
+     :sources sources)))
+
+;;;###autoload
+(defun js-import-show-symbols()
+  (interactive)
+  (let* ((visible-defs (js-import-search-backward-identifiers))
+         (sources (list (helm-make-source "JS Imports" 'js-import-source-imported-symbols)
+                        (helm-make-source "JS Exports" 'js-import-source-exported-symbols)
+                        (js-import-build-symbols-source "Visible definitions" visible-defs))))
     (helm
      :preselect (js-import-preselect-symbol)
      :sources sources)))
@@ -1441,8 +1443,10 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
       (with-syntax-table js-import-mode-syntax-table
         (let (comments)
           (goto-char pos)
-          (while (re-search-forward "\\(/\\*\\)\\|\\(//\\)" nil t 1)
-            (if (js-import-inside-string-p)
+          (while (re-search-forward "\\(/\\*\\)\\|\\(//\\)\\|[\"'`]" nil t 1)
+            (if (save-excursion
+                  (backward-char)
+                  (looking-at "[\"'`]"))
                 (js-import-skip-string)
               (save-excursion
                 (backward-char 1)
@@ -1482,6 +1486,9 @@ Without argument KEEP-COMMENTS content will inserted without comments."
     (unless keep-comments (js-import-remove-comments))))
 
 (defun js-import-get-buffer-content-no-comments(&optional beg end)
+  (js-import-buffer-substring-no-comments beg end))
+
+(defun js-import-buffer-substring-no-comments(&optional beg end)
   (unless beg (setq beg (point-min)))
   (unless end (setq end (point-max)))
   (let ((content (buffer-substring-no-properties beg end)))
@@ -1511,6 +1518,7 @@ Without argument KEEP-COMMENTS content will inserted without comments."
 (defun js-import-extract-esm-exports(&optional path)
   "Return exports in PATH defined with ES Module syntax."
   (with-temp-buffer
+    (erase-buffer)
     (js-import-insert-buffer-or-file path)
     (save-excursion
       (goto-char (point-min))
@@ -1518,8 +1526,7 @@ Without argument KEEP-COMMENTS content will inserted without comments."
         (with-syntax-table js-import-mode-syntax-table
           (while (re-search-forward js-import-regexp-export-keyword nil t 1)
             (let (display-path exports)
-              (unless (or (js-import-inside-comment-p)
-                          (js-import-inside-string-p))
+              (unless (js-import-inside-string-p)
                 (save-excursion
                   (if (looking-at-p js-import-delcaration-keywords--re)
                       (setq display-path path)
@@ -1575,9 +1582,20 @@ Without argument KEEP-COMMENTS content will inserted without comments."
                                    (next-path (js-import-path-to-real module-path curr-dir)))
                          (setq symbols (append symbols (js-import-extract-cjs-exports next-path)))))
                       ((looking-at-p "=\\([\s\t]+?\\){")
-                       (when-let ((items (js-import-extract-cjs-exports-in-brackets path display-path)))
+                       (re-search-forward "=\\([\s\t]+?\\)" nil t 1)
+                       (when-let ((items (js-import-parse-object-keys)))
+                         (setq items (mapcar (lambda(cell) (let ((name (car cell)) )
+                                                        (js-import-make-index-item name
+                                                                                   :pos (cdr cell)
+                                                                                   :type 4
+                                                                                   :external-name name
+                                                                                   :external-path display-path
+                                                                                   :real-path path
+                                                                                   :display-path display-path
+                                                                                   :real-name name)))
+                                             items))
                          (setq exports (append exports items)))
-                       (re-search-forward "}"))
+                       (forward-list))
                       ((looking-at-p js-import-regexp-name-set)
                        (when-let ((name (js-import-cjs-extract-named-or-default-export path display-path)))
                          (push name exports)))
@@ -1592,71 +1610,125 @@ Without argument KEEP-COMMENTS content will inserted without comments."
             (forward-line 1)))
         symbols))))
 
-(defun js-import-extract-cjs-exports-in-brackets(&optional real-path display-path)
-  "Extracts exports beetween brackets."
-  (save-restriction
-    (let (p1 p2 stack)
-      (progn
-        (re-search-forward "{" nil t 1)
-        (backward-char)
-        (setq p1 (point))
-        (forward-list)
-        (setq p2 (point))
-        (narrow-to-region p1 p2)
-        (goto-char p1)
-        (setq stack (reverse (js-import-parse-object-keys p2)))
-        (setq stack (mapcar (lambda(cell) (let ((name (car cell))
-                                           (pos (cdr cell)))
-                                       (js-import-make-index-item name
-                                                                  :pos pos
-                                                                  :type 4
-                                                                  :external-name name
-                                                                  :external-path display-path
-                                                                  :real-path real-path
-                                                                  :display-path display-path
-                                                                  :real-name name)))
-                            stack))
-        (forward-char))
-      stack)))
-
 (defun js-import-extract-exports-in-brackets(real-path &optional display-path)
   "Extracts exports beetween brackets."
-  (let (p1 p2 item items real-name full-name external-name external-pos)
+  (save-excursion
+    (save-restriction
+      (let (p1 p2 item items real-name full-name external-name external-pos)
     (setq p1 (1+ (point)))
     (save-excursion (re-search-forward "}" nil t 1)
                     (setq p2 (- (point) 1)))
     (narrow-to-region p1 p2)
     (goto-char p1)
     (while (re-search-forward js-import-regexp-name-set nil t 1)
-      (unless (js-import-inside-comment-p)
-        (setq p1 (match-beginning 0))
-        (goto-char p1)
-        (setq external-pos (point))
-        (setq external-name (js-import-which-word))
-        (skip-chars-forward js-import-regexp-name)
-        (setq p2 (point))
-        (skip-chars-forward " \s\t\n")
-        (when (looking-at-p "as[ \s\t\n]")
-          (progn
-            (re-search-forward "as[ \s\t\n]" nil t 1)
-            (setq p1 (point))
-            (setq real-name (js-import-which-word))
-            (skip-chars-forward js-import-regexp-name)
-            (setq p2 (point))))
-        (setq full-name (string-trim (buffer-substring-no-properties p1 p2)))
-        (setq item (js-import-make-index-item
-                    full-name
-                    :type 4
-                    :real-name (or real-name external-name)
-                    :external-pos external-pos
-                    :external-name external-name
-                    :external-path display-path
-                    :display-path display-path
-                    :real-path real-path
-                    :pos p1))
-        (push item items)))
-    (widen)
-    (reverse items)))
+      (setq p1 (match-beginning 0))
+      (goto-char p1)
+      (setq external-pos (point))
+      (setq external-name (js-import-which-word))
+      (skip-chars-forward js-import-regexp-name)
+      (setq p2 (point))
+      (skip-chars-forward " \s\t\n")
+      (when (looking-at-p "as[ \s\t\n]")
+        (progn
+          (re-search-forward "as[ \s\t\n]" nil t 1)
+          (setq p1 (point))
+          (setq real-name (js-import-which-word))
+          (skip-chars-forward js-import-regexp-name)
+          (setq p2 (point))))
+      (setq full-name (string-trim (buffer-substring-no-properties p1 p2)))
+      (setq item (js-import-make-index-item
+                  full-name
+                  :type 4
+                  :real-name (or real-name external-name)
+                  :external-pos external-pos
+                  :external-name external-name
+                  :external-path display-path
+                  :display-path display-path
+                  :real-path real-path
+                  :pos p1))
+      (push item items))
+    (reverse items)))))
+
+(defun js-import-parse-object-keys()
+  "Return object keys at point."
+  (save-excursion
+    (let (start end children)
+      (when (looking-at-p "{")
+        (setq start (point))
+        (forward-list)
+        (setq end (point))
+        (goto-char start)
+        (forward-char))
+      (unless (or (null start) (null end))
+        (save-excursion
+          (save-restriction
+            (narrow-to-region (1+ start) (1- end))
+            (while (re-search-forward (concat js-import-regexp-name-set "[\s\t\n]*[:(,]") nil t 1)
+              (let (prop delimiter)
+                (setq delimiter (char-before))
+                (save-excursion
+                  (backward-char)
+                  (skip-chars-backward "\s\t\n")
+                  (setq prop (js-import-get-word-if-valid))
+                  (when prop
+                    (skip-chars-backward prop)
+                    (push (cons prop (point)) children)))
+                (cond ((char-equal delimiter ?:)
+                       (skip-chars-forward "\s\t\n")
+                       (when (looking-at-p js-import-regexp-name-set)
+                         (skip-chars-forward js-import-regexp-name)
+                         (skip-chars-forward "\s\t\n."))
+                       (when (looking-at-p "=>")
+                         (forward-char 2)
+                         (skip-chars-forward "\s\t\n"))
+                       (if (looking-at-p "[({[]")
+                           (progn
+                             (while (looking-at-p "[({[]")
+                               (forward-list)
+                               (skip-chars-forward "\s\t\n")
+                               (when (looking-at-p "=>")
+                                 (forward-char 2))
+                               (skip-chars-forward "\s\t\n.")
+                               (skip-chars-forward js-import-regexp-name)))
+                         (re-search-forward "," nil t 1)))
+                      ((char-equal delimiter ?\()
+                       (backward-char)
+                       (forward-list)
+                       (skip-chars-forward "\s\t\n")
+                       (forward-list)
+                       (forward-char))
+                      ((char-equal delimiter ?,)
+                       (progn
+                         (save-excursion
+                           (skip-chars-forward "\s\t\n")
+                           (when-let ((word (js-import-get-word-if-valid))
+                                      (pos (point)))
+                             (skip-chars-forward word)
+                             (skip-chars-forward "\s\t\n")
+                             (push (cons word pos) children)))))))))))
+      (when children (reverse (cl-remove 'null children))))))
+
+(defun js-import-parse-destructive()
+  "Return object values."
+  (save-excursion
+    (let (start end parent children)
+      (when (looking-at-p "{")
+        (setq start (point))
+        (forward-list)
+        (setq end (point))
+        (when (looking-at-p "[\s\t\n]*=[\s\t\n]*")
+          (save-excursion
+            (re-search-forward "[\s\t\n]*=[\s\t\n]*" nil t 1)
+            (setq parent (js-import-which-word)))))
+      (save-excursion
+        (save-restriction
+          (narrow-to-region (1+ start) (1- end))
+          (skip-chars-backward "},\s\t\n")
+          (push (js-import-maybe-make-child-at-point parent) children)
+          (while (re-search-backward "," nil t 1)
+            (skip-chars-backward "},\s\t\n")
+            (push (js-import-maybe-make-child-at-point parent) children))))
+      (cl-remove 'null children))))
 
 (defun js-import-cjs-extract-named-or-default-export(real-path &optional display-path)
   "Returns propertizied named or default export."
@@ -1839,6 +1911,18 @@ See also function `js-import-propertize'."
     (float (number-to-string x))
     (t (format "%s" x))))
 
+(defun js-import-forward-name ()
+  (skip-chars-forward js-import-regexp-name))
+
+(defun js-import-backward-name ()
+  (skip-chars-backward js-import-regexp-name))
+
+(defun js-import-get-word-if-valid()
+  "Return word at point if it is valid and not reservered, otherwise nil."
+  (when-let* ((word (js-import-which-word))
+              (valid (js-import-valid-identifier-p word)))
+    word))
+
 (defun js-import-which-word (&optional regexp)
   "Find closest to point whole word."
   (interactive)
@@ -1922,10 +2006,8 @@ Result depends on syntax table's string quote character."
 
 (defun js-import-skip-string()
   (with-syntax-table js-import-mode-syntax-table
-    (when-let ((str-char (js-import-inside-string-p)))
-      (setq str-char (string str-char))
-      (re-search-backward str-char nil t 1)
-      (forward-sexp))))
+    (while (js-import-inside-string-p)
+      (forward-char))))
 
 (defun js-import-inside-comment-p ()
   "Return value of comment character in syntax table's or nil otherwise."
@@ -1995,34 +2077,6 @@ Result depends on syntax table's string quote character."
                 (funcall fn xs))
               (reverse funcs) arg))
 
-(defun js-import-parse-object-keys(end)
-  "Return object keys."
-  (let (stack)
-    (while (and (< (point) end)
-                (re-search-forward (concat js-import-regexp-name-set "+[(,:]") nil t 1))
-      (when (save-excursion
-              (backward-char)
-              (looking-at-p "("))
-        (backward-char))
-      (unless (js-import-inside-comment-p)
-        (save-excursion
-          (backward-char)
-          (when-let  ((word (js-import-which-word)))
-            (push (cons word (- (point) (length word))) stack))))
-      (unless (save-excursion
-                (backward-char)
-                (looking-at-p ","))
-        (skip-chars-forward "\s\t\n")
-        (while (not (or (looking-at-p ",")
-                        (looking-at-p "[ \s\t\n]+}")))
-          (forward-sexp))))
-    (when (looking-at-p (concat ",[\s\t\n]+" js-import-regexp-name-set "*[\s\t\n]}"))
-      (skip-chars-forward ",\s\t\n")
-      (when-let  ((word (js-import-which-word)))
-        (unless (js-import-invalid-name-p word)
-          (push (cons word (point)) stack))))
-    stack))
-
 (defun js-import-maybe-make-child-at-point(&optional parent)
   (when-let ((valid-id (js-import-get-word-if-valid)))
     (skip-chars-backward valid-id)
@@ -2031,28 +2085,6 @@ Result depends on syntax table's string quote character."
                                :real-name valid-id
                                :parent parent
                                :local-name valid-id)))
-
-(defun js-import-parse-destructive()
-  "Return object keys."
-  (save-excursion
-    (let (start end parent children)
-      (when (looking-at-p "{")
-        (setq start (point))
-        (forward-list)
-        (setq end (point))
-        (when (looking-at-p "[\s\t\n]*=[\s\t\n]*")
-          (save-excursion
-            (re-search-forward "[\s\t\n]*=[\s\t\n]*" nil t 1)
-            (setq parent (js-import-which-word)))))
-      (save-excursion
-        (save-restriction
-          (narrow-to-region (1+ start) (1- end))
-          (skip-chars-backward "},\s\t\n")
-          (push (js-import-maybe-make-child-at-point parent) children)
-          (while (re-search-backward "," nil t 1)
-            (skip-chars-backward "},\s\t\n")
-            (push (js-import-maybe-make-child-at-point parent) children))))
-      (cl-remove 'null children))))
 
 (cl-defun js-import-highlight-word(&key pos limit buffer face secs jump)
   "Jumps to BEG and highlight word at point."
@@ -2080,38 +2112,6 @@ Result depends on syntax table's string quote character."
                                                          (overlayp o))
                                                 (delete-overlay o)))
                         overlay)))))
-
-(defun js-import-previous-declaration-or-skope(&optional content pos)
-  (interactive)
-  (ignore-errors
-    (unless pos (setq pos (point)))
-    (unless content (setq content (js-import-get-buffer-content-no-comments)))
-    (let (declaration-start scope-start scope-end winner)
-      (with-temp-buffer
-        (insert content)
-        (goto-char pos)
-        (js-import-skip-string)
-        (save-excursion (when (re-search-backward (regexp-opt (list "]" "}" ")")) nil t 1)
-                          (forward-char)
-                          (setq scope-end (point))
-                          (backward-list)
-                          (setq scope-start (point))
-                          (skip-chars-backward "\s\t\n,")
-                          (while (looking-back (regexp-opt (list "]" "}" ")")) 1)
-                            (backward-list)
-                            (setq scope-start (point))
-                            (skip-chars-backward "\s\t\n,"))))
-        (save-excursion (when (re-search-backward js-import-delcaration-keywords--re nil t 1)
-                          (if (js-import-inside-string-p)
-                              (progn (js-import-skip-string)
-                                     (backward-sexp))
-                            (setq declaration-start (point))))))
-      (when declaration-start
-        (setq winner (if (and scope-start scope-end
-                              (< scope-start declaration-start) (> scope-end declaration-start))
-                         scope-start
-                       declaration-start)))
-      (when winner (goto-char winner)))))
 
 (defun js-import-next-declaration-or-scope(&optional content pos)
   (interactive)
@@ -2149,18 +2149,41 @@ Result depends on syntax table's string quote character."
                      (setq declaration-start (point)))))))
       (if declaration-start
           (setq winner (if (and scope-start scope-end
-                                (or (and (< scope-start declaration-start) (> scope-end declaration-start))
+                                (or (and (< scope-start declaration-start)
+                                         (> scope-end declaration-start))
                                     (> declaration-depth depth)))
                            scope-end
                          declaration-start))
         (setq winner scope-end))
       (when winner (goto-char winner)))))
 
-(defun js-import-get-word-if-valid()
-  "Return word at point if it is valid and not reservered, otherwise nil."
-  (when-let* ((word (js-import-which-word))
-              (valid (js-import-valid-identifier-p word)))
-    word))
+(defun js-import-previous-declaration-or-skope(&optional content pos)
+  (interactive)
+  (unless content (setq content (js-import-get-buffer-content-no-comments)))
+  (unless pos (setq pos (point)))
+  (let (declaration-start scope-start scope-end winner)
+    (with-temp-buffer (insert content)
+                      (goto-char pos)
+                      (save-excursion (when (re-search-backward (regexp-opt (list "]" "}" ")")) nil t 1)
+                                        (forward-char)
+                                        (setq scope-end (point))
+                                        (backward-list)
+                                        (setq scope-start (point))
+                                        (skip-chars-backward "\s\t\n,")
+                                        (while (looking-back (regexp-opt (list "]" "}" ")")) 1)
+                                          (backward-list)
+                                          (setq scope-start (point))
+                                          (skip-chars-backward "\s\t\n,"))))
+                      (save-excursion (when (and (re-search-backward js-import-delcaration-keywords--re nil t 1)
+                                                 (not (js-import-inside-string-p)))
+                                        (unless (js-import-inside-string-p)
+                                          (setq declaration-start (point))))))
+    (if (and declaration-start scope-end scope-start)
+        (setq winner (if (> scope-end declaration-start)
+                         scope-start
+                       declaration-start))
+      (setq winner (or scope-start declaration-start)))
+    (when winner (goto-char winner))))
 
 (defun js-import-search-backward-identifiers()
   (let (init-p content)
@@ -2214,10 +2237,10 @@ Result depends on syntax table's string quote character."
     (js-import-jump-to-item-in-buffer item)
     item))
 
-(defun js-import-jump-to-item-persistent(item)
+(defun js-import-jump-to-item-persistent(export-item)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop 'pos."
-  (setq item (or (js-import-try-find-definition item) item))
-  (let ((js-buffer (get-buffer-create "*js-import persistent")))
+  (let ((item (or (js-import-try-find-definition export-item) export-item))
+        (js-buffer (get-buffer-create "*js-import*")))
     (if (and buffer-file-name (string= (js-import-get-prop item 'real-path) buffer-file-name))
         (js-import-jump-to-item-in-buffer item js-buffer)
       (cl-flet ((preview (item)
@@ -2278,9 +2301,7 @@ Result depends on syntax table's string quote character."
               (recenter-top-bottom))))))))
 
 (defun js-import-try-find-definition(item)
-  (let* ((export-item (if (js-import-get-prop item 'external-path)
-                          item
-                        (js-import-find-in-exports item (js-import-get-prop item 'real-path))))
+  (let* ((export-item (or (js-import-find-in-exports item (js-import-get-prop item 'real-path)) item))
          (import-item)
          (definition-item))
     (while (and export-item
@@ -2348,22 +2369,6 @@ Result depends on syntax table's string quote character."
                           (pos (or (js-import-get-prop item 'pos))))
                 (goto-char pos)
                 (js-import-highlight-word)))))
-
-(defun js-import-show-symbols()
-  (interactive)
-  (let* ((exports (or (js-import-extract-esm-exports buffer-file-name)
-                      (js-import-extract-cjs-exports buffer-file-name)))
-         (imports (js-import-extract-imports buffer-file-name))
-         (visible-defs (js-import-search-backward-identifiers))
-         (top-definitions (save-excursion (goto-char (point-max))
-                                          (js-import-search-backward-identifiers)))
-         (sources (list (js-import-build-symbols-source "imports" imports)
-                        (js-import-build-symbols-source "exports" exports)
-                        (js-import-build-symbols-source "visible symbols" visible-defs)
-                        (js-import-build-symbols-source "all defs" top-definitions))))
-    (helm
-     :preselect (js-import-preselect-symbol)
-     :sources sources)))
 
 (defun js-import--print-item(item)
   (unless (null item)
