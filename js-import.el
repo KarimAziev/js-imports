@@ -1476,9 +1476,10 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
   "Call a function `js-import-insert-import' with marked candidates."
   (mapc 'js-import-insert-import (helm-marked-candidates)))
 
-(defun js-import-insert-import-as(candidate)
+(defun js-import-insert-import-as(_item)
   "Insert and renames CANDIDATE into existing or new import statement."
-  (let* ((type (js-import-get-prop candidate 'type))
+  (let* ((candidate (helm-get-selection nil 'withprop))
+         (type (js-import-get-prop candidate 'type))
          (normalized-path (js-import-get-prop candidate 'display-path))
          (real-name (or (js-import-get-prop candidate 'real-name) candidate))
          (renamed-name (car (split-string
@@ -2580,9 +2581,11 @@ Result depends on syntax table's string quote character."
                 (goto-char pos)
                 (js-import-highlight-word)))))
 
-(defun js-import--print-item(item)
+(defun js-import--print-item(item &optional label)
   (unless (null item)
-    (message (js-import--format-item-props item))))
+    (if label
+        (message (concat label "\s" (js-import--format-item-props item)))
+      (message (js-import--format-item-props item)))))
 
 (defun js-import--format-item-props(item)
   (when item (let ((props '(real-name
