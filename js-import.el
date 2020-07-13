@@ -1604,7 +1604,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                         (let* ((content (buffer-substring-no-properties
                                          (point-min)
                                          (point-max)))
-                               (vect (make-vector (length content) ""))
+                               (vect (make-vector (1+ (length content)) ""))
                                (replacement (append vect nil)))
                           (mapconcat 'identity replacement "\s")))))
         (replace-region-contents p1 p2 replace)))))
@@ -2424,11 +2424,11 @@ Result depends on syntax table's string quote character."
     (setq init-p (point))
     (setq parens (nth 9 (syntax-ppss init-p)))
     (setq content (buffer-substring-no-properties (point-min) (point-max)))
+    (setq ids (js-import-extract-parent-arguments parens))
     (with-temp-buffer
       (insert content)
       (js-import-remove-comments)
       (goto-char init-p)
-      (setq ids (js-import-extract-parent-arguments parens))
       (setq content (buffer-substring-no-properties (point-min) (point-max)))
       (save-excursion
         (while (js-import-previous-declaration-or-skope content)
