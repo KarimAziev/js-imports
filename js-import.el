@@ -2103,8 +2103,7 @@ See also function `js-import-propertize'."
         (when (< p1 (point))
           (goto-char p1))
         (setq word (buffer-substring-no-properties p1 p2))
-        word)))
-  )
+        word))))
 
 (defun js-import-looking-at(str &optional regexp)
   (when-let ((word (js-import-which-word regexp)))
@@ -2332,40 +2331,6 @@ Result depends on syntax table's string quote character."
         (setq winner scope-end))
       (when winner (goto-char winner)))))
 
-(defun js-import-previous-declaration-or-skope(&optional content pos)
-  (interactive)
-  (unless content (setq content (js-import-get-buffer-content-no-comments)))
-  (unless pos (setq pos (point)))
-  (let (declaration-start scope-start scope-end winner closed-parens-re)
-    (setq closed-parens-re (regexp-opt (list "]" "}" ")")))
-    (with-temp-buffer
-      (insert content)
-      (goto-char pos)
-      (with-syntax-table js-import-mode-syntax-table
-        (save-excursion
-          (when (js-import-re-search-backward closed-parens-re nil t 1)
-            (forward-char)
-            (setq scope-end (point))
-            (backward-list)
-            (setq scope-start (point))
-            (skip-chars-backward "\s\t\n,")
-            (while (looking-back closed-parens-re 1)
-              (backward-list)
-              (setq scope-start (point))
-              (skip-chars-backward "\s\t\n,"))))
-        (save-excursion
-          (when (and (js-import-re-search-backward
-                      js-import-delcaration-keywords--re nil t 1)
-                     (not (js-import-inside-string-p)))
-            (unless (js-import-inside-string-p)
-              (setq declaration-start (point)))))))
-    (if (and declaration-start scope-end scope-start)
-        (setq winner (if (> scope-end declaration-start)
-                         scope-start
-                       declaration-start))
-      (setq winner (or scope-start declaration-start)))
-    (when winner (goto-char winner))))
-
 (defun js-import-extract-parent-arguments(&optional parens-positions)
   (save-excursion
     (let ((open-parens (or parens-positions (nth 9 (syntax-ppss (point)))))
@@ -2417,16 +2382,54 @@ Result depends on syntax table's string quote character."
                 (setq children (append children items)))))
       children)))
 
-(defun js-import-search-backward-identifiers()
-  (let (init-p content ids)
-    (setq init-p (point))
-    (setq content (buffer-substring-no-properties (point-min) (point-max)))
+(defun js-import-previous-declaration-or-skope(&optional pos)
+  (interactive)
+  (unless pos (setq pos (point)))
+  (let (declaration-start scope-start scope-end winner closed-parens-re)
+    (setq closed-parens-re (regexp-opt (list "]" "}" ")")))
+    (with-syntax-table js-import-mode-syntax-table
+      (goto-char pos)
+      (when (js-import-re-search-backward closed-parens-re nil t 1)
+        (let ((parse (syntax-ppss (point))))
+          (setq scope-end (1+ (point)))
+          (when (nth 1 parse)
+            (setq scope-start (point))
+            (skip-chars-backward "\s\t\n,")
+            (while (nth 1 (syntax-ppss (point)))
+              (goto-char (nth 1 (syntax-ppss (point))))
+              (setq scope-start (point))
+              (skip-chars-backward "\s\t\n,"))))))
+    (with-syntax-table js-import-mode-syntax-table
+      (goto-char pos)
+      (when (and (js-import-re-search-backward
+                  js-import-delcaration-keywords--re nil t 1)
+                 (not (js-import-inside-string-p)))
+        (unless (js-import-inside-string-p)
+          (setq declaration-start (point)))))
+    (goto-char pos)
+    (if (and declaration-start scope-end scope-start)
+        (setq winner (if (> scope-end declaration-start)
+                         scope-start
+                       declaration-start))
+      (setq winner (or scope-start declaration-start)))
+    (when winner (goto-char winner))))
+
+(defun js-import-search-backward-identifiers(&optional path position)
+  "Extract visible on POSITION declarations in PATH.
+By default PATH is taken from a variable `buffer-file-name'.
+Default value for POSITION also current point position."
+  (unless path (setq path buffer-file-name))
+  (unless position (setq position (if (string= path buffer-file-name)
+                                      (point)
+                                    (point-max))))
+  (let (ids)
     (with-temp-buffer
-      (insert content)
-      (goto-char init-p)
-      (setq content (buffer-substring-no-properties (point-min) (point-max)))
-      (save-excursion
-        (while (js-import-previous-declaration-or-skope content)
+      (erase-buffer)
+      (with-syntax-table js-import-mode-syntax-table
+        (js-import-insert-buffer-or-file path)
+        (goto-char position)
+        (skip-chars-forward js-import-regexp-name)
+        (while (js-import-previous-declaration-or-skope)
           (when-let ((token-p (looking-at js-import-delcaration-keywords--re))
                      (token (js-import-which-word)))
             (save-excursion
@@ -2448,7 +2451,7 @@ Result depends on syntax table's string quote character."
                         (save-excursion
                           (forward-list)
                           (when (looking-at-p "[\s\t\n]*=[\s\t\n]*")
-                            (re-search-forward "[\s\t\n]*=[\s\t\n]*" nil t 1)
+                            (js-import-re-search-forward "[\s\t\n]*=[\s\t\n]*" nil t 1)
                             (setq parent (js-import-which-word))))
                         (setq children (js-import-parse-destructive))
                         (setq children (mapcar
@@ -2515,35 +2518,44 @@ Result depends on syntax table's string quote character."
     (recenter-top-bottom)
     item))
 
-(defun js-import-jump-to-definition(&optional real-name)
-  "Find a file when cursor are placed under stringified path."
+(defun js-import-jump-to-definition()
+  "Deep jump to a definition of symbol at point through renaming, re-exports."
   (interactive)
-  (unless real-name (setq real-name (js-import-which-word)))
-  (when (js-import-valid-identifier-p real-name)
-    (let* ((buffer-items (js-import-search-backward-identifiers))
-           (definition
-             (js-import-find-by-prop 'real-name real-name buffer-items)))
-      (if definition
-          (progn
-            (goto-char (js-import-get-prop definition 'pos))
-            (js-import-highlight-word)))
-      (progn
-        (when-let* ((item (js-import-find-by-prop
-                           'local-name real-name
-                           (js-import-extract-imports (buffer-file-name))))
-                    (display-path (js-import-get-prop item 'display-path))
-                    (dir (or (js-import-dirname (buffer-file-name))
-                             default-directory))
-                    (real-path (js-import-path-to-real display-path dir))
-                    (type (js-import-get-prop item 'type)))
-          (setq item (js-import-propertize item 'real-path real-path))
-          (if (= type 16)
-              (find-file real-path)
-            (when-let* ((found-item (js-import-try-find-definition item)))
-              (find-file (js-import-get-prop found-item 'real-path))
-              (goto-char (js-import-get-prop found-item 'pos))
-              (js-import-highlight-word)
-              (recenter-top-bottom))))))))
+  (when-let ((real-name (js-import-get-word-if-valid)))
+    (save-excursion (skip-chars-forward real-name)
+                    (skip-chars-forward "\s\t\n")
+                    (when (looking-at (concat "as[\s\t\n]+" js-import-regexp-name-set "+"))
+                      (re-search-forward (concat "as[\s\t\n]+" ))
+                      (setq real-name (js-import-which-word))))
+    (when (js-import-valid-identifier-p real-name)
+      (let* ((buffer-items (js-import-search-backward-identifiers buffer-file-name (point)))
+             (definition
+               (js-import-find-by-prop 'real-name real-name buffer-items)))
+        (if definition
+            (progn
+              (goto-char (js-import-get-prop definition 'pos))
+              (js-import-highlight-word)))
+        (progn
+          (let* ((exports (js-import-extract-all-exports (buffer-file-name)))
+                 (export (js-import-find-by-prop 'real-name real-name exports)))
+            (js-import--print-item export real-name))
+          (when-let* ((item (or (js-import-find-by-prop
+                                 'local-name real-name
+                                 (js-import-extract-imports (buffer-file-name)))
+                                (js-import-find-by-prop 'real-name real-name (js-import-extract-all-exports (buffer-file-name)) )))
+                      (display-path (js-import-get-prop item 'display-path))
+                      (dir (or (js-import-dirname (buffer-file-name))
+                               default-directory))
+                      (real-path (js-import-path-to-real display-path dir))
+                      (type (js-import-get-prop item 'type)))
+            (setq item (js-import-propertize item 'real-path real-path))
+            (if (= type 16)
+                (find-file real-path)
+              (when-let* ((found-item (js-import-try-find-definition item)))
+                (find-file (js-import-get-prop found-item 'real-path))
+                (goto-char (js-import-get-prop found-item 'pos))
+                (js-import-highlight-word)
+                (recenter-top-bottom)))))))))
 
 (defun js-import-try-find-definition(item)
   (let* (export-item import-item definition-item)
@@ -2572,11 +2584,7 @@ Result depends on syntax table's string quote character."
                (pos (js-import-get-prop export-item 'pos))
                (name (or (js-import-get-prop export-item 'external-name)
                          (js-import-get-prop export-item 'real-name)))
-               (items (with-temp-buffer
-                        (save-excursion
-                          (js-import-insert-buffer-or-file path)
-                          (goto-char pos)
-                          (js-import-search-backward-identifiers)))))
+               (items (js-import-search-backward-identifiers path (+ (length name) pos))))
           (setq definition-item (js-import-find-by-prop 'local-name name items))
           (when definition-item (setq definition-item (js-import-propertize
                                                        definition-item
