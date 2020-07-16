@@ -1094,6 +1094,15 @@ Default section is `dependencies'"
      :preselect (js-import-preselect-symbol)
      :sources sources)))
 
+(defun js-import-build-symbols-source(name items)
+  (helm-build-sync-source name
+    :candidates items
+    :action (lambda(it)
+              (when-let* ((item (car (member it items)))
+                          (pos (or (js-import-get-prop item 'pos))))
+                (goto-char pos)
+                (js-import-highlight-word)))))
+
 (defun js-import-preselect()
   "Preselect function for file sources."
   (if  (and (> (point-max) (point))
@@ -1102,8 +1111,7 @@ Default section is `dependencies'"
                          js-import-current-export-path)))
       (regexp-quote (or (js-import-get-path-at-point)
                         js-import-last-export-path
-                        js-import-current-export-path))
-    ""))
+                        js-import-current-export-path)) ""))
 
 (defun js-import-preselect-symbol()
   "Preselect function for symbols."
@@ -2440,7 +2448,7 @@ Default value for POSITION also current point position."
                      (token (js-import-which-word)))
             (save-excursion
               (skip-chars-forward token)
-              (skip-chars-forward "\s\t\n")
+              (skip-chars-forward "\s\t\n*")
               (when-let* ((word (js-import-which-word))
                           (pos (point)))
                 (if (js-import-valid-identifier-p word)
@@ -2646,15 +2654,6 @@ Default value for POSITION also current point position."
                             (js-import-get-prop item 'real-name))))))
     (when (and id-prop id-value)
       (or (js-import-find-by-prop id-prop id-value exports) default))))
-
-(defun js-import-build-symbols-source(name items)
-  (helm-build-sync-source name
-    :candidates items
-    :action (lambda(it)
-              (when-let* ((item (car (member it items)))
-                          (pos (or (js-import-get-prop item 'pos))))
-                (goto-char pos)
-                (js-import-highlight-word)))))
 
 (defun js-import--print-item(item &optional label)
   (unless (null item)
