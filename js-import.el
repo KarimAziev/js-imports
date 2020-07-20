@@ -2303,7 +2303,7 @@ Result depends on syntax table's string quote character."
                      js-import-delcaration-keywords--re nil t 1)
                     (when (looking-at js-import-delcaration-keywords--re)
                       (skip-chars-forward (js-import-which-word))
-                      (skip-chars-forward "\s\t\n")
+                      (skip-chars-forward "\s\t\n*")
                       (setq parent (js-import-get-word-if-valid)))))
             (when parent (when (looking-back "=>" 1)
                            (backward-char 2)
