@@ -1688,7 +1688,9 @@ File is specified in the variable `js-import-current-export-path.'."
                              (js-import-extract-cjs-exports path)))
               (setq symbols (append (car result) symbols))
               (when-let ((external-path (cdr result)))
-                (push external-path external-paths)))))))
+                (unless (or (member external-path processed-paths)
+                            (member external-path external-paths))
+                  (push external-path external-paths))))))))
     (reverse symbols)))
 
 (defun js-import-extract-cjs-exports(path)
