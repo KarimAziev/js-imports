@@ -70,7 +70,7 @@
   :type '(repeat string))
 
 (defcustom js-import-node-modules-priority-section-to-read
-  '("jsnext:main" "module" "types")
+  '("jsnext:main" "module" "types" "typings" "main")
   "Package-json sections to retrieve candidates from node_modules."
   :group 'js-import
   :type '(repeat string))
@@ -877,9 +877,9 @@ Default section is `dependencies'"
         (setq section nil)))
     section))
 
-(defun js-import-join-when-exists(path filename)
-  "Return joined PATH with FILENAME when exists."
-  (let ((joined-path (and path filename (js-import-join-file path filename))))
+(defun js-import-join-when-exists(&rest args)
+  "Return joined ARGS when exists."
+  (let ((joined-path (apply 'js-import-join-file args)))
     (when (file-exists-p joined-path)
       joined-path)))
 
@@ -1294,7 +1294,7 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                                                 imports))
       (setq exports (if imports (js-import-filter-exports candidates imports)
                       candidates))
-      (setq exports (cl-remove-duplicates exports :test 'string=))
+      (setq exports (cl-remove-duplicates exports))
       (setq exports (mapcar (lambda(c) (js-import-propertize
                                    c 'display-path
                                    js-import-current-export-path))
@@ -2493,45 +2493,41 @@ Default value for POSITION also current point position."
     (js-import-jump-to-item-in-buffer item)
     item))
 
-(defun js-import-jump-to-item-persistent(export-item)
+(defun js-import-jump-to-item-persistent(item)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop 'pos."
-  (let ((item (or (js-import-try-find-definition export-item) export-item))
-        (js-buffer (get-buffer-create "*helm-js-import*")))
-    (if (and buffer-file-name (string= (js-import-get-prop item 'real-path)
-                                       buffer-file-name))
-        (js-import-jump-to-item-in-buffer item js-buffer)
-      (cl-flet ((preview (item)
-                         (when-let ((item-path (or (js-import-get-prop
-                                                    item
-                                                    'real-path)
-                                                   (js-import-path-to-real
-                                                    (js-import-get-prop
-                                                     item
-                                                     'display-path)
-                                                    default-directory))))
-                           (switch-to-buffer-other-window js-buffer)
-                           (setq inhibit-read-only t)
-                           (erase-buffer)
-                           (js-import-insert-buffer-or-file item-path)
-                           (let ((buffer-file-name item-path))
-                             (set-auto-mode))
-                           (font-lock-ensure)
-                           (setq inhibit-read-only nil)
-                           (js-import-jump-to-item-in-buffer item js-buffer))))
-        (if (and (helm-attr 'previewp)
-                 (string= item (helm-attr 'current-candidate)))
-            (progn
-              (kill-buffer js-buffer)
-              (helm-attrset 'previewp nil))
-          (preview item)
-          (helm-attrset 'previewp t))))
-    item))
+  (let ((js-buffer (get-buffer-create "*helm-js-import*")))
+    (cl-flet ((preview (item)
+                       (setq item (js-import-try-find-definition item))
+                       (when-let ((item-path (or
+                                              (js-import-get-prop
+                                               item
+                                               'real-path)))
+                                  (pos (js-import-get-prop
+                                        item
+                                        'pos)))
+                         (switch-to-buffer-other-window js-buffer)
+                         (setq inhibit-read-only t)
+                         (erase-buffer)
+                         (js-import-insert-buffer-or-file item-path)
+                         (let ((buffer-file-name item-path))
+                           (set-auto-mode))
+                         (goto-char pos)
+                         (js-import-highlight-word)
+                         (font-lock-ensure)
+                         (setq inhibit-read-only nil))))
+      (if (and (helm-attr 'previewp)
+               (equal item (helm-attr 'current-candidate)))
+          (progn
+            (kill-buffer js-buffer)
+            (helm-attrset 'previewp nil))
+        (preview item)
+        (helm-attrset 'previewp t)))
+    (helm-attrset 'current-candidate item)))
 
 (defun js-import-jump-to-item-in-buffer(item &optional buffer)
   "Jumps to ITEM in buffer. ITEM must be propertized with a property `pos'."
   (when-let ((pos (js-import-get-prop item 'pos)))
     (js-import-highlight-word :pos pos :buffer buffer :jump t)
-    (recenter-top-bottom)
     item))
 
 (defun js-import-jump-to-definition()
@@ -2586,8 +2582,7 @@ Default value for POSITION also current point position."
               (progn
                 (find-file (js-import-get-prop found-item 'real-path))
                 (goto-char (js-import-get-prop found-item 'pos))
-                (js-import-highlight-word)
-                (recenter-top-bottom)))))))))
+                (js-import-highlight-word)))))))))
 
 (defun js-import-try-find-definition(item)
   (let* (export-item import-item definition-item)
@@ -2644,12 +2639,9 @@ Default value for POSITION also current point position."
 (defun js-import-find-in-exports(item path &optional default)
   (let* ((exports (js-import-extract-all-exports path))
          (type (js-import-get-prop item 'type))
-         (external-name (js-import-get-prop item 'external-name))
-         (external-default (when external-name (string= external-name
-                                                        "default")))
          (id-prop (pcase type
                     (1 'type)
-                    (4 (if external-default 'external-name 'real-name))))
+                    (4 'real-name)))
          (id-value (pcase type
                      (1 type)
                      (4 (or (js-import-get-prop item 'external-name)
@@ -2657,33 +2649,39 @@ Default value for POSITION also current point position."
     (when (and id-prop id-value)
       (or (js-import-find-by-prop id-prop id-value exports) default))))
 
-(defun js-import--print-item(item &optional label)
+(defun js-import--print(item &rest props)
   (unless (null item)
-    (if label
-        (message (concat label "\s" (js-import--format-item-props item)))
-      (message (js-import--format-item-props item)))))
+    (if (listp item)
+        (progn
+          (dotimes (idx (length item))
+            (when-let ((elem (nth idx item)))
+              (message (apply 'js-import--format elem props)))))
+      (message (apply 'js-import--format item props)))))
 
-(defun js-import--format-item-props(item)
-  (when item (let ((props '(real-name
-                            var-type
-                            display-path
-                            local-name
-                            real-path
-                            type
-                            pos
-                            external-name
-                            external-pos
-                            external-path))
-                   (print-list))
-               (mapc (lambda(prop)
-                       (when-let ((value (js-import-get-prop item prop)))
-                         (push (format "%s: %s" prop value) print-list)))
-                     props)
-               (setq print-list (reverse print-list))
-               (push (propertize item 'face 'font-lock-variable-name-face)
-                     print-list)
-               (setq print-list (mapconcat 'identity print-list "\n\s"))
-               print-list)))
+(defun js-import--format(item &rest
+                              props-keys)
+  (unless (null item)
+    (let ((props (or (seq-remove 'null props-keys)
+                     '(real-name
+                       var-type
+                       display-path
+                       local-name
+                       real-path
+                       type
+                       pos
+                       external-name
+                       external-pos
+                       external-path)))
+          (print-list))
+      (mapc (lambda(prop)
+              (when-let ((value (js-import-get-prop item prop)))
+                (push (format "%s: %s" prop value) print-list)))
+            props)
+      (setq print-list (reverse print-list))
+      (push (propertize item 'face 'font-lock-variable-name-face)
+            print-list)
+      (setq print-list (mapconcat 'identity print-list "\n\s"))
+      print-list)))
 
 (defun js-import-re-search-forward-inner (regexp &optional bound count)
   "Helper function for `js-import-re-search-forward'."
