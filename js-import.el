@@ -2651,12 +2651,30 @@ Default value for POSITION also current point position."
 
 (defun js-import--print(item &rest props)
   (unless (null item)
-    (if (listp item)
-        (progn
-          (dotimes (idx (length item))
-            (when-let ((elem (nth idx item)))
-              (message (apply 'js-import--format elem props)))))
-      (message (apply 'js-import--format item props)))))
+    (require 'which-func)
+    (let* ((label (or (which-function) ""))
+           (divider "==================================")
+           (formatted-str))
+      (setq label (upcase (replace-regexp-in-string "^js-import[-]+" "" label)))
+      (setq formatted-str
+            (if (listp item)
+                (progn
+                  (with-temp-buffer
+                    (newline-and-indent)
+                    (insert (propertize (format "%sSTART of %s%s" divider label divider) 'face 'change-log-file))
+                    (dotimes (idx (length item))
+                      (when-let ((elem (nth idx item)))
+                        (newline-and-indent)
+                        (insert (propertize (format "%s. %s in %s" idx elem label) 'face 'font-lock-variable-name-face))
+                        (newline-and-indent)
+                        (insert (apply 'js-import--format elem props))
+                        (newline-and-indent)))
+                    (insert (propertize (format "%sEND of %s%s" divider label divider) 'face 'change-log-file))
+                    (newline-and-indent)
+                    (buffer-substring (point-min) (point-max))))
+              (apply 'js-import--format item props)))
+      (when formatted-str (message formatted-str))
+      formatted-str)))
 
 (defun js-import--format(item &rest
                               props-keys)
@@ -2673,15 +2691,17 @@ Default value for POSITION also current point position."
                        external-pos
                        external-path)))
           (print-list))
-      (mapc (lambda(prop)
-              (when-let ((value (js-import-get-prop item prop)))
-                (push (format "%s: %s" prop value) print-list)))
-            props)
-      (setq print-list (reverse print-list))
-      (push (propertize item 'face 'font-lock-variable-name-face)
-            print-list)
-      (setq print-list (mapconcat 'identity print-list "\n\s"))
-      print-list)))
+      (with-temp-buffer
+        (newline-and-indent)
+        (insert (propertize (format "%s" item) 'face 'font-lock-variable-name-face))
+        (newline-and-indent)
+        (dotimes (i (length props))
+          (let* ((key (nth i props))
+                 (value (js-import-get-prop item key)))
+            (insert (propertize (format "%s: " key) 'face 'font-lock-builtin-face))
+            (insert (format "%s" (js-import-get-prop item key)))
+            (newline-and-indent)))
+        (buffer-substring (point-min) (point-max))))))
 
 (defun js-import-re-search-forward-inner (regexp &optional bound count)
   "Helper function for `js-import-re-search-forward'."
