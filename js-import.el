@@ -1071,7 +1071,6 @@ Default section is `dependencies'"
    (action :initform 'js-import-export-items-actions)
    (persistent-action
     :initform (lambda(c) (when-let ((props (js-import-display-to-real-exports c)))
-                      (js-import--print props "persistent-action")
                       (when (or (js-import-get-prop props 'pos)
                                 (js-import-get-prop props 'external-pos)
                                 (js-import-get-prop props 'definition-pos))
@@ -1114,9 +1113,8 @@ Default section is `dependencies'"
     :action (lambda(it)
               (when-let* ((item (car (member it items)))
                           (pos (or (js-import-get-prop item 'pos))))
-                (js-import--print item "SYMBOL")
                 (goto-char pos)
-                (js-import-highlight-word)))))
+                (js-import--print item)))))
 
 (defun js-import-preselect()
   "Preselect function for file sources."
@@ -2017,17 +2015,17 @@ File is specified in the variable `js-import-current-export-path.'."
                  exports))
           ((and var-type id)
            (let ((func (lambda(it) (push
-                               (js-import-make-index-item
-                                "default"
-                                :type 4
-                                :local-name it
-                                :external-name it
-                                :real-name id
-                                :real-path real-path
-                                :display-path display-path
-                                :var-type var-type
-                                :pos (point))
-                               exports))))
+                                    (js-import-make-index-item
+                                     "default"
+                                     :type 4
+                                     :local-name it
+                                     :external-name it
+                                     :real-name id
+                                     :real-path real-path
+                                     :display-path display-path
+                                     :var-type var-type
+                                     :pos (point))
+                                    exports))))
              (funcall func id)
              (js-import-skip-whitespace-forward)
              (skip-chars-forward id)
@@ -2052,8 +2050,6 @@ File is specified in the variable `js-import-current-export-path.'."
                  (skip-chars-forward ".")
                  (js-import-forward-name)
                  (js-import-skip-whitespace-forward))))))
-    (js-import--print exports)
-    (message "EXPORTS=%s" exports)
     exports))
 
 (defun js-import-extract-var-export(&optional real-path display-path)
@@ -2646,6 +2642,9 @@ Default value for POSITION also current point position."
                          (let ((buffer-file-name item-path))
                            (set-auto-mode))
                          (goto-char pos)
+                         (momentary-string-display
+                          (js-import--format item)
+                          (point))
                          (js-import-highlight-word)
                          (font-lock-ensure)
                          (setq inhibit-read-only nil))))
@@ -2661,7 +2660,6 @@ Default value for POSITION also current point position."
 (defun js-import-jump-to-item-in-buffer(item &optional buffer)
   "Jumps to ITEM in buffer. ITEM must be propertized with a property `pos'."
   (when-let ((pos (js-import-get-prop item 'pos)))
-    (js-import--print item "js-import-jump-to-item-in-buffer")
     (if (js-import-get-prop item 'real-path)
         (progn
           (js-import-jump-to-item-persistent item))
@@ -2718,9 +2716,9 @@ Default value for POSITION also current point position."
                   (find-file (js-import-get-prop found-item 'real-path))
                   (goto-char (point-min)))
               (progn
-                (find-file (js-import-get-prop found-item 'real-path))
+                (view-file (js-import-get-prop found-item 'real-path))
                 (goto-char (js-import-get-prop found-item 'pos))
-                (js-import-highlight-word)))))))))
+                (momentary-string-display (js-import--format found-item) (point))))))))))
 
 (defun js-import-try-find-definition(item)
   (let* (export-item import-item definition-item)
@@ -2791,20 +2789,16 @@ Default value for POSITION also current point position."
 (defun js-import--print(item &rest props)
   (unless (or (null item)
               (not js-import-debug))
-    (require 'which-func)
-    (let* ((label (or (which-function) ""))
+    (let* ((label)
            (divider "==================================")
            (formatted-str))
-      (when (stringp (car props))
-        (setq label (pop props)))
-      (setq label (upcase (replace-regexp-in-string "^js-import[-]+" "" label)))
       (setq formatted-str
             (if (listp item)
                 (progn
                   (with-temp-buffer
                     (newline-and-indent)
                     (insert (propertize
-                             (format "%sSTART of %s%s" divider label divider)
+                             (format "%sSTART of %s" divider divider)
                              'face
                              'change-log-file))
                     (dotimes (idx (length item))
@@ -2818,40 +2812,43 @@ Default value for POSITION also current point position."
                         (insert (apply 'js-import--format elem props))
                         (newline-and-indent)))
                     (insert (propertize
-                             (format "%sEND of %s%s" divider label divider)
+                             (format "%sEND of %s" divider divider)
                              'face 'change-log-file))
                     (newline-and-indent)
                     (buffer-substring (point-min) (point-max))))
-              (concat label "===" (apply 'js-import--format item props))))
-      (when formatted-str (message formatted-str))
-      formatted-str)))
+              (apply 'js-import--format item props)))
+      (when formatted-str (minibuffer-message formatted-str)))))
 
 (defun js-import--format(item &rest props-keys)
   (unless (null item)
-    (let ((props (or (seq-remove 'null props-keys)
-                     '(real-name
-                       var-type
-                       display-path
-                       local-name
-                       real-path
-                       type
-                       pos
-                       external-name
-                       external-pos
-                       external-path))))
+    (let* ((default-keys
+             '(real-name
+               var-type
+               display-path
+               local-name
+               real-path
+               type
+               pos
+               external-name
+               external-pos
+               external-path))
+           (labels (seq-filter (lambda(k) (not (member k default-keys))) (seq-remove 'null props-keys))))
+      (setq labels (propertize (mapconcat (lambda(it) (upcase (format "[%s]" it))) labels "-")
+                               'face
+                               'custom-invalid) )
       (with-temp-buffer
-        (newline-and-indent)
         (insert (propertize (format "%s" item) 'face
                             'font-lock-variable-name-face))
-        (newline-and-indent)
-        (dotimes (i (length props))
-          (let* ((key (nth i props))
+        (dotimes (i (length default-keys))
+          (let* ((key (nth i default-keys))
                  (value (js-import-get-prop item key)))
-            (insert (propertize (format "%s: " key)
-                                'face
-                                'font-lock-builtin-face))
-            (insert (format "%s" value))
-            (newline-and-indent)))
+            (when value
+              (insert (propertize (format "\t:%s" key)
+                                  'face
+                                  'font-lock-builtin-face))
+              (insert (format "\s%s" value)))))
+        (newline-and-indent)
+        (insert labels)
         (buffer-substring (point-min) (point-max))))))
 
 (defun js-import-re-search-forward-inner (regexp &optional bound count)
