@@ -253,6 +253,9 @@
   "_$A-Za-z0-9"
   "Regexp matching the start of a js identifier.")
 
+(defvar js-import-white-space-or-comments-re
+  "[\n\s\t]\\|\\(//[^\n]*\\)\\|\\(/[*]\\)")
+
 (defconst js-import-regexp-name-set
   (concat "[" js-import-regexp-name "]")
   "Regexp set matching the start of a js identifier.")
@@ -1962,26 +1965,100 @@ File is specified in the variable `js-import-current-export-path.'."
      :real-path real-path
      :display-path display-path)))
 
-(defun js-import-skip-reserved-words(&optional separators)
-  (unless separators (setq separators "\s\t\".='*"))
-  (let* ((stack)
-         (stop)
-         (func (lambda()
-                 (let ((w (js-import-which-word))
-                       (p (point)))
-                   (when (rassoc p stack)
-                     (setq stop t))
-                   (push (cons w p) stack)
-                   w))))
-    (while (and (js-import-reserved-word-p (funcall func))
-                (not stop))
-      (skip-chars-forward js-import-regexp-name)
-      (skip-chars-forward separators))
+(defun js-import-skip-reserved-words()
+  (let (stack)
+    (while (or
+            (and (looking-at js-import-delcaration-keywords--re)
+                 (js-import-re-search-forward js-import-delcaration-keywords--re nil t 1))
+            (and (js-import-reserved-word-p (js-import-which-word))
+                 (js-import-re-search-forward (js-import-which-word) nil t 1)))
+      (let ((word (js-import-which-word)))
+        (push (cons word (point)) stack)
+        (js-import-forward-name)
+        (js-import-skip-whitespace-forward)
+        (when (and (char-equal (char-after) ?\*))
+          (forward-char 1)
+          (js-import-skip-whitespace-forward))))
     stack))
+
+(defun js-import-extract-var-exports(&optional real-path display-path)
+  "Returns propertizied named or default export."
+  (let* ((stack (js-import-skip-reserved-words))
+         (default (assoc "default" stack))
+         (var-type (car (seq-find (lambda(it) (string-match js-import-delcaration-keywords--re
+                                                       (car-safe it)))
+                                  stack)))
+         (id (js-import-get-word-if-valid))
+         exports)
+    (setq id (js-import-get-word-if-valid))
+    (cond ((and default id)
+           (push (js-import-make-index-item
+                  id
+                  :type 1
+                  :local-name id
+                  :external-name id
+                  :real-name id
+                  :real-path real-path
+                  :display-path display-path
+                  :var-type var-type
+                  :pos (point))
+                 exports))
+          ((and default var-type (not id))
+           (push (js-import-make-index-item
+                  "default"
+                  :type 1
+                  :local-name "default"
+                  :external-name "default"
+                  :real-name id
+                  :real-path real-path
+                  :display-path display-path
+                  :var-type var-type
+                  :pos (cdr default))
+                 exports))
+          ((and var-type id)
+           (let ((func (lambda(it) (push
+                               (js-import-make-index-item
+                                "default"
+                                :type 4
+                                :local-name it
+                                :external-name it
+                                :real-name id
+                                :real-path real-path
+                                :display-path display-path
+                                :var-type var-type
+                                :pos (point))
+                               exports))))
+             (funcall func id)
+             (js-import-skip-whitespace-forward)
+             (skip-chars-forward id)
+             (when (and (looking-at "=[^=]")
+                        (js-import-re-search-forward "=[^=]" nil t 1))
+               (js-import-skip-whitespace-forward)
+               (js-import-forward-name)
+               (skip-chars-forward ".")
+               (js-import-forward-name)
+               (js-import-skip-whitespace-forward))
+             (while (looking-at ",")
+               (forward-char 1)
+               (js-import-skip-whitespace-forward)
+               (when-let ((name (js-import-get-word-if-valid)))
+                 (funcall func name)
+                 (skip-chars-forward name)
+                 (js-import-skip-whitespace-forward))
+               (when (and (looking-at "=[^=]")
+                          (js-import-re-search-forward "=[^=]" nil t 1))
+                 (js-import-skip-whitespace-forward)
+                 (js-import-forward-name)
+                 (skip-chars-forward ".")
+                 (js-import-forward-name)
+                 (js-import-skip-whitespace-forward))))))
+    (js-import--print exports)
+    (message "EXPORTS=%s" exports)
+    exports))
 
 (defun js-import-extract-var-export(&optional real-path display-path)
   "Returns propertizied named or default export."
-  (let* ((stack (js-import-skip-reserved-words "\s\t*"))
+  (let* ((stack (js-import-skip-reserved-words))
          (default (assoc "default" stack))
          (last-cons (pop stack))
          (real-name (car last-cons))
