@@ -103,7 +103,7 @@
     (define-key map (kbd "C-c C-a") 'js-import-alias)
     (define-key map (kbd "C-c C-j") 'js-import-jump-to-definition)
     (define-key map (kbd "C-.") 'js-import-find-file-at-point)
-    (define-key map (kbd "C-c C-n") 'js-import-next-declaration-or-scope)
+    (define-key map (kbd "C-c C-n") 'js-import-next-declaration)
     (define-key map (kbd "C-c C-p") 'js-import-previous-declaration)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
@@ -2450,11 +2450,29 @@ Result depends on syntax table's string quote character."
   (when (looking-at js-import-delcaration-keywords--re)
     (js-import-previous-declaration-or-skope pos))
   (while
-      (and (save-excursion
-             (js-import-re-search-backward
-              js-import-delcaration-keywords--re nil t 1))
-           (not (looking-at js-import-delcaration-keywords--re)))
+      (or (js-import-looking-at-function-expression)
+          (and (save-excursion
+                 (js-import-re-search-backward
+                  js-import-delcaration-keywords--re nil t 1))
+               (not (looking-at js-import-delcaration-keywords--re))))
     (js-import-previous-declaration-or-skope)))
+
+(defun js-import-next-declaration(&optional pos)
+  (interactive)
+  (when (looking-at js-import-delcaration-keywords--re)
+    (js-import-next-declaration-or-scope pos))
+  (while (or (js-import-looking-at-function-expression)
+             (and (save-excursion
+                    (js-import-re-search-forward
+                     js-import-delcaration-keywords--re nil t 1))
+                  (not (looking-at js-import-delcaration-keywords--re))))
+    (js-import-next-declaration-or-scope)))
+
+(defun js-import-looking-at-function-expression()
+  (and (js-import-looking-at "function")
+       (save-excursion
+         (js-import-skip-whitespace-backward)
+         (char-equal (char-before (point)) ?=))))
 
 (defun js-import-declaration-at-point()
   (when-let ((token-p (looking-at js-import-delcaration-keywords--re))
