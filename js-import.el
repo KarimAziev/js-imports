@@ -252,9 +252,13 @@
   "\\(^\\| +\\)import[ \t\n]+"
   "Regexp matching keyword import.")
 
-(defconst js-import-regexp-export-keyword
-  "\\(^\\| +\\)export[ \t]+"
+(defconst js-import-esm-export-keyword--re
+  (concat "\\_<" (regexp-opt (list "export") t) "\\_>")
   "Regexp matching keyword export.")
+
+(defconst js-import-cjs-export-keyword--re
+  (concat "\\_<" (regexp-opt (list "exports") t) "\\_>")
+  "Regexp matching keyword for exports.")
 
 (defconst js-import-export-re
   "\\(\\(^\\| +\\)export[ \t]+\\)\\|\\(\\(^\\| +\\|\\.\\|;\\)exports[ \s\t['\".]+\\)")
@@ -1679,21 +1683,31 @@ File is specified in the variable `js-import-current-export-path.'."
           (with-syntax-table js-import-mode-syntax-table
             (js-import-insert-buffer-or-file path)
             (goto-char (point-min))
-            (let ((buffer-file-name path)
-                  (default-directory (js-import-dirname path)))
-              (while (js-import-re-search-forward js-import-export-re nil t 1)
-                (setq result (if (save-excursion
-                                   (js-import-skip-whitespace-backward)
-                                   (js-import-looking-at "export"))
-                                 (js-import-make-esm-export-at-point
-                                  buffer-file-name)
-                               (js-import-extract-cjs-exports
-                                buffer-file-name)))
-                (setq symbols (append (car result) symbols))
-                (when-let ((external-path (cdr result)))
-                  (unless (or (member external-path processed-paths)
-                              (member external-path external-paths))
-                    (push external-path external-paths)))))))))
+            (let* ((buffer-file-name path)
+                   (default-directory (js-import-dirname path)))
+              (while (js-import-re-search-forward js-import-esm-export-keyword--re nil t 1)
+                (unless (or (js-import-inside-comment-p)
+                            (js-import-inside-string-p (point)))
+                  (js-import-skip-whitespace-forward)
+                  (setq result (js-import-make-esm-export-at-point buffer-file-name))
+                  (setq symbols (append (car result) symbols))
+                  (when-let ((external-path (cdr result)))
+                    (unless (or (member external-path processed-paths)
+                                (member external-path external-paths))
+                      (push external-path external-paths)))))
+              (unless symbols
+                (goto-char (point-min))
+                (while (js-import-re-search-forward js-import-cjs-export-keyword--re nil t 1)
+                  (js-import-skip-whitespace-forward)
+                  (skip-chars-forward ".")
+                  (setq result (js-import-extract-cjs-exports buffer-file-name))
+                  (let ((first-item (caar result)))
+                    (unless (member first-item symbols)
+                      (setq symbols (append (car result) symbols))))
+                  (when-let ((external-path (cdr result)))
+                    (unless (or (member external-path processed-paths)
+                                (member external-path external-paths))
+                      (push external-path external-paths))))))))))
     (reverse symbols)))
 
 (defun js-import-extract-cjs-exports(path)
