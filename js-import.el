@@ -227,11 +227,24 @@
   :type 'boolean)
 
 (defconst js-import-enabled-extension-regexp "\\.[jt]s\\(x\\)?$")
+
+(defconst js-import-expression-keywords
+  '("const" "var" "let" "interface" "type" "class"))
+
+(defconst js-import-expression-keywords--re
+  (js-import-make-opt-symbol-regexp js-import-expression-keywords))
+
 (defconst js-import-delcaration-keywords
-  '("const" "var" "let" "function" "function*" "interface" "type" "class"))
+  (append '("function" "function*") js-import-expression-keywords))
 
 (defconst js-import-delcaration-keywords--re
   (concat "\\_<" (regexp-opt js-import-delcaration-keywords t) "\\_>"))
+
+(defun js-import-make-opt-symbol-regexp(words)
+  "Return regexp from `regexp-opt'"
+  (concat "\\_<" (regexp-opt (if (listp words)
+                                 words
+                               (list words)) t) "\\_>"))
 
 (defconst js-import-regexp-name
   "_$A-Za-z0-9"
@@ -296,6 +309,9 @@
   (unless reserved-list (setq reserved-list js-import-reserved-js-words))
   (when (stringp str)
     (member str reserved-list)))
+
+(defvar js-import-open-paren-re "[^=(]{")
+(defvar js-import-closed-paren-re (regexp-opt '("}") t))
 
 (defvar js-import-dependencies-cache (make-hash-table :test 'equal))
 (defvar js-import-dependencies-cache-tick nil)
@@ -1129,6 +1145,20 @@ Default section is `dependencies'"
   (setq js-import-project-files-source nil)
   (setq js-import-node-modules-source nil))
 
+(defun js-import-clear-cache()
+  (interactive)
+  (let ((buffers (buffer-list))
+        (cached-vars
+         (list
+          js-import-cached-exports-in-buffer
+          js-import-cached-imports-in-buffer
+          js-import-cached-imports-in-buffer-tick
+          js-import-cached-exports-in-buffer-tick)))
+    (dotimes (i (length buffers))
+      (let ((buff (nth i buffers)))
+        (when (buffer-local-value 'js-import-mode buff)
+          (kill-buffer-if-not-modified buff))))))
+
 (defun js-import-exports-cleanup()
   "Reset filter for imported candidates."
   (with-helm-current-buffer
@@ -1501,13 +1531,20 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
       (16 (js-import-insert-exports full-name nil normalized-path)))))
 
 (defun js-import-insert-exports(default-name named-list path)
-  (let ((names (if (stringp named-list)
-                   named-list
-                 (js-import-join-names named-list)))
-        (imports (reverse (js-import-find-imported-files))))
+  (let* ((names (if (stringp named-list)
+                    named-list
+                  (js-import-join-names named-list)))
+         (imports (reverse (js-import-find-imported-files)))
+         (imported-symbols (js-import-imported-candidates-in-buffer (current-buffer)))
+         (has-name-space-export (seq-find (lambda(it) (equal "*" (car (split-string it))))
+                                          imported-symbols)))
     (save-excursion
       (js-import-goto-last-import)
-      (if (member path imports)
+      (if (and (member path imports)
+               (if default-name
+                   (not (equal "*" (car (split-string default-name))))
+                 t)
+               (not has-name-space-export))
           (progn
             (goto-char (cdr (js-import-get-import-positions path)))
             (js-import-add-to-current-imports default-name names))
@@ -2353,34 +2390,38 @@ Result depends on syntax table's string quote character."
 (defun js-import-next-declaration-or-scope(&optional pos)
   (interactive)
   (unless pos (setq pos (point)))
-  (let ((opens-parens-re (regexp-opt (list "[" "{" "(")))
-        declaration-start
+  (let (declaration-start
         scope-start
         scope-end
         winner
-        depth
+        init-depth
+        scope-depth
         declaration-depth)
     (save-excursion
       (unless (> pos (point-max))
         (goto-char pos))
       (with-syntax-table js-import-mode-syntax-table
-        (setq depth (nth 0 (syntax-ppss)))
-        (when
-            (js-import-re-search-forward opens-parens-re nil t 1)
-          (backward-char)
+        (setq init-depth (nth 0 (syntax-ppss (point))))
+        (when-let ((found (js-import-re-search-forward js-import-open-paren-re nil t 1)))
+          (backward-char 1)
+          (setq scope-depth (nth 0 (syntax-ppss scope-start)))
+          (while (> (nth 0 (syntax-ppss (point))) init-depth)
+            (backward-char 1))
           (setq scope-start (point))
           (forward-list)
-          (setq scope-end (point))
-          (skip-chars-forward "\s\t\n,=>")
-          (while (looking-at
-                  (regexp-opt (list "[" "{" "(" "=>")))
-            (when (looking-at "=>")
-              (skip-chars-forward "\s\t\n=>"))
-            (forward-list)
-            (setq scope-end (point)))
-          (when (looking-at ";")
-            (skip-chars-forward ";")
-            (setq scope-end (point))))))
+          (setq scope-end
+                (if (looking-at ";")
+                    (1+ (point))
+                  (point)))
+          (progn (goto-char scope-start)
+                 (js-import-skip-whitespace-backward)
+                 (and (char-equal (char-before (point)) ?>)
+                      (char-equal (char-before (1- (point))) ?=)
+                      (js-import-re-search-backward js-import-expression-keywords--re nil t 1))
+                 (forward-word)
+                 (js-import-skip-whitespace-forward)
+                 (when (js-import-valid-identifier-p (js-import-which-word))
+                   (setq scope-start (point)))))))
     (save-excursion
       (goto-char pos)
       (with-syntax-table js-import-mode-syntax-table
@@ -2398,7 +2439,7 @@ Result depends on syntax table's string quote character."
         (setq winner (if (and scope-start scope-end
                               (or (and (< scope-start declaration-start)
                                        (> scope-end declaration-start))
-                                  (> declaration-depth depth)))
+                                  (> declaration-depth init-depth)))
                          scope-end
                        declaration-start))
       (setq winner scope-end))
@@ -2407,11 +2448,10 @@ Result depends on syntax table's string quote character."
 (defun js-import-previous-declaration-or-skope(&optional pos)
   (interactive)
   (unless pos (setq pos (point)))
-  (let (declaration-start scope-start scope-end winner closed-parens-re)
-    (setq closed-parens-re (regexp-opt (list "]" "}" ")")))
+  (let (declaration-start scope-start scope-end winner)
     (with-syntax-table js-import-mode-syntax-table
       (goto-char pos)
-      (when (js-import-re-search-backward closed-parens-re nil t 1)
+      (when (js-import-re-search-backward js-import-closed-paren-re nil t 1)
         (setq scope-end (1+ (point)))
         (when (nth 1 (syntax-ppss (point)))
           (goto-char (nth 1 (syntax-ppss (point))))
@@ -2434,39 +2474,53 @@ Result depends on syntax table's string quote character."
 
 (defun js-import-previous-declaration(&optional pos)
   (interactive)
-  (when (looking-at js-import-delcaration-keywords--re)
-    (js-import-previous-declaration-or-skope pos))
-  (while
-      (or (js-import-looking-at-function-expression)
-          (and (save-excursion
-                 (js-import-re-search-backward
-                  js-import-delcaration-keywords--re nil t 1))
-               (not (looking-at js-import-delcaration-keywords--re))))
-    (js-import-previous-declaration-or-skope)))
+  (let ((init-pos (or pos (point)))
+        (curr-pos)
+        (prev-pos))
+    (goto-char init-pos)
+    (while (and (not curr-pos)
+                (js-import-previous-declaration-or-skope))
+      (when (js-import-declaration-at-point)
+        (setq curr-pos (point))))
+    (when (null curr-pos)
+      (goto-char init-pos))
+    (unless (equal curr-pos init-pos)
+      curr-pos)))
 
 (defun js-import-next-declaration(&optional pos)
   (interactive)
-  (when (looking-at js-import-delcaration-keywords--re)
-    (js-import-next-declaration-or-scope pos))
-  (while (or (js-import-looking-at-function-expression)
-             (and (save-excursion
-                    (js-import-re-search-forward
-                     js-import-delcaration-keywords--re nil t 1))
-                  (not (looking-at js-import-delcaration-keywords--re))))
-    (js-import-next-declaration-or-scope)))
+  (let ((init-pos (or pos (point)))
+        (curr-pos))
+    (goto-char init-pos)
+    (while (and (not curr-pos)
+                (js-import-next-declaration-or-scope))
+      (when (js-import-declaration-at-point)
+        (setq curr-pos (point))))
+    (when (null curr-pos)
+      (goto-char init-pos))
+    (unless (equal curr-pos init-pos)
+      curr-pos)))
 
 (defun js-import-looking-at-function-expression()
   (and (js-import-looking-at "function")
+       (> (point-min) (point))
        (save-excursion
          (js-import-skip-whitespace-backward)
-         (char-equal (char-before (point)) ?=))))
+         (let ((c (char-before (point))))
+           (or (char-equal c ?=)
+               (char-equal c ?|)
+               (char-equal c ??)
+               (char-equal c ?:))))))
 
 (defun js-import-declaration-at-point()
-  (when-let ((token-p (looking-at js-import-delcaration-keywords--re))
+  (when-let ((token-p (and (looking-at js-import-delcaration-keywords--re)
+                           (not (js-import-looking-at-function-expression))))
              (token (js-import-which-word)))
     (save-excursion
-      (skip-chars-forward token)
-      (skip-chars-forward "\s\t\n*")
+      (js-import-re-search-forward js-import-delcaration-keywords--re nil t 1)
+      (js-import-skip-whitespace-forward)
+      (when (looking-at "*")
+        (forward-char 1))
       (when-let* ((word (js-import-which-word))
                   (pos (point)))
         (if (js-import-valid-identifier-p word)
@@ -2509,7 +2563,7 @@ Default value for POSITION also current point position."
         (goto-char position)
         (setq ids (ignore-errors (js-import-extract-parent-arguments)))
         (skip-chars-forward js-import-regexp-name)
-        (while (js-import-previous-declaration-or-skope)
+        (while (js-import-previous-declaration)
           (unless depth
             (setq depth-position (point))
             (setq depth (nth 0 (syntax-ppss depth-position))))
