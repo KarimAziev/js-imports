@@ -1531,20 +1531,13 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
       (16 (js-import-insert-exports full-name nil normalized-path)))))
 
 (defun js-import-insert-exports(default-name named-list path)
-  (let* ((names (if (stringp named-list)
-                    named-list
-                  (js-import-join-names named-list)))
-         (imports (reverse (js-import-find-imported-files)))
-         (imported-symbols (js-import-imported-candidates-in-buffer (current-buffer)))
-         (has-name-space-export (seq-find (lambda(it) (equal "*" (car (split-string it))))
-                                          imported-symbols)))
+  (let ((names (if (stringp named-list)
+                   named-list
+                 (js-import-join-names named-list)))
+        (imports (reverse (js-import-find-imported-files))))
     (save-excursion
       (js-import-goto-last-import)
-      (if (and (member path imports)
-               (if default-name
-                   (not (equal "*" (car (split-string default-name))))
-                 t)
-               (not has-name-space-export))
+      (if (member path imports)
           (progn
             (goto-char (cdr (js-import-get-import-positions path)))
             (js-import-add-to-current-imports default-name names))
@@ -2122,8 +2115,18 @@ CANDIDATE should be propertizied with property `display-path'."
   (skip-chars-backward js-import-regexp-name))
 
 (defun js-import-skip-whitespace-forward()
-  (while (looking-at "[\n\s\t]\\|\\(//[^\n]*\\)\\|\\(/[*]\\)")
-    (js-import-re-search-forward "[\s\t\n]+" nil t 1)))
+  (let ((pos (point))
+        (curr-pos))
+    (while (looking-at "[\n\s\t]\\|\\(//[^\n]*\\)\\|\\(/[*]\\)")
+      (setq curr-pos (point))
+      (js-import-re-search-forward "[\s\t\n]+" nil t 1))
+    (unless (null curr-pos)
+      (js-import-re-search-backward "[^\s\t\n]+" pos t 1)
+      (unless (looking-at "/")
+        (skip-chars-backward (js-import-which-word))
+        (when (< pos (point))
+          (setq curr-pos (point))))
+      (goto-char curr-pos))))
 
 (defun js-import-skip-whitespace-backward()
   (while (save-excursion
@@ -2517,10 +2520,13 @@ Result depends on syntax table's string quote character."
                            (not (js-import-looking-at-function-expression))))
              (token (js-import-which-word)))
     (save-excursion
-      (js-import-re-search-forward js-import-delcaration-keywords--re nil t 1)
-      (js-import-skip-whitespace-forward)
+      (js-import-re-search-forward token nil t 1)
       (when (looking-at "*")
         (forward-char 1))
+      (js-import-skip-whitespace-forward)
+      (when (looking-at "*")
+        (forward-char 1)
+        (js-import-skip-whitespace-forward))
       (when-let* ((word (js-import-which-word))
                   (pos (point)))
         (if (js-import-valid-identifier-p word)
