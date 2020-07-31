@@ -1140,24 +1140,32 @@ Default section is `dependencies'"
 (defun js-import-reset-all-sources()
   "Reset all files sources."
   (interactive)
-  (remhash (js-import-find-project-root) js-import-dependencies-cache)
   (setq js-import-buffer-files-source nil)
   (setq js-import-project-files-source nil)
-  (setq js-import-node-modules-source nil))
+  (setq js-import-node-modules-source nil)
+  (js-import-clear-cache))
 
 (defun js-import-clear-cache()
   (interactive)
-  (let ((buffers (buffer-list))
-        (cached-vars
-         (list
-          js-import-cached-exports-in-buffer
-          js-import-cached-imports-in-buffer
-          js-import-cached-imports-in-buffer-tick
-          js-import-cached-exports-in-buffer-tick)))
+  (let ((buffers
+         (seq-filter (lambda(buf)
+                       (or (buffer-local-value
+                            'js-import-mode buf)
+                           (buffer-local-value
+                            'js-import-cached-exports-in-buffer buf)
+                           (buffer-local-value
+                            'js-import-cached-imports-in-buffer buf)))
+                     (buffer-list))))
+    (maphash (lambda(key _it)
+               (remhash key js-import-dependencies-cache))
+             js-import-dependencies-cache)
     (dotimes (i (length buffers))
       (let ((buff (nth i buffers)))
-        (when (buffer-local-value 'js-import-mode buff)
-          (kill-buffer-if-not-modified buff))))))
+        (with-current-buffer buff
+          (setq js-import-cached-imports-in-buffer-tick nil)
+          (setq js-import-cached-exports-in-buffer-tick nil)
+          (setq js-import-cached-exports-in-buffer nil)
+          (setq js-import-cached-imports-in-buffer nil))))))
 
 (defun js-import-exports-cleanup()
   "Reset filter for imported candidates."
@@ -1179,8 +1187,8 @@ Default section is `dependencies'"
 
 (defun js-import-imported-candidates-in-buffer(&optional buffer)
   "Returns imported symbols in BUFFER which are cached and stored
-in a buffer local variable `js-import-cached-imports-in-buffer'.
-   Cache are invalidated when `buffer-modified-tick' is changed."
+  in a buffer local variable `js-import-cached-imports-in-buffer'.
+  Cache are invalidated when `buffer-modified-tick' is changed."
   (with-current-buffer (or buffer helm-current-buffer)
     (let ((tick (buffer-modified-tick)))
       (if (eq js-import-cached-imports-in-buffer-tick tick)
@@ -1300,8 +1308,8 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
 
 (defun js-import-exported-candidates-in-buffer(&optional buffer)
   "Returns imported symbols in BUFFER which are cached and stored
-in a buffer local variable `js-import-cached-exports-in-buffer'.
-   Cache are invalidated when `buffer-modified-tick' is changed."
+  in a buffer local variable `js-import-cached-exports-in-buffer'.
+  Cache are invalidated when `buffer-modified-tick' is changed."
   (with-current-buffer (or buffer helm-current-buffer)
     (let ((tick (buffer-modified-tick)))
       (if (eq js-import-cached-exports-in-buffer-tick tick)
@@ -1342,8 +1350,8 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
 
 (defun js-import-filter-exports(exports imports)
   "Return EXPORTS plist with only those members that are not in IMPORTS plist.
-   For named exports (with property `type' 4) the test for equality is done by
-`real-name' and for default export by `type'."
+For named exports with property `type' 4 the test for equality is done by
+real-name' and for default export by `type'."
   (let ((by-type (lambda(elt) (let ((type (js-import-get-prop elt :type)))
                            (pcase type
                              (1
@@ -2398,7 +2406,6 @@ Result depends on syntax table's string quote character."
         scope-end
         winner
         init-depth
-        scope-depth
         declaration-depth)
     (save-excursion
       (unless (> pos (point-max))
@@ -2407,7 +2414,6 @@ Result depends on syntax table's string quote character."
         (setq init-depth (nth 0 (syntax-ppss (point))))
         (when-let ((found (js-import-re-search-forward js-import-open-paren-re nil t 1)))
           (backward-char 1)
-          (setq scope-depth (nth 0 (syntax-ppss scope-start)))
           (while (> (nth 0 (syntax-ppss (point))) init-depth)
             (backward-char 1))
           (setq scope-start (point))
@@ -2478,8 +2484,7 @@ Result depends on syntax table's string quote character."
 (defun js-import-previous-declaration(&optional pos)
   (interactive)
   (let ((init-pos (or pos (point)))
-        (curr-pos)
-        (prev-pos))
+        (curr-pos))
     (goto-char init-pos)
     (while (and (not curr-pos)
                 (js-import-previous-declaration-or-skope))
