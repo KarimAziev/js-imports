@@ -1715,7 +1715,7 @@ File is specified in the variable `js-import-current-export-path.'."
       (setq path (pop external-paths))
       (push path processed-paths)
       (when path
-        (with-current-buffer (get-buffer-create js-import-buffer)
+        (with-temp-buffer
           (erase-buffer)
           (with-syntax-table js-import-mode-syntax-table
             (js-import-insert-buffer-or-file path)
