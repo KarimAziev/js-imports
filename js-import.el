@@ -226,6 +226,12 @@
   :group 'js-import
   :type 'boolean)
 
+(defun js-import-make-opt-symbol-regexp(words)
+  "Return regexp from `regexp-opt'"
+  (concat "\\_<" (regexp-opt (if (listp words)
+                                 words
+                               (list words)) t) "\\_>"))
+
 (defconst js-import-enabled-extension-regexp "\\.[jt]s\\(x\\)?$")
 
 (defconst js-import-expression-keywords
@@ -239,12 +245,6 @@
 
 (defconst js-import-delcaration-keywords--re
   (concat "\\_<" (regexp-opt js-import-delcaration-keywords t) "\\_>"))
-
-(defun js-import-make-opt-symbol-regexp(words)
-  "Return regexp from `regexp-opt'"
-  (concat "\\_<" (regexp-opt (if (listp words)
-                                 words
-                               (list words)) t) "\\_>"))
 
 (defconst js-import-regexp-name
   "_$A-Za-z0-9"
