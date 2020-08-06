@@ -423,6 +423,27 @@ Run all sources defined in option `js-import-files-source'."
    (keymap :initform js-import-files-map)
    (group :initform 'js-import)))
 
+(defmacro js-import-with-buffer-or-file-content (filename &rest body)
+  "Insert file or buffer content of PATH into temp buffer to execute BODY.
+ Bind PATH to variables `buffer-file-name' and `current-path''.
+ It is also bind `default-directory' into directory name of PATH."
+  (declare (indent 2) (debug t))
+  `(when-let ((current-path ,filename))
+     (when (and current-path (file-exists-p current-path))
+       (with-temp-buffer
+         (erase-buffer)
+         (if (get-file-buffer current-path)
+             (progn
+               (insert-buffer-substring-no-properties
+                (get-file-buffer current-path)))
+           (progn
+             (let ((buffer-file-name current-path))
+               (insert-file-contents current-path))))
+         (with-syntax-table js-import-mode-syntax-table
+           (let* ((buffer-file-name current-path)
+                  (default-directory (js-import-dirname buffer-file-name)))
+             (progn ,@body)))))))
+
 (defun js-import-init-project()
   "Initialize project by setting buffer, finding root and aliases."
   (setq js-import-current-buffer (current-buffer))
@@ -450,9 +471,9 @@ Run all sources defined in option `js-import-files-source'."
                       (replace-regexp-in-string dir "" buffer-file-name)))
           "relative files")))))
 
-(defun js-import-find-project-files()
+(defun js-import-find-project-files(&optional project-root)
   "Return project files without dependencies."
-  (let* ((root (js-import-slash (js-import-find-project-root)))
+  (let* ((root (js-import-slash (or project-root (js-import-find-project-root))))
          (alias-path (js-import-get-alias-path js-import-current-alias root))
          (dirs (directory-files (or alias-path root) t))
          (priority-dir (if (and alias-path
@@ -1701,36 +1722,36 @@ File is specified in the variable `js-import-current-export-path.'."
       (setq path (pop external-paths))
       (push path processed-paths)
       (when path
-        (with-temp-buffer
-          (erase-buffer)
-          (with-syntax-table js-import-mode-syntax-table
-            (js-import-insert-buffer-or-file path)
+        (js-import-with-buffer-or-file-content path
             (goto-char (point-min))
-            (let* ((buffer-file-name path)
-                   (default-directory (js-import-dirname path)))
-              (while (js-import-re-search-forward js-import-esm-export-keyword--re nil t 1)
-                (unless (or (js-import-inside-comment-p)
-                            (js-import-inside-string-p (point)))
-                  (js-import-skip-whitespace-forward)
-                  (setq result (js-import-make-esm-export-at-point buffer-file-name))
-                  (setq symbols (append (car result) symbols))
-                  (when-let ((external-path (cdr result)))
-                    (unless (or (member external-path processed-paths)
-                                (member external-path external-paths))
-                      (push external-path external-paths)))))
-              (unless symbols
-                (goto-char (point-min))
-                (while (js-import-re-search-forward js-import-cjs-export-keyword--re nil t 1)
-                  (js-import-skip-whitespace-forward)
-                  (skip-chars-forward ".")
-                  (setq result (js-import-extract-cjs-exports buffer-file-name))
-                  (let ((first-item (caar result)))
-                    (unless (member first-item symbols)
-                      (setq symbols (append (car result) symbols))))
-                  (when-let ((external-path (cdr result)))
-                    (unless (or (member external-path processed-paths)
-                                (member external-path external-paths))
-                      (push external-path external-paths))))))))))
+          (while
+              (js-import-re-search-forward
+               js-import-esm-export-keyword--re nil t 1)
+            (unless (or (js-import-inside-comment-p)
+                        (js-import-inside-string-p (point)))
+              (js-import-skip-whitespace-forward)
+              (setq result
+                    (js-import-make-esm-export-at-point
+                     buffer-file-name))
+              (setq symbols (append (car result) symbols))
+              (when-let ((external-path (cdr result)))
+                (unless (or (member external-path processed-paths)
+                            (member external-path external-paths))
+                  (push external-path external-paths)))))
+          (unless symbols
+            (goto-char (point-min))
+            (while (js-import-re-search-forward
+                    js-import-cjs-export-keyword--re nil t 1)
+              (js-import-skip-whitespace-forward)
+              (skip-chars-forward ".")
+              (setq result (js-import-extract-cjs-exports buffer-file-name))
+              (let ((first-item (caar result)))
+                (unless (member first-item symbols)
+                  (setq symbols (append (car result) symbols))))
+              (when-let ((external-path (cdr result)))
+                (unless (or (member external-path processed-paths)
+                            (member external-path external-paths))
+                  (push external-path external-paths))))))))
     (reverse symbols)))
 
 (defun js-import-extract-cjs-exports(path)
