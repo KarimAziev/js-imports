@@ -200,13 +200,13 @@
                                     (helm-run-after-exit
                                      'js-import-jump-to-item-other-window
                                      (helm-get-selection nil 'withprop
-                                                         js-import-source-symbols-in-path))))
+                                                         'js-import-source-symbols-in-path))))
     (define-key map (kbd "C-c C-j") (lambda()
                                       (interactive)
                                       (helm-run-after-exit
                                        'js-import-find-export-definition
                                        (helm-get-selection nil 'withprop
-                                                           js-import-source-symbols-in-path))))
+                                                           'js-import-source-symbols-in-path))))
     map)
   "Keymap for symdol sources.")
 (put 'js-import-export-symbols-map 'helm-only t)
@@ -1011,16 +1011,19 @@ Default section is `dependencies'"
     (when path
       (js-import-find-file path))))
 
-(defun js-import-find-file-and-exit(&optional _file)
+(defun js-import-find-file-and-exit(&optional file)
   "Transform FILE to real and open it."
   (interactive)
-  (helm-run-after-exit 'js-import-find-file (car (helm-marked-candidates))))
+  (if (called-interactively-p 'interactive)
+      (helm-run-after-exit 'js-import-find-file (helm-get-selection))
+    (js-import-find-file file)))
 
 (defun js-import-find-file-other-window-and-exit()
   "Transform FILE to real and open it."
   (interactive)
-  (helm-run-after-exit
-   'js-import-find-file-other-window (car (helm-marked-candidates))))
+  (if (called-interactively-p 'interactive)
+      (helm-run-after-exit 'js-import-find-file-other-window (helm-get-selection))
+    (js-import-find-file-other-window file)))
 
 ;;;###autoload
 (defun js-import-find-file(file)
