@@ -239,7 +239,8 @@
 
 (defconst js-import-expression-keywords--re
   (js-import-make-opt-symbol-regexp js-import-expression-keywords))
-
+(defconst js-import-from-keyword--re
+  (js-import-make-opt-symbol-regexp "from"))
 (defconst js-import-delcaration-keywords
   (append '("function" "function*") js-import-expression-keywords))
 
@@ -352,6 +353,27 @@
   :type '(repeat (choice symbol))
   :group 'js-import)
 
+(defmacro js-import-with-buffer-or-file-content (filename &rest body)
+  "Insert file or buffer content of PATH into temp buffer to execute BODY.
+ Bind PATH to variables `buffer-file-name' and `current-path''.
+ It is also bind `default-directory' into directory name of PATH."
+  (declare (indent 2) (debug t))
+  `(when-let ((current-path ,filename))
+     (when (and current-path (file-exists-p current-path))
+       (with-temp-buffer
+         (erase-buffer)
+         (if (get-file-buffer current-path)
+             (progn
+               (insert-buffer-substring-no-properties
+                (get-file-buffer current-path)))
+           (progn
+             (let ((buffer-file-name current-path))
+               (insert-file-contents current-path))))
+         (with-syntax-table js-import-mode-syntax-table
+           (let* ((buffer-file-name current-path)
+                  (default-directory (js-import-dirname buffer-file-name)))
+             (progn ,@body)))))))
+
 ;;;###autoload
 (defun js-import ()
   "Preconfigured helm for selecting files.
@@ -422,27 +444,6 @@ Run all sources defined in option `js-import-files-source'."
    (mode-line :initform (list "File(s)"))
    (keymap :initform js-import-files-map)
    (group :initform 'js-import)))
-
-(defmacro js-import-with-buffer-or-file-content (filename &rest body)
-  "Insert file or buffer content of PATH into temp buffer to execute BODY.
- Bind PATH to variables `buffer-file-name' and `current-path''.
- It is also bind `default-directory' into directory name of PATH."
-  (declare (indent 2) (debug t))
-  `(when-let ((current-path ,filename))
-     (when (and current-path (file-exists-p current-path))
-       (with-temp-buffer
-         (erase-buffer)
-         (if (get-file-buffer current-path)
-             (progn
-               (insert-buffer-substring-no-properties
-                (get-file-buffer current-path)))
-           (progn
-             (let ((buffer-file-name current-path))
-               (insert-file-contents current-path))))
-         (with-syntax-table js-import-mode-syntax-table
-           (let* ((buffer-file-name current-path)
-                  (default-directory (js-import-dirname buffer-file-name)))
-             (progn ,@body)))))))
 
 (defun js-import-init-project()
   "Initialize project by setting buffer, finding root and aliases."
@@ -1208,76 +1209,64 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
           js-import-cached-imports-in-buffer)))))
 
 (defun js-import-extract-imports(&optional real-path)
-  (with-temp-buffer
-    (erase-buffer)
-    (js-import-insert-buffer-or-file real-path)
-    (save-excursion
+  (js-import-with-buffer-or-file-content real-path
       (goto-char 0)
-      (let (symbols)
-        (with-syntax-table js-import-mode-syntax-table
-          (while (re-search-forward js-import-regexp-import-keyword nil t 1)
-            (unless (or (js-import-inside-comment-p)
-                        (js-import-inside-string-p))
-              (let (display-path imports)
-                (save-excursion
-                  (re-search-forward "[ \s\t\n]from[ \s\t]+['\"]" nil t 1)
-                  (setq display-path (js-import-get-path-at-point)))
-                (cond ((js-import-looking-at "*")
-                       (let (m1 m2 renamed-name)
-                         (setq m1 (point))
-                         (forward-char)
-                         (skip-chars-forward "\s\t")
-                         (setq m2 (point))
-                         (when (js-import-looking-at "as")
-                           (skip-chars-forward "as")
-                           (setq m2 (point))
-                           (skip-chars-forward "\s\t")
-                           (setq renamed-name (js-import-which-word))
-                           (if (or (js-import-reserved-word-p renamed-name)
-                                   (js-import-invalid-name-p renamed-name))
-                               (setq renamed-name "")
-                             (skip-chars-forward js-import-regexp-name)))
-                         (setq m2 (point))
-                         (push (js-import-make-item
-                                (format "%s"
-                                        (buffer-substring-no-properties m1 m2))
-                                :type 16
-                                :real-name renamed-name
-                                :local-name renamed-name
-                                :external-name "*"
-                                :pos m1
-                                :display-path display-path)
-                               imports)
-                         (skip-chars-forward
-                          js-import-regexp-name-with-separators)))
-                      ((looking-at-p js-import-regexp-name-set)
-                       (push (js-import-make-item
-                              (js-import-which-word)
-                              :type 1
-                              :real-name (js-import-which-word)
-                              :external-name "default"
-                              :local-name (js-import-which-word)
-                              :pos (point)
-                              :display-path display-path)
-                             imports)
-                       (skip-chars-forward
-                        js-import-regexp-name-with-separators))
-                      ((looking-at-p "[\"']")
-                       (forward-char)
-                       (when-let* ((display-path (js-import-get-path-at-point))
-                                   (real-path (js-import-path-to-real
-                                               display-path
-                                               (js-import-dirname real-path)))
-                                   (extracted-symbols (js-import-extract-imports
-                                                       real-path)))
-                         (setq symbols (append symbols extracted-symbols)))))
-                (when (looking-at-p "{")
-                  (setq imports (append imports
-                                        (js-import-extract-imports-from-brackets
-                                         display-path))))
-                (setq symbols (append symbols imports))))
-            (forward-line 1)))
-        (cl-remove-duplicates symbols :test 'string=)))))
+    (let (symbols)
+      (while (js-import-re-search-forward js-import-regexp-import-keyword nil t 1)
+        (unless (or (js-import-inside-comment-p)
+                    (js-import-inside-string-p))
+          (let (display-path imports)
+            (save-excursion
+              (js-import-re-search-forward js-import-from-keyword--re nil t 1)
+              (js-import-skip-whitespace-forward)
+              (forward-char 1)
+              (setq display-path (js-import-get-path-at-point)))
+            (cond ((js-import-looking-at "*")
+                   (let (beg end renamed-name)
+                     (setq beg (point))
+                     (forward-char)
+                     (skip-chars-forward "\s\t")
+                     (setq end (point))
+                     (when (js-import-looking-at "as")
+                       (skip-chars-forward "as")
+                       (setq end (point))
+                       (skip-chars-forward "\s\t")
+                       (setq renamed-name (js-import-which-word))
+                       (if (or (js-import-reserved-word-p renamed-name)
+                               (js-import-invalid-name-p renamed-name))
+                           (setq renamed-name "")
+                         (skip-chars-forward js-import-regexp-name)))
+                     (setq end (point))
+                     (push (js-import-make-item
+                            (format "%s"
+                                    (buffer-substring-no-properties beg end))
+                            :type 16
+                            :real-name renamed-name
+                            :local-name renamed-name
+                            :external-name "*"
+                            :pos beg
+                            :display-path display-path)
+                           imports)
+                     (skip-chars-forward
+                      js-import-regexp-name-with-separators)))
+                  ((looking-at-p js-import-regexp-name-set)
+                   (push (js-import-make-item
+                          (js-import-which-word)
+                          :type 1
+                          :real-name (js-import-which-word)
+                          :external-name "default"
+                          :local-name (js-import-which-word)
+                          :pos (point)
+                          :display-path display-path)
+                         imports)
+                   (skip-chars-forward js-import-regexp-name-with-separators)))
+            (when (looking-at-p "{")
+              (setq imports (append imports
+                                    (js-import-extract-imports-from-brackets
+                                     display-path))))
+            (setq symbols (append symbols imports))))
+        (forward-line 1))
+      (cl-remove-duplicates symbols :test 'string=))))
 
 (defun js-import-extract-imports-from-brackets(display-path &optional real-path)
   (save-excursion
@@ -2574,29 +2563,26 @@ Default value for POSITION also current point position."
                                       (point)
                                     (point-max))))
   (let (ids depth depth-position)
-    (with-temp-buffer
-      (erase-buffer)
-      (with-syntax-table js-import-mode-syntax-table
-        (js-import-insert-buffer-or-file path)
+    (js-import-with-buffer-or-file-content path
         (goto-char position)
-        (setq ids (ignore-errors (js-import-extract-parent-arguments)))
-        (skip-chars-forward js-import-regexp-name)
-        (while (js-import-previous-declaration)
-          (unless depth
-            (setq depth-position (point))
-            (setq depth (nth 0 (syntax-ppss depth-position))))
-          (when-let ((decl (js-import-declaration-at-point)))
-            (if (listp decl)
-                (setq ids (append ids decl))
-              (push decl ids))))
-        (unless (or (null depth) (null depth-position))
-          (save-excursion
-            (goto-char depth-position)
-            (while (ignore-errors (js-import-next-declaration-or-scope))
-              (when-let ((decl (js-import-declaration-at-point)))
-                (if (listp decl)
-                    (setq ids (append ids decl))
-                  (push decl ids))))))))
+      (setq ids (ignore-errors (js-import-extract-parent-arguments)))
+      (skip-chars-forward js-import-regexp-name)
+      (while (js-import-previous-declaration)
+        (unless depth
+          (setq depth-position (point))
+          (setq depth (nth 0 (syntax-ppss depth-position))))
+        (when-let ((decl (js-import-declaration-at-point)))
+          (if (listp decl)
+              (setq ids (append ids decl))
+            (push decl ids))))
+      (unless (or (null depth) (null depth-position))
+        (save-excursion
+          (goto-char depth-position)
+          (while (ignore-errors (js-import-next-declaration-or-scope))
+            (when-let ((decl (js-import-declaration-at-point)))
+              (if (listp decl)
+                  (setq ids (append ids decl))
+                (push decl ids)))))))
     ids))
 
 (defun js-import-jump-to-item-other-window(item)
