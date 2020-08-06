@@ -112,7 +112,8 @@
         ["Edit current buffer imports" js-import-symbols-menu]
         ["Import alias" js-import-alias]
         ["Import depenency" js-import-dependency]
-        ["Find file at point" js-import-find-file-at-point]))
+        ["Find file at point" js-import-find-file-at-point]
+        ["Jump to definition" js-import-jump-to-definition]))
     map)
   "Keymap for `js-import' mode.")
 
@@ -137,11 +138,11 @@
 (defvar js-import-files-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
-    (define-key map (kbd "<C-return>") 'js-import-find-file-and-exit)
+    (define-key map (kbd "C-c o") 'js-import-find-file-and-exit)
     (define-key map (kbd "C-c C-o") 'js-import-find-file-other-window-and-exit)
     (define-key map (kbd "C->") 'js-import-switch-to-next-alias)
     (define-key map (kbd "C-<") 'js-import-switch-to-prev-alias)
-    (define-key map (kbd "C-r") 'js-import-switch-to-relative)
+    (define-key map (kbd "C-c C-.") 'js-import-switch-to-relative)
     map)
   "Keymap for files sources in Helm.")
 (put 'js-import-files-map 'helm-only t)
@@ -191,7 +192,26 @@
   "Keymap for symdol sources.")
 (put 'js-import-imported-symbols-map 'helm-only t)
 
-(defcustom js-import-symbol-actions
+(defvar js-import-export-symbols-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map helm-map)
+    (define-key map (kbd "C-c o") (lambda()
+                                    (interactive)
+                                    (helm-run-after-exit
+                                     'js-import-jump-to-item-other-window
+                                     (helm-get-selection nil 'withprop
+                                                         js-import-source-symbols-in-path))))
+    (define-key map (kbd "C-c C-j") (lambda()
+                                      (interactive)
+                                      (helm-run-after-exit
+                                       'js-import-find-export-definition
+                                       (helm-get-selection nil 'withprop
+                                                           js-import-source-symbols-in-path))))
+    map)
+  "Keymap for symdol sources.")
+(put 'js-import-export-symbols-map 'helm-only t)
+
+(defcustom js-import-import-symbols-actions
   (helm-make-actions
    (js-import-with-symbols-map "Jump"
                                'js-import-jump-to-item-in-buffer)
@@ -216,7 +236,8 @@
   (helm-make-actions
    "Import"                       'js-import-insert-marked
    "Import as "                   'js-import-insert-import-as
-   "Go"                           'js-import-jump-to-item-other-window)
+   "Jump to export `C-c o'"       'js-import-jump-to-item-other-window
+   "Jump to definition `C-c C-j'" 'js-import-find-export-definition)
   "Actions for inserting exports."
   :group 'js-import
   :type '(alist :key-type string :value-type function))
@@ -1062,7 +1083,7 @@ Default section is `dependencies'"
    (keymap :initform js-import-imported-symbols-map)
    (persistent-action :initform (lambda(c) (js-import-jump-to-item-in-buffer
                                        (js-import-display-to-real-imports c))))
-   (action :initform 'js-import-symbol-actions)))
+   (action :initform 'js-import-import-symbols-actions)))
 
 (defclass js-import-source-exported-symbols(helm-source-sync)
   ((candidates :initform 'js-import-exported-candidates-in-buffer)
@@ -1094,6 +1115,7 @@ Default section is `dependencies'"
    (marked-with-props :initform 'withprop)
    (cleanup :initform 'js-import-exports-cleanup)
    (volatile :initform t)
+   (keymap :initform 'js-import-export-symbols-map)
    (action :initform 'js-import-export-items-actions)
    (persistent-action
     :initform (lambda(c) (when-let ((props (js-import-display-to-real-exports c)))
@@ -2331,6 +2353,20 @@ Default value for POSITION also current point position."
       (find-file-other-window item-path))
     (js-import-jump-to-item-in-buffer item)
     item))
+
+(defun js-import-find-export-definition(export-symbol)
+  "Jumps to ITEM in buffer. ITEM must be propertized with prop :pos."
+  (unless (js-import-get-prop export-symbol :pos)
+    (setq export-symbol (js-import-display-to-real-exports export-symbol)))
+  (when-let* ((definition (js-import-try-find-definition export-symbol))
+              (pos (js-import-get-prop definition :pos))
+              (item-path (or (js-import-get-prop definition :real-path)
+                             (js-import-path-to-real (js-import-get-prop
+                                                      definition
+                                                      :display-path)))))
+    (find-file-other-window item-path)
+    (js-import-jump-to-item-in-buffer definition)
+    definition))
 
 (defun js-import-jump-to-item-persistent(item)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop :pos."
