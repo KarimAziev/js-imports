@@ -2546,7 +2546,7 @@ Default value for POSITION also current point position."
               (t
                (setq count (1- count)))))))
   (point))
-(re-search-forward)
+
 (defun js-import-re-search-backward (regexp &optional bound noerror count)
   "Search backward from point for REGEXP ignoring strings and comments."
   (js-import-re-search-forward regexp bound noerror (if count (- count) -1)))
