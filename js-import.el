@@ -1,4 +1,4 @@
-;; js-import.el --- Import for JavaScript files easily -*- lexical-binding: t -*-
+;;; js-import.el --- Import for JavaScript files easily -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020 Karim Aziiev <karim.aziev@gmail.com>
 
@@ -899,17 +899,18 @@ Default section is `dependencies'"
   (unless section (setq section "dependencies"))
   (let ((path (or package-json-path (js-import-find-package-json)))
         (json-object-type 'hash-table))
-    (when-let ((content (condition-case nil
-                            (decode-coding-string
-                             (with-temp-buffer
-                               (set-buffer-multibyte nil)
-                               (setq buffer-file-coding-system 'binary)
-                               (insert-file-contents-literally path)
-                               (buffer-substring-no-properties
-                                (point-min)
-                                (point-max)))
-                             'utf-8)
-                          (error nil))))
+    (when-let ((content
+                (condition-case nil
+                    (decode-coding-string
+                     (with-temp-buffer
+                       (set-buffer-multibyte nil)
+                       (setq buffer-file-coding-system 'binary)
+                       (insert-file-contents-literally path)
+                       (buffer-substring-no-properties
+                        (point-min)
+                        (point-max)))
+                     'utf-8)
+                  (error nil))))
       (condition-case nil
           (gethash section (json-read-from-string content))
         (error nil)))))
