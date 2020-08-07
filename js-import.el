@@ -199,14 +199,18 @@
                                     (interactive)
                                     (helm-run-after-exit
                                      'js-import-jump-to-item-other-window
-                                     (helm-get-selection nil 'withprop
-                                                         'js-import-source-symbols-in-path))))
+                                     (helm-get-selection
+                                      nil
+                                      'withprop
+                                      'js-import-source-symbols-in-path))))
     (define-key map (kbd "C-c C-j") (lambda()
                                       (interactive)
                                       (helm-run-after-exit
                                        'js-import-find-export-definition
-                                       (helm-get-selection nil 'withprop
-                                                           'js-import-source-symbols-in-path))))
+                                       (helm-get-selection
+                                        nil
+                                        'withprop
+                                        'js-import-source-symbols-in-path))))
     map)
   "Keymap for symdol sources.")
 (put 'js-import-export-symbols-map 'helm-only t)
@@ -344,8 +348,6 @@
 
 (defvar js-import-current-export-path nil)
 (make-variable-buffer-local 'js-import-current-export-path)
-(defvar js-import-current-export-real-path nil)
-(make-variable-buffer-local 'js-import-current-export-real-path)
 (defvar js-import-export-candidates-in-path nil)
 (make-variable-buffer-local 'js-import-export-candidates-in-path)
 (defvar js-import-cached-imports-in-buffer nil)
@@ -1018,7 +1020,7 @@ Default section is `dependencies'"
       (helm-run-after-exit 'js-import-find-file (helm-get-selection))
     (js-import-find-file file)))
 
-(defun js-import-find-file-other-window-and-exit()
+(defun js-import-find-file-other-window-and-exit(&optional file)
   "Transform FILE to real and open it."
   (interactive)
   (if (called-interactively-p 'interactive)
@@ -1056,9 +1058,7 @@ Default section is `dependencies'"
   (with-current-buffer helm-current-buffer
     (when-let ((display-path (or (js-import-get-prop path :display-path) path)))
       (setq js-import-current-export-path display-path)
-      (setq js-import-last-export-path display-path)
-      (setq js-import-current-export-real-path
-            (js-import-path-to-real display-path default-directory))))
+      (setq js-import-last-export-path display-path)))
   (let (sources)
     (push (helm-make-source "Imported"
               'js-import-source-imported-symbols)
@@ -1187,8 +1187,7 @@ Default section is `dependencies'"
 (defun js-import-exports-cleanup()
   "Reset filter for imported candidates."
   (with-helm-current-buffer
-    (setq js-import-current-export-path nil)
-    (setq js-import-current-export-real-path nil)))
+    (setq js-import-current-export-path nil)))
 
 (defun js-import-display-to-real-exports(str)
   "Find STR in the variable `js-import-export-candidates-in-path'."
@@ -1338,9 +1337,9 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
       (setq exports (if imports (js-import-filter-exports candidates imports)
                       candidates))
       (setq exports (cl-remove-duplicates exports))
-      (setq exports (mapcar (lambda(c) (js-import-propertize c
-                                                        :display-path
-                                                        js-import-current-export-path))
+      (setq exports (mapcar (lambda(c)
+                              (js-import-propertize c :display-path
+                                                    js-import-current-export-path))
                             exports)))))
 
 (defun js-import-filter-with-prop(property value items)
@@ -1446,16 +1445,14 @@ File is specified in the variable `js-import-current-export-path.'."
           (default (js-import-make-item
                     "default"
                     :type 1)))
-      (if js-import-current-export-real-path
-          (when-let* ((path js-import-current-export-real-path)
-                      (str (stringp path)))
-            (setq js-import-export-candidates-in-path
-                  (js-import-extract-all-exports path))
-            (unless js-import-export-candidates-in-path
-              (push namespace js-import-export-candidates-in-path)
-              (push default js-import-export-candidates-in-path))
-            js-import-export-candidates-in-path)
-        (list namespace default)))))
+      (if (null js-import-current-export-path)
+          (list namespace default)
+        (setq js-import-export-candidates-in-path
+              (js-import-extract-all-exports js-import-current-export-path))
+        (unless js-import-export-candidates-in-path
+          (push namespace js-import-export-candidates-in-path)
+          (push default js-import-export-candidates-in-path))
+        js-import-export-candidates-in-path))))
 
 (defun js-import-extract-all-exports(&optional init-path)
   "Return exports in PATH defined with CommonJs syntax."
@@ -1904,7 +1901,6 @@ CANDIDATE should be propertizied with property `display-path'."
 
 (defun js-import-which-word (&optional regexp)
   "Find closest to point whole word."
-  (interactive)
   (unless regexp (setq regexp js-import-regexp-name))
   (unless (= (point) (point-max))
     (save-excursion
@@ -1925,7 +1921,6 @@ CANDIDATE should be propertizied with property `display-path'."
     (string= word str)))
 
 (defun js-import-get-path-at-point()
-  (interactive)
   (save-excursion
     (when-let* ((word (js-import-which-word))
                 (meta-word (or (string= "import" word)
@@ -1978,7 +1973,6 @@ If IGNORE-CASE is non-nil, the comparison will ignore case differences."
 (defun js-import-inside-string-p (&optional pos)
   "Returns non-nil if inside string, else nil.
 Result depends on syntax table's string quote character."
-  (interactive)
   (with-syntax-table js-import-mode-syntax-table
     (nth 3 (syntax-ppss (or pos (point))))))
 
@@ -2153,7 +2147,6 @@ Result depends on syntax table's string quote character."
         children))))
 
 (defun js-import-next-declaration-or-scope(&optional pos)
-  (interactive)
   (unless pos (setq pos (point)))
   (let (declaration-start
         scope-start
@@ -2209,7 +2202,6 @@ Result depends on syntax table's string quote character."
     (when winner (goto-char winner))))
 
 (defun js-import-previous-declaration-or-skope(&optional pos)
-  (interactive)
   (unless pos (setq pos (point)))
   (let (declaration-start scope-start scope-end winner)
     (with-syntax-table js-import-mode-syntax-table
