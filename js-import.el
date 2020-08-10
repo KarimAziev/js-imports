@@ -1318,7 +1318,11 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
                           :real-name name
                           :as-name name
                           :pos (point))
-                         imports))))
+                         imports)
+                   (skip-chars-forward name)
+                   (js-import-skip-whitespace-forward)
+                   (skip-chars-forward ",")
+                   (js-import-skip-whitespace-forward))))
           (when (looking-at-p "{")
             (let ((map-func (lambda(item)
                               (js-import-propertize item
