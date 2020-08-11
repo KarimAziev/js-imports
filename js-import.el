@@ -520,6 +520,16 @@ Run all sources defined in option `js-import-files-source'."
           dirs)
     files))
 
+(defun js-import-project-files-transformer(files &optional _source)
+  "Filter and transform FILES to aliased or relative."
+  (let* ((current-file (buffer-file-name js-import-current-buffer))
+         (current-dir (js-import-dirname current-file)))
+    (setq files (seq-remove (lambda(filename) (string= filename current-file))
+                            files))
+    (if js-import-current-alias
+        (js-import-transform-files-to-alias js-import-current-alias files)
+      (js-import-transform-files-to-relative current-dir files))))
+
 (defun js-import-get-alias-path(alias &optional project-root)
   (when-let ((alias-path (plist-get js-import-alias-map alias)))
     (if (file-exists-p alias-path)
@@ -528,32 +538,27 @@ Run all sources defined in option `js-import-files-source'."
                                (js-import-find-project-root))
                            alias-path))))
 
-(defun js-import-project-files-transformer(files &optional _source)
-  "Filter FILES by extension and one of the aliases, if present."
-  (setq files (seq-uniq files))
-  (let ((slashed-alias (js-import-slash js-import-current-alias))
-        (alias-path (js-import-slash (js-import-get-alias-path
-                                      js-import-current-alias))))
-    (setq files (seq-remove
-                 (lambda(filename)
-                   (string= filename (buffer-file-name
-                                      js-import-current-buffer)))
-                 files))
-    (if alias-path
-        (progn
-          (setq files (seq-filter (lambda(filename)
-                                    (if (file-name-absolute-p filename)
-                                        (js-import-string-match-p alias-path
-                                                                  filename)
-                                      filename))
-                                  files))
-          (mapcar (lambda(path) (js-import-normalize-path
-                            (replace-regexp-in-string alias-path slashed-alias
-                                                      path)))
-                  files))
-      (mapcar (lambda(path) (js-import-normalize-path (js-import-path-to-relative
-                                                  path)))
-              files))))
+(defun js-import-transform-files-to-alias(alias files)
+  (when-let* ((alias-path (js-import-compose-from alias
+                                                  'js-import-slash
+                                                  'js-import-get-alias-path))
+              (slashed-alias (js-import-slash alias))
+              (remove-pred (lambda(filename)
+                             (and (file-name-absolute-p filename)
+                                  (not (js-import-string-match-p alias-path
+                                                                 filename)))))
+              (transformer (lambda(path) (js-import-normalize-path
+                                     (replace-regexp-in-string alias-path
+                                                               slashed-alias
+                                                               path)))))
+    (mapcar transformer (seq-remove remove-pred files))))
+
+(defun js-import-transform-files-to-relative(dir files)
+  (mapcar (lambda(path) (js-import-normalize-path
+                    (js-import-path-to-relative
+                     path
+                     dir)))
+          files))
 
 (defun js-import-find-project-root (&optional dir)
   (unless dir (setq dir default-directory))
@@ -1517,8 +1522,8 @@ File is specified in the variable `js-import-current-export-path.'."
             :pos (point))))))
 
 (defun js-import-extract-cjs-exports(path)
-  (cond ((looking-at-p "=\\([\s\t]+?\\)require[ \t('\"]")
-         (js-import-re-search-forward "require[ \t('\"]" nil t 1)
+  (cond ((looking-at-p "=\\([\s\t\n]+?\\)require[ \t('\"]")
+         (re-search-forward "require[ \t('\"]" nil t 1)
          (skip-chars-forward "'\"")
          (when-let ((from (js-import-get-path-at-point)))
            (js-import-make-item "*"
@@ -1529,7 +1534,8 @@ File is specified in the variable `js-import-current-export-path.'."
                                 :real-path path
                                 :pos (point))))
         ((looking-at-p "=\\([\s\t]+?\\){")
-         (re-search-forward "=\\([\s\t]+?\\)" nil t 1)
+         (js-import-re-search-forward "=" nil t 1)
+         (js-import-skip-whitespace-forward)
          (when-let* ((items (js-import-parse-object-keys)))
            (when (looking-at-p "{")
              (forward-list))
@@ -1556,7 +1562,7 @@ File is specified in the variable `js-import-current-export-path.'."
             :pos (point))))
         ((looking-at-p "[.]")
          (forward-char 1)
-         (when-let ((as-name (js-import-get-word-if-valid)))
+         (when-let ((as-name (js-import-which-word)))
            (js-import-make-item
             as-name
             :type (if (string= as-name "default")  1 4)
