@@ -64,7 +64,8 @@
   :group 'js-import
   :type 'number)
 
-(defcustom js-import-package-json-sections '("dependencies" "devDependencies")
+(defcustom js-import-package-json-sections
+  '("dependencies" "devDependencies")
   "Package-json sections to retrieve candidates from node_modules."
   :group 'js-import
   :type '(repeat string))
@@ -145,32 +146,14 @@
     (define-key map (kbd "C-c C-.") 'js-import-switch-to-relative)
     map)
   "Keymap for files sources in Helm.")
-(put 'js-import-files-map 'helm-only t)
-
-(defun js-import-with-files-map(name command)
-  (substitute-command-keys
-   (concat name "\s\\<js-import-files-map>`\\" "[" (symbol-name command) "]")))
 
 (defcustom js-import-file-actions
-  (helm-make-actions
-   (js-import-with-files-map "Import from file(s)"
-                             'js-import-marked-files)
-   'js-import-marked-files
-   (js-import-with-files-map "Find file"
-                             'js-import-find-file-and-exit)
-   'js-import-find-file-and-exit
-   (js-import-with-files-map "Find file other window"
-                             'js-import-find-file-other-window-and-exit)
-   'js-import-find-file-other-window-and-exit
-   (js-import-with-files-map "Next alias"
-                             'js-import-switch-to-next-alias)
-   'js-import-switch-to-next-alias
-   (js-import-with-files-map "Prev alias"
-                             'js-import-switch-to-prev-alias)
-   'js-import-switch-to-prev-alias
-   (js-import-with-files-map "Relative"
-                             'js-import-switch-to-relative)
-   'js-import-switch-to-relative)
+  '(("Import" . js-import-from-path)
+    ("Find file" . js-import-find-file-and-exit)
+    ("Find file other window" . js-import-find-file-other-window-and-exit)
+    ("Next alias" . js-import-switch-to-next-alias)
+    ("Prev alias" . js-import-switch-to-prev-alias)
+    ("Relative" . js-import-switch-to-relative))
   "Default actions for files."
   :group 'js-import
   :type '(alist :key-type string :value-type function))
@@ -350,15 +333,13 @@
 (defvar-local js-import-cached-imports-in-buffer nil)
 (defvar-local js-import-cached-exports-in-buffer nil)
 
-(defvar js-import-dependency-source-name "Node Modules")
-(defvar js-import-buffer-source-name "Imports in")
-(defvar js-import-files-source-name "Project files")
+(defvar js-import-buffer-source-name "Imported files")
 (defvar js-import-node-modules-source nil
   "Variable keeps source files from node_modules.")
 (defvar js-import-project-files-source nil
   "Variable for source of relative and aliased files without dependencies.")
 (defvar js-import-buffer-files-source nil
-  "Buffer local variable for source of all imported files in a buffer.")
+  "Buffer variable for source of all imported files in a buffer.")
 
 (defcustom js-import-files-source '(js-import-buffer-files-source
                                     js-import-project-files-source
@@ -388,76 +369,68 @@
                   (default-directory (js-import-dirname buffer-file-name)))
              (progn ,@body)))))))
 
+(defun js-import-helm-read-file-name (&optional prompt action)
+  "Preconfigured helm for selecting files.
+Run all sources defined in option `js-import-files-source'."
+  (interactive)
+  (set-keymap-parent js-import-files-map helm-map)
+  (put 'js-import-files-map 'helm-only t)
+  (unless js-import-buffer-files-source
+    (setq js-import-buffer-files-source
+          (helm-build-in-buffer-source "Imported files"
+            :init (lambda() (with-current-buffer (helm-candidate-buffer 'global)
+                         (let ((items (with-current-buffer
+                                          js-import-current-buffer
+                                        (js-import-find-imported-files))))
+                           (mapc (lambda(it) (insert it)
+                                   (newline-and-indent))
+                                 items))
+                         (goto-char (point-min))))
+            :get-line #'buffer-substring
+            :action action
+            :keymap js-import-files-map
+            :group 'js-import
+            :persistent-action 'js-import-ff-persistent-action
+            :mode-line (list "Imports"))))
+  (unless js-import-node-modules-source
+    (setq js-import-node-modules-source
+          (helm-build-sync-source "Node Modules"
+            :candidates #'js-import-node-modules-candidates
+            :candidate-number-limit js-import-dependencies-number-limit
+            :action action
+            :mode-line (list "Dependencies")
+            :keymap js-import-files-map
+            :persistent-action 'js-import-ff-persistent-action
+            :group 'js-import))
+    (helm-attr 'candidates js-import-node-modules-source t))
+  (unless js-import-project-files-source
+    (setq js-import-project-files-source
+          (helm-build-sync-source "Project files"
+            :group 'js-import
+            :mode-line (list "File(s)")
+            :candidate-number-limit js-import-files-number-limit
+            :persistent-action 'js-import-ff-persistent-action
+            :action action
+            :keymap js-import-files-map
+            :candidates #'js-import-find-project-files
+            :filtered-candidate-transformer
+            #'js-import-project-files-transformer
+            :header-name 'js-import-files-header-name)))
+  (helm
+   :sources js-import-files-source
+   :buffer js-import-buffer
+   :preselect (js-import-preselect)
+   :prompt (or prompt "Select a file: ")))
+
 ;;;###autoload
 (defun js-import ()
   "Preconfigured helm for selecting files.
 Run all sources defined in option `js-import-files-source'."
   (interactive)
   (js-import-init-project)
-  (unless js-import-buffer-files-source
-    (setq js-import-buffer-files-source
-          (helm-make-source
-              js-import-buffer-source-name
-              'js-import-source-imported-files)))
-  (unless js-import-node-modules-source
-    (setq js-import-node-modules-source
-          (helm-make-source
-              js-import-dependency-source-name
-              'js-import-source-node-modules)))
-  (unless js-import-project-files-source
-    (setq js-import-project-files-source
-          (helm-make-source
-              js-import-files-source-name
-              'js-import-source-project-files)))
-  (helm-attr 'candidates js-import-node-modules-source t)
-  (save-excursion
-    (helm
-     :sources js-import-files-source
-     :buffer js-import-buffer
-     :preselect (js-import-preselect)
-     :prompt "Select a file: ")))
-
-;;;###autoload
-(defun js-import-alias ()
-  "Import from project files without dependencies."
-  (interactive)
-  (unless js-import-project-files-source
-    (setq js-import-project-files-source
-          (helm-make-source
-              js-import-files-source-name
-              'js-import-source-project-files)))
-  (save-excursion
-    (helm
-     :sources 'js-import-project-files-source
-     :buffer js-import-buffer
-     :preselect (js-import-preselect)
-     :prompt "Select a file: ")))
-
-;;;###autoload
-(defun js-import-dependency ()
-  "Import from node modules."
-  (interactive)
-  (unless js-import-node-modules-source
-    (setq js-import-node-modules-source
-          (helm-make-source
-              js-import-dependency-source-name
-              'js-import-source-node-modules)))
-  (save-excursion
-    (helm :sources js-import-node-modules-source
-          :preselect (js-import-preselect))))
-
-(defclass js-import-source-project-files (helm-source-sync)
-  ((header-name :initform 'js-import-files-header-name)
-   (init :initform (lambda() (with-helm-current-buffer (js-import-init-project))))
-   (candidates :initform #'js-import-find-project-files)
-   (filtered-candidate-transformer
-    :initform #'js-import-project-files-transformer)
-   (action :initform 'js-import-file-actions)
-   (persistent-action :initform 'js-import-ff-persistent-action)
-   (candidate-number-limit :initform js-import-files-number-limit)
-   (mode-line :initform (list "File(s)"))
-   (keymap :initform js-import-files-map)
-   (group :initform 'js-import)))
+  (js-import-helm-read-file-name
+   "Module:\s"
+   js-import-file-actions))
 
 (defun js-import-init-project()
   "Initialize project by setting buffer, finding root and aliases."
@@ -756,15 +729,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
   (when (fboundp 'helm-refresh)
     (helm-refresh)))
 
-(defclass js-import-source-node-modules (helm-source-sync)
-  ((candidates :initform #'js-import-node-modules-candidates)
-   (candidate-number-limit :initform js-import-dependencies-number-limit)
-   (action :initform 'js-import-file-actions)
-   (mode-line :initform (list "Dependencies"))
-   (keymap :initform js-import-files-map)
-   (persistent-action :initform 'js-import-ff-persistent-action)
-   (group :initform 'js-import)))
-
 (defun js-import-node-modules-candidates(&optional project-root)
   "Return dependencies of PROJECT-ROOT from package json."
   (unless project-root (setq project-root (js-import-find-project-root)))
@@ -940,28 +904,6 @@ Default section is `dependencies'"
     (when (file-exists-p joined-path)
       joined-path)))
 
-(defclass js-import-source-imported-files(helm-source-in-buffer)
-  ((header-name :initform (lambda(name)
-                            (with-helm-current-buffer
-                              (if buffer-file-name
-                                  (let ((base
-                                         (file-name-base
-                                          buffer-file-name)))
-                                    (format "%s %s" name base))
-                                name))))
-   (init :initform (lambda() (with-current-buffer (helm-candidate-buffer 'global)
-                          (let ((items (with-helm-current-buffer
-                                         (js-import-find-imported-files))))
-                            (mapc (lambda(it) (insert it) (newline-and-indent))
-                                  items))
-                          (goto-char (point-min)))))
-   (action :initform 'js-import-file-actions)
-   (persistent-action :initform 'js-import-ff-persistent-action)
-   (mode-line :initform (list "Imports"))
-   (keymap :initform js-import-files-map)
-   (get-line :initform #'buffer-substring)
-   (group :initform 'js-import)))
-
 (defun js-import-find-imported-files()
   "Return list of with imported imported paths in current buffer."
   (save-excursion
@@ -1044,10 +986,6 @@ Default section is `dependencies'"
       (message "Could't find %s" file))))
 (put 'js-import-find-file-other-window 'helm-only t)
 
-(defun js-import-marked-files(_c)
-  "Call command `js-import-from-path' for marked candidates."
-  (mapc 'js-import-from-path (helm-marked-candidates :all-sources t)))
-
 ;;;###autoload
 (defun js-import-from-path(path)
   "Insert import statement with marked symbols, exported from PATH."
@@ -1097,7 +1035,9 @@ Default section is `dependencies'"
    (persistent-action
     :initform (lambda(it)
                 (let ((item (with-helm-current-buffer
-                              (js-import-find-by-prop :as-name it js-import-cached-exports-in-buffer))))
+                              (js-import-find-by-prop
+                               :as-name it
+                               js-import-cached-exports-in-buffer))))
                   (js-import-jump-to-item-in-buffer item))))
    (action :initform 'js-import-jump-to-item-in-buffer)))
 
@@ -1108,7 +1048,8 @@ Default section is `dependencies'"
                                                  js-import-current-export-path)
                                        "No exports"))))
    (candidates :initform 'js-import-init-exports-candidates)
-   (candidate-transformer :initform 'js-import-exported-candidates-transformer)
+   (candidate-transformer :initform
+                          'js-import-exported-candidates-transformer)
    (filtered-candidate-transformer
     :initform 'js-import-export-filtered-candidate-transformer)
    (marked-with-props :initform 'withprop)
@@ -1123,9 +1064,10 @@ Default section is `dependencies'"
 
 ;;;###autoload
 (defun js-import-symbols-menu()
-  (interactive)
   "Jump or refactor to exported, imported and definitions in current buffer."
-  (let* ((visible-defs (js-import-search-backward-identifiers))
+  (interactive)
+  (let* ((visible-defs (js-import-search-backward-identifiers buffer-file-name
+                                                              (point-max)))
          (sources (list (helm-make-source "JS Imports"
                             'js-import-source-imported-symbols)
                         (helm-make-source "JS Exports"
@@ -2691,7 +2633,7 @@ CANDIDATE should be propertizied with property `display-path'."
           (let (module project-root)
             (setq project-root (js-import-find-project-root))
             (cond ((js-import-relative-p path)
-                   (let* ((dir (file-name-directory path))
+v                   (let* ((dir (file-name-directory path))
                           (pred (lambda(it) (string= dir (file-name-directory it)))))
                      (setq module (seq-find pred imports))
                      (unless module
