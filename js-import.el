@@ -342,18 +342,13 @@
 (defvar js-import-aliases nil)
 (defvar js-import-current-buffer nil)
 
-(defvar js-import-current-export-path nil)
-(make-variable-buffer-local 'js-import-current-export-path)
-(defvar js-import-export-candidates-in-path nil)
-(make-variable-buffer-local 'js-import-export-candidates-in-path)
-(defvar js-import-cached-imports-in-buffer nil)
-(make-variable-buffer-local 'js-import-cached-imports-in-buffer)
-(defvar js-import-cached-imports-in-buffer-tick nil)
-(make-variable-buffer-local 'js-import-cached-imports-in-buffer-tick)
+(defvar-local js-import-buffer-tick nil
+  "Buffer modified tick.")
+(defvar-local js-import-current-export-path nil)
+(defvar-local js-import-last-export-path nil)
+(defvar-local js-import-export-candidates-in-path nil)
+(defvar-local js-import-cached-imports-in-buffer nil)
 (defvar-local js-import-cached-exports-in-buffer nil)
-(defvar-local js-import-cached-exports-in-buffer-tick nil)
-(defvar js-import-last-export-path nil)
-(make-variable-buffer-local 'js-import-last-export-path)
 
 (defvar js-import-dependency-source-name "Node Modules")
 (defvar js-import-buffer-source-name "Imports in")
@@ -1096,19 +1091,14 @@ Default section is `dependencies'"
   ((candidates :initform 'js-import-exported-candidates-in-buffer)
    (marked-with-props :initform 'withprop)
    (persistent-help :initform "Show symbol")
-   (display-to-real
-    :initform (lambda(it)
-                (with-helm-current-buffer
-                  (seq-find (lambda(elt) (string= elt it))
-                            js-import-cached-exports-in-buffer
-                            it))))
+   (filtered-candidate-transformer
+    (volatile :initform t)
+    :initform 'js-import-export-filtered-candidate-transformer)
    (persistent-action
     :initform (lambda(it)
-                (with-helm-current-buffer
-                  (setq it (seq-find (lambda(elt) (string= elt it))
-                                     js-import-cached-exports-in-buffer
-                                     it)))
-                (js-import-jump-to-item-in-buffer it)))
+                (let ((item (with-helm-current-buffer
+                              (js-import-find-by-prop :as-name it js-import-cached-exports-in-buffer))))
+                  (js-import-jump-to-item-in-buffer item))))
    (action :initform 'js-import-jump-to-item-in-buffer)))
 
 (defclass js-import-source-symbols-in-path(helm-source-sync)
@@ -1133,8 +1123,8 @@ Default section is `dependencies'"
 
 ;;;###autoload
 (defun js-import-symbols-menu()
-  "Jump or refactor to exported, imported and definitions in current buffer. "
   (interactive)
+  "Jump or refactor to exported, imported and definitions in current buffer."
   (let* ((visible-defs (js-import-search-backward-identifiers))
          (sources (list (helm-make-source "JS Imports"
                             'js-import-source-imported-symbols)
@@ -1213,10 +1203,10 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
    Cache are invalidated when `buffer-modified-tick' is changed."
   (with-current-buffer (or buffer helm-current-buffer)
     (let ((tick (buffer-modified-tick)))
-      (if (eq js-import-cached-imports-in-buffer-tick tick)
+      (if (eq js-import-buffer-tick tick)
           js-import-cached-imports-in-buffer
         (progn
-          (setq js-import-cached-imports-in-buffer-tick tick)
+          (setq js-import-buffer-tick tick)
           (setq js-import-cached-imports-in-buffer
                 (seq-remove 'js-import-reserved-word-p
                             (js-import-extract-imports buffer-file-name)))
@@ -1228,10 +1218,11 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
    Cache are invalidated when `buffer-modified-tick' is changed."
   (with-current-buffer (or buffer helm-current-buffer)
     (let ((tick (buffer-modified-tick)))
-      (if (eq js-import-cached-exports-in-buffer-tick tick)
-          (js-import-extract-all-exports buffer-file-name)
+      (if (and (eq js-import-buffer-tick tick)
+               (not (null js-import-cached-exports-in-buffer)))
+          js-import-cached-exports-in-buffer
         (progn
-          (setq js-import-cached-exports-in-buffer-tick tick)
+          (setq js-import-buffer-tick tick)
           (setq js-import-cached-exports-in-buffer
                 (js-import-extract-all-exports buffer-file-name))
           js-import-cached-exports-in-buffer)))))
@@ -1256,8 +1247,8 @@ in a buffer local variable `js-import-cached-exports-in-buffer'.
       exports)))
 
 (defun js-import-export-filtered-candidate-transformer(candidates _source)
-  (setq exports (mapcar (lambda(c) (js-import-get-prop c :as-name))
-                        candidates)))
+  (mapcar (lambda(c) (js-import-get-prop c :as-name))
+          candidates))
 
 (defun js-import-filter-with-prop(property value items)
   "Return filtered ITEMS with members whose PROPERTY equals VALUE."
@@ -1454,7 +1445,7 @@ File is specified in the variable `js-import-current-export-path.'."
              ("as" (progn (re-search-forward "as" nil t 1)
                           (js-import-skip-whitespace-forward)
                           (setq as-name (js-import-get-word-if-valid))
-                          (js-import-forward-name)
+                          (skip-chars-forward as-name)
                           (setq end (point))
                           (setq full-name (concat "* as" as-name))
                           (js-import-make-item full-name
@@ -2301,26 +2292,26 @@ Default value for POSITION also current point position."
                                  (js-import-re-search-forward "as" nil t 1)
                                  (js-import-skip-whitespace-forward)
                                  (setq as-name (js-import-get-word-if-valid))))))
-      (when (or real-name as-name)
-        (setq item (or (js-import-find-by-prop
-                        :real-name real-name
-                        (js-import-search-backward-identifiers
-                         buffer-file-name (point)))
-                       (js-import-find-by-prop
-                        :as-name as-name
-                        (js-import-extract-imports
-                         buffer-file-name))
-                       (js-import-find-by-prop
-                        :real-name real-name
-                        (js-import-extract-all-exports
-                         buffer-file-name))))
-        (unless (null item)
-          (unless (js-import-get-prop item :var-type)
-            (setq item (js-import-find-definition item)))
-          (when (js-import-get-prop item :var-type)
-            (find-file (js-import-get-prop item :real-path))
-            (progn (goto-char (js-import-get-prop item :pos))
-                   (js-import-highlight-word))))))))
+      (when-let ((item
+                  (and (or real-name as-name)
+                       (or (js-import-find-by-prop
+                            :real-name real-name
+                            (js-import-search-backward-identifiers
+                             buffer-file-name (point)))
+                           (js-import-find-by-prop
+                            :as-name as-name
+                            (js-import-extract-imports
+                             buffer-file-name))
+                           (js-import-find-by-prop
+                            :real-name real-name
+                            (js-import-extract-all-exports
+                             buffer-file-name))))))
+        (unless (js-import-get-prop item :var-type)
+          (setq item (js-import-find-definition item)))
+        (when (js-import-get-prop item :var-type)
+          (find-file (js-import-get-prop item :real-path))
+          (progn (goto-char (js-import-get-prop item :pos))
+                 (js-import-highlight-word)))))))
 
 (defun js-import-find-definition(item)
   (let ((stack)
