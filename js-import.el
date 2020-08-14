@@ -1091,8 +1091,8 @@ Default section is `dependencies'"
   ((candidates :initform 'js-import-exported-candidates-in-buffer)
    (marked-with-props :initform 'withprop)
    (persistent-help :initform "Show symbol")
+   (volatile :initform t)
    (filtered-candidate-transformer
-    (volatile :initform t)
     :initform 'js-import-export-filtered-candidate-transformer)
    (persistent-action
     :initform (lambda(it)
