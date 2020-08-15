@@ -92,7 +92,7 @@
   :type 'string)
 
 (defface js-import-highlight-face
-  '((t (:background "#e52b50" :foreground "white")))
+  '((t (:background "#daa520" :foreground "white")))
   "Face used to highlight symbol."
   :group 'js-import)
 
@@ -147,24 +147,6 @@
     map)
   "Keymap for files sources in Helm.")
 
-(defcustom js-import-file-actions
-  '(("Import" . js-import-from-path)
-    ("Find file" . js-import-find-file-and-exit)
-    ("Find file other window" . js-import-find-file-other-window-and-exit)
-    ("Next alias" . js-import-switch-to-next-alias)
-    ("Prev alias" . js-import-switch-to-prev-alias)
-    ("Relative" . js-import-switch-to-relative))
-  "Default actions for files."
-  :group 'js-import
-  :type '(alist :key-type string :value-type function))
-
-(defun js-import-with-symbols-map(name command)
-  (substitute-command-keys
-   (concat
-    name
-    "\s\\<js-import-imported-symbols-map>`\\" "["
-    (symbol-name command) "]")))
-
 (defvar js-import-imported-symbols-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
@@ -198,41 +180,35 @@
   "Keymap for symdol sources.")
 (put 'js-import-export-symbols-map 'helm-only t)
 
+(defcustom js-import-file-actions
+  '(("Import" . js-import-from-path)
+    ("Find file" . js-import-find-file-and-exit)
+    ("Find file other window" . js-import-find-file-other-window-and-exit)
+    ("Next alias" . js-import-switch-to-next-alias)
+    ("Prev alias" . js-import-switch-to-prev-alias)
+    ("Relative" . js-import-switch-to-relative))
+  "Default actions for files."
+  :group 'js-import
+  :type '(alist :key-type string :value-type function))
+
 (defcustom js-import-import-symbols-actions
-  (helm-make-actions
-   (js-import-with-symbols-map "Jump"
-                               'js-import-jump-to-item-in-buffer)
-   'js-import-jump-to-item-in-buffer
-   (js-import-with-symbols-map "Rename"
-                               'js-import-rename-import)
-   'js-import-rename-import
-   (js-import-with-symbols-map "Add imports"
-                               'js-import-from-path)
-   'js-import-from-path
-   (js-import-with-symbols-map "Quick delete"
-                               'js-import-delete-persistent)
-   'js-import-delete-imported-item
-   (js-import-with-symbols-map "Delete whole import"
-                               'js-import-delete-whole-import-persistent)
-   'js-import-delete-whole-import)
+  '(("Jump" . js-import-jump-to-item-in-buffer)
+    ("Rename" . js-import-rename-import)
+    ("Add imports" . js-import-from-path)
+    ("Quick delete" . js-import-delete-imported-item)
+    ("Delete whole import" . js-import-delete-whole-import))
   "Actions for imported symbols in buffer."
   :group 'js-import
   :type '(alist :key-type string :value-type function))
 
 (defcustom js-import-export-items-actions
-  (helm-make-actions
-   "Import"                       'js-import-insert-marked
-   "Import as "                   'js-import-insert-import-as
-   "Jump to export `C-c o'"       'js-import-jump-to-item-other-window
-   "Jump to definition `C-c C-j'" 'js-import-find-export-definition)
+  '(("Import" . js-import-insert-marked)
+    ("Import as " . js-import-insert-import-as)
+    ("Jump to export" . js-import-jump-to-item-other-window)
+    ("Jump to definition" . js-import-find-export-definition))
   "Actions for inserting exports."
   :group 'js-import
   :type '(alist :key-type string :value-type function))
-
-(defcustom js-import-debug nil
-  "Whether to print symbols props."
-  :group 'js-import
-  :type 'boolean)
 
 (defun js-import-make-opt-symbol-regexp(words)
   "Return regexp from `regexp-opt'"
@@ -371,7 +347,7 @@
 
 (defun js-import-helm-read-file-name (&optional prompt action)
   "Preconfigured helm for selecting files.
-Run all sources defined in option `js-import-files-source'."
+Run sources defined in option `js-import-files-source'."
   (interactive)
   (set-keymap-parent js-import-files-map helm-map)
   (put 'js-import-files-map 'helm-only t)
@@ -428,9 +404,7 @@ Run all sources defined in option `js-import-files-source'."
 Run all sources defined in option `js-import-files-source'."
   (interactive)
   (js-import-init-project)
-  (js-import-helm-read-file-name
-   "Module:\s"
-   js-import-file-actions))
+  (js-import-helm-read-file-name "Module:\s" js-import-file-actions))
 
 (defun js-import-init-project()
   "Initialize project by setting buffer, finding root and aliases."
@@ -1440,10 +1414,12 @@ File is specified in the variable `js-import-current-export-path.'."
                 (real-name (car (seq-find (lambda(it) (js-import-valid-identifier-p
                                                   (car it)))
                                           stack)))
-                (var-type (car (seq-find (lambda(it) (member
-                                                 (car it)
-                                                 js-import-delcaration-keywords))
-                                         stack)))
+                (var-type (car
+                           (seq-find (lambda(it)
+                                       (member
+                                        (car it)
+                                        js-import-delcaration-keywords))
+                                     stack)))
                 (as-name real-name))
            (js-import-make-item
             (or real-name as-name)
@@ -2633,7 +2609,7 @@ CANDIDATE should be propertizied with property `display-path'."
           (let (module project-root)
             (setq project-root (js-import-find-project-root))
             (cond ((js-import-relative-p path)
-v                   (let* ((dir (file-name-directory path))
+                   (let* ((dir (file-name-directory path))
                           (pred (lambda(it) (string= dir (file-name-directory it)))))
                      (setq module (seq-find pred imports))
                      (unless module
