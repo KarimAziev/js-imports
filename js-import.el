@@ -1796,12 +1796,11 @@ Result depends on syntax table's string quote character."
                                 display-path))
                             (16 (js-import-generate-name-from-path
                                  display-path))))
-         (prompt (format
-                  (pcase type
-                    (1 "Import default as (default: %s): ")
-                    (4 "Import { (default: %s) }: ")
-                    (16 "Import all exports as (default: %s): "))
-                  proposed-symbol))
+         (prompt (format (pcase type
+                           (1 "Import (default: %s): ")
+                           (4 "Import { (default: %s) }: ")
+                           (16 "Import all exports as (default: %s): "))
+                         proposed-symbol))
          (read-symbols
           (read-string
            prompt
@@ -2565,13 +2564,13 @@ CANDIDATE should be propertizied with property `display-path'."
           (display-path js-import-last-export-path))
       (pcase type
         (1 (js-import-insert-exports
-            (js-import-propose-name as-name) nil display-path))
+            (js-import-propose-name candidate) nil display-path))
         (4 (js-import-insert-exports
             nil
             (js-import-strip-text-props as-name)
             display-path))
         (16 (js-import-insert-exports
-             (js-import-propose-name as-name)
+             (js-import-propose-name candidate)
              nil display-path))))))
 
 (defun js-import-insert-marked(&optional _candidate)
