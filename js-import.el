@@ -1160,14 +1160,14 @@ Default section is `dependencies'"
             :candidate-transformer 'js-import-exported-candidates-transformer
             :filtered-candidate-transformer
             'js-import-export-filtered-candidate-transformer
-            :cleanup 'js-import-exports-cleanup
             :marked-with-props 'withprop
             :volatile t
             :keymap 'js-import-export-symbols-map
             :action '()
             :action-transformer
             (lambda(_candidate _actions)
-              (if js-import-current-export-path
+              (if (with-current-buffer js-import-current-buffer
+                    js-import-current-export-path)
                   '(("Import" . (lambda(_it)
                                   (mapc
                                    'js-import-insert-import
