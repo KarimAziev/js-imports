@@ -251,7 +251,6 @@
 (defvar-local js-import-export-candidates-in-path nil)
 (defvar-local js-import-cached-imports-in-buffer nil)
 (defvar-local js-import-cached-exports-in-buffer nil)
-(defvar js-import-persistent-symbol-action nil)
 
 (defvar js-import-buffer-source-name "Imported files")
 (defvar js-import-node-modules-source nil
@@ -482,31 +481,30 @@ https://github.com/emacs-helm/helm")))
       (define-key map (kbd "C-c C-.") 'js-import-switch-to-relative)
       (setq js-import-files-map map)
       (put 'js-import-files-map 'helm-only t)))
-  (unless js-import-file-persistent-action
-    (setq js-import-file-persistent-action
-          (lambda(candidate)
-            (setq candidate (js-import-path-to-real candidate
-                                                    default-directory))
-            (when-let ((buf (get-buffer-create "*helm-js-import*"))
-                       (valid (and candidate (stringp candidate) (file-exists-p
-                                                                  candidate))))
-              (cl-flet ((preview (candidate)
-                                 (switch-to-buffer buf)
-                                 (setq inhibit-read-only t)
-                                 (erase-buffer)
-                                 (insert-file-contents candidate)
-                                 (let ((buffer-file-name candidate))
-                                   (set-auto-mode))
-                                 (font-lock-ensure)
-                                 (setq inhibit-read-only nil)))
-                (if (and (helm-attr 'previewp)
-                         (string= candidate (helm-attr 'current-candidate)))
-                    (progn
-                      (kill-buffer buf)
-                      (helm-attrset 'previewp nil))
-                  (preview candidate)
-                  (helm-attrset 'previewp t)))
-              (helm-attrset 'current-candidate candidate)))))
+  (setq js-import-file-persistent-action
+        '(lambda(candidate)
+           (setq candidate (js-import-path-to-real candidate
+                                                   default-directory))
+           (when-let ((buf (get-buffer-create "*helm-js-import*"))
+                      (valid (and candidate (stringp candidate) (file-exists-p
+                                                                 candidate))))
+             (cl-flet ((preview (candidate)
+                                (switch-to-buffer buf)
+                                (setq inhibit-read-only t)
+                                (erase-buffer)
+                                (insert-file-contents candidate)
+                                (let ((buffer-file-name candidate))
+                                  (set-auto-mode))
+                                (font-lock-ensure)
+                                (setq inhibit-read-only nil)))
+               (if (and (helm-attr 'previewp)
+                        (string= candidate (helm-attr 'current-candidate)))
+                   (progn
+                     (kill-buffer buf)
+                     (helm-attrset 'previewp nil))
+                 (preview candidate)
+                 (helm-attrset 'previewp t)))
+             (helm-attrset 'current-candidate candidate))))
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
           (helm-build-in-buffer-source "Imported files"
@@ -522,7 +520,8 @@ https://github.com/emacs-helm/helm")))
             :action action
             :keymap js-import-files-map
             :group 'js-import
-            :persistent-action 'js-import-file-persistent-action
+            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                               it))
             :mode-line (list "Imports"))))
   (unless js-import-node-modules-source
     (setq js-import-node-modules-source
@@ -532,7 +531,8 @@ https://github.com/emacs-helm/helm")))
             :action action
             :mode-line (list "Dependencies")
             :keymap js-import-files-map
-            :persistent-action 'js-import-file-persistent-action
+            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                               it))
             :group 'js-import))
     (helm-attr 'candidates js-import-node-modules-source t))
   (unless js-import-project-files-source
@@ -541,7 +541,8 @@ https://github.com/emacs-helm/helm")))
             :group 'js-import
             :mode-line (list "File(s)")
             :candidate-number-limit js-import-files-number-limit
-            :persistent-action 'js-import-file-persistent-action
+            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                               it))
             :action action
             :keymap js-import-files-map
             :candidates #'js-import-find-project-files
