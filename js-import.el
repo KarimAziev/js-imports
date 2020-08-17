@@ -553,11 +553,10 @@ https://github.com/emacs-helm/helm")))
   "Preconfigured helm for selecting files.
 Run sources defined in option `js-import-files-source'."
   (interactive)
-  (js-import-build-helm-file-sources)
+  (js-import-build-helm-file-sources action)
   (helm
    :sources js-import-files-source
    :buffer js-import-buffer
-   :action action
    :preselect (js-import-preselect)
    :prompt (or prompt "Select a file: ")))
 
@@ -1137,7 +1136,7 @@ Default section is `dependencies'"
                          js-import-current-export-path
                          candidates))))
               candidates)
-            :action '(("Jump" . js-import-insert-marked)
+            :action '(("Jump" . js-import-jump-to-item-in-buffer)
                       ("Rename" . js-import-rename-import)
                       ("Quick delete" . js-import-delete-imported-item)
                       ("Delete whole import" . js-import-delete-whole-import))
