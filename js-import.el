@@ -307,26 +307,31 @@
                   (default-directory (js-import-dirname buffer-file-name)))
              (progn ,@body)))))))
 
+(defmacro js-import-completion-clause (completion-symb bound-form)
+  (declare (indent 2) (debug t))
+  `(when-let ((completion-system ,completion-symb))
+     (if (eq js-import-completion-system completion-system)
+         (if (and ,bound-form)
+             t
+           (user-error (concat "Cannot find "
+                               (symbol-name completion-system)))))))
+
 ;;;###autoload
 (defun js-import ()
   "Run all sources defined in option `js-import-files-source'."
   (interactive)
+  (js-import-init-project)
   (let ((prompt "Module:\s"))
-    (js-import-init-project)
     (cond
-     ((eq js-import-completion-system 'helm)
-      (if (and (fboundp 'helm))
-          (js-import-helm-read-file-name prompt js-import-file-actions)
-        (user-error "Cannot find helm")))
-     ((eq js-import-completion-system 'ivy)
-      (if (and (fboundp 'ivy-read))
-          (ivy-read prompt
-                    (js-import-get-all-modules)
-                    :preselect (js-import-preselect-file)
-                    :require-match t
-                    :action 'js-import-from-path
-                    :caller 'js-import)
-        (user-error "Cannot find Ivy")))
+     ((js-import-completion-clause 'helm (fboundp 'helm))
+      (js-import-helm-read-file-name prompt js-import-file-actions))
+     ((js-import-completion-clause 'ivy (fboundp 'ivy-read))
+      (ivy-read prompt
+                (js-import-get-all-modules)
+                :preselect (js-import-preselect-file)
+                :require-match t
+                :action 'js-import-from-path
+                :caller 'js-import))
      (t (let ((module (funcall completing-read-function prompt
                                (js-import-get-all-modules))))
           (js-import-from-path module))))))
@@ -338,15 +343,43 @@
   (js-import-init-project)
   (setq js-import-current-export-path nil)
   (cond
-   ((eq js-import-completion-system 'helm)
-    (if (and (fboundp 'helm))
-        (progn
-          (js-import-helm-build-symbols-sources)
-          (helm
-           :preselect (js-import-preselect-symbol)
-           :sources js-import-symbol-sources))
-      (user-error "Helm should be installed from \
-https://github.com/emacs-helm/helm")))
+   ((js-import-completion-clause 'helm (fboundp 'helm))
+    (js-import-helm-build-symbols-sources)
+    (helm
+     :preselect (js-import-preselect-symbol)
+     :sources js-import-symbol-sources))
+   ((js-import-completion-clause 'ivy (fboundp 'ivy-read))
+    (let* ((choices (append (js-import-extract-all-exports
+                             buffer-file-name)
+                            (js-import-extract-imports buffer-file-name)
+                            (js-import-search-backward-identifiers
+                             buffer-file-name (point-max)))))
+      (ivy-read "Jump to\s"
+                choices
+                :preselect (js-import-preselect-symbol)
+                :caller 'js-import-symbol-sources
+                :action (lambda(it)
+                          (when-let ((item (js-import-find-definition it)))
+                            (let ((cands (js-import-get-prop item :stack))
+                                  (preselect))
+                              (when cands
+                                (push item cands)
+                                (setq cands (reverse cands))
+                                (setq cands (js-import-map-stack cands))
+                                (setq preselect
+                                      (seq-find
+                                       (lambda(d) (js-import-get-prop d
+                                                                 :var-type))
+                                       cands))
+                                (setq item (ivy-read "Jump:\s" cands
+                                                     :preselect (or preselect
+                                                                    it)))))
+                            (when-let ((pos (and item (js-import-get-prop
+                                                       item :pos))))
+                              (progn
+                                (find-file (js-import-get-prop item :real-path))
+                                (goto-char pos)
+                                (js-import-highlight-word))))))))
    (t (when-let* ((choices (append (js-import-extract-all-exports
                                     buffer-file-name)
                                    (js-import-extract-imports buffer-file-name)
@@ -2352,7 +2385,10 @@ Default value for POSITION also current point position."
                             :as-name real-name
                             (js-import-extract-imports path))))))))
       current-item)
-    (or current-item (car stack))))
+    (setq current-item (or current-item (pop stack)))
+    (if (and current-item stack)
+        (js-import-propertize current-item :stack stack)
+      current-item)))
 
 (defun js-import-jump-to-item-in-buffer(item &optional buffer)
   "Jumps to ITEM in buffer. ITEM must be propertized with a keyword `pos'."
@@ -2373,6 +2409,40 @@ Default value for POSITION also current point position."
       (find-file-other-window item-path))
     (js-import-jump-to-item-in-buffer item)
     item))
+
+(defun js-import-map-stack(cands)
+  (seq-map-indexed
+   (lambda(c i) (let* ((real-path (js-import-get-prop c :real-path))
+                  (short-path (if (equal (with-current-buffer
+                                             js-import-current-buffer
+                                           buffer-file-name)
+                                         real-path)
+                                  "current buffer"
+                                (replace-regexp-in-string
+                                 (concat "^" (js-import-slash
+                                              js-import-current-project-root))
+                                 ""
+                                 real-path )))
+                  (display-path (js-import-get-prop c :display-path))
+                  (export (and (js-import-get-prop c :export)
+                               (if display-path
+                                   (format "reexport from %s" display-path)
+                                 "export")))
+                  (import (and (js-import-get-prop c :import)
+                               (format "import from %s" display-path)))
+                  (var (js-import-get-prop c :var-type))
+                  (indents (unless (= i 0) (make-string i ?\s)))
+                  (parts (seq-remove 'null
+                                     (list indents c "/" export import var
+                                           (and display-path
+                                                "from")
+                                           display-path "in" short-path))))
+             (js-import-propertize (mapconcat 'identity parts "\s")
+                                   :pos (js-import-get-prop c :pos)
+                                   :var-type (js-import-get-prop c :var-type)
+                                   :real-path (js-import-get-prop
+                                               c :real-path))))
+   cands))
 
 (defun js-import-find-export-definition(export-symbol)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop :pos."
