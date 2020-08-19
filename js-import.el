@@ -81,7 +81,8 @@
   :group 'js-import
   :type 'string)
 
-(defcustom js-import-preffered-extensions '("d.ts" "ts" "js" "tsx" "jsx")
+(defcustom js-import-preffered-extensions
+  '("d.ts" "ts""tsx" "jsx" "mjs" "js" "cjs")
   "Preffered suffixes for files with different extension."
   :group 'js-import
   :type '(repeat string))
@@ -316,8 +317,16 @@
      ((eq js-import-completion-system 'helm)
       (if (and (fboundp 'helm))
           (js-import-helm-read-file-name prompt js-import-file-actions)
-        (user-error "Helm should be installed from \
-https://github.com/emacs-helm/helm")))
+        (user-error "Cannot find helm")))
+     ((eq js-import-completion-system 'ivy)
+      (if (and (fboundp 'ivy-read))
+          (ivy-read prompt
+                    (js-import-get-all-modules)
+                    :preselect (js-import-preselect-file)
+                    :require-match t
+                    :action 'js-import-from-path
+                    :caller 'js-import)
+        (user-error "Cannot find Ivy")))
      (t (let ((module (funcall completing-read-function prompt
                                (js-import-get-all-modules))))
           (js-import-from-path module))))))
@@ -420,36 +429,46 @@ https://github.com/emacs-helm/helm")))
 (defun js-import-from-path(path)
   "Insert import statement with marked symbols, exported from PATH."
   (with-current-buffer js-import-current-buffer
-    (when-let ((display-path (or
-                              (js-import-get-prop path :display-path)
-                              path)))
+    (when-let ((display-path (or (js-import-get-prop path
+                                                     :display-path)
+                                 path)))
       (setq js-import-current-export-path display-path)
       (setq js-import-last-export-path display-path)))
   (js-import-init-exports-candidates)
   (cond
-   ((eq js-import-completion-system 'helm)
-    (if (and (fboundp 'helm))
-        (progn
-          (js-import-helm-build-symbols-sources)
-          (helm
-           :preselect (js-import-preselect-symbol)
-           :sources '(js-import-exports-source
-                      js-import-imported-symbols-source)))
-      (user-error "Please install helm from \
-https://github.com/emacs-helm/helm")))
+   ((and (eq js-import-completion-system 'helm)
+         (fboundp 'helm))
+    (js-import-helm-build-symbols-sources)
+    (helm
+     :preselect (js-import-preselect-symbol)
+     :sources '(js-import-exports-source
+                js-import-imported-symbols-source)))
+   ((and (eq js-import-completion-system 'ivy)
+         (fboundp 'ivy-read))
+    (let ((choices (js-import-export-filtered-candidate-transformer
+                    (js-import-exported-candidates-transformer
+                     js-import-export-candidates-in-path))))
+      (if (null choices)
+          (message "Cannot find ivy")
+        (ivy-read
+         "Symbols\s" choices
+         :require-match t
+         :caller 'js-import-from-path
+         :preselect (js-import-preselect-symbol)
+         :action (lambda(it) (js-import-insert-import
+                         (js-import-display-to-real-exports
+                          it)))))))
    (t (let ((choices (js-import-export-filtered-candidate-transformer
                       (js-import-exported-candidates-transformer
-                       js-import-export-candidates-in-path)))
-            (symbols))
+                       js-import-export-candidates-in-path))))
         (if (null choices)
             (message "No exports found")
-          (setq symbols (js-import-completion-read-cycle
-                         "Symbols\s"
-                         choices))
-          (setq symbols (mapcar 'js-import-display-to-real-exports symbols))
-          (dotimes (i (length symbols))
-            (let ((it (nth i symbols)))
-              (js-import-insert-import it))))))))
+          (js-import-completing-read
+           "Symbols\s" choices
+           :require-match t
+           :action (lambda(it) (js-import-insert-import
+                           (js-import-display-to-real-exports
+                            it)))))))))
 
 (defun js-import-init-project()
   "Initialize project by setting buffer, finding root and aliases."
@@ -557,7 +576,7 @@ Run sources defined in option `js-import-files-source'."
   (helm
    :sources js-import-files-source
    :buffer js-import-buffer
-   :preselect (js-import-preselect)
+   :preselect (js-import-preselect-file)
    :prompt (or prompt "Select a file: ")))
 
 (defun js-import-find-project-files(&optional project-root)
@@ -1039,88 +1058,43 @@ Default section is `dependencies'"
     (when path
       (js-import-find-file path))))
 
-(defun js-import-completion-read-cycle(&optional prompt collection action)
+(cl-defun js-import-completing-read (prompt
+                                     collection
+                                     &key
+                                     action
+                                     history
+                                     require-match)
   (interactive)
-  (unless prompt (setq prompt "Select\s"))
-  (unless action (setq action 'identity))
-  minibuffer-inactive-mode-map
-  (let (last-result result preselect)
-    (if (= 1 (length collection))
-        (progn
-          (setq preselect (car collection))
-          (push (completing-read prompt collection
-                                 nil t preselect nil nil)
-                result))
-      (while (or (not (equal last-result ""))
-                 (< 1 (length collection)))
-        (setq last-result (completing-read prompt collection nil nil
-                                           ""
-                                           nil))
-        (unless (equal last-result "")
-          (push last-result result))
-        (setq collection (seq-difference (append
-                                          (member last-result
-                                                  collection)
-                                          collection)
-                                         result))
-        (setq prompt (concat (car (split-string prompt)) "\s"
-                             (mapconcat 'identity (reverse result) "\s")))))
+  (let* ((minibuffer-completion-table collection)
+         (minibuffer-completion-confirm (unless (eq require-match t)
+                                          require-match))
+         (base-keymap (if require-match
+                          minibuffer-local-must-match-map
+                        minibuffer-local-completion-map))
+         (keymap (make-composed-keymap
+                  minibuffer-local-must-match-map base-keymap))
+         (preselect (car minibuffer-completion-table))
+         (prompt (if (string-empty-p (format "%s" preselect))
+                     prompt
+                   (concat prompt "\s" (format "(default %s)" preselect))))
+         (result))
+    (setq result (read-from-minibuffer
+                  prompt
+                  nil
+                  keymap
+                  t
+                  history
+                  preselect))
+    (when action
+      (funcall action result))
     result))
-
 (defun js-import-helm-build-symbols-sources()
   "Build helm sources for symbols menu."
   (unless js-import-export-symbols-map
-    (setq js-import-export-symbols-map (make-sparse-keymap))
-    (set-keymap-parent js-import-export-symbols-map helm-map)
-    (define-key
-      js-import-export-symbols-map
-      (kbd "C-c o")
-      (lambda()
-        (interactive)
-        (helm-run-after-exit
-         'js-import-jump-to-item-other-window
-         (helm-get-selection
-          nil
-          'withprop))))
-    (define-key
-      js-import-export-symbols-map
-      (kbd "C-c C-j")
-      (lambda()
-        (interactive)
-        (helm-run-after-exit
-         'js-import-find-export-definition
-         (helm-get-selection
-          nil
-          'withprop))))
+    (setq js-import-export-symbols-map (js-import-build-helm-exports-keymap))
     (put 'js-import-export-symbols-map 'helm-only t))
   (unless js-import-imported-symbols-map
-    (setq js-import-imported-symbols-map (make-sparse-keymap))
-    (set-keymap-parent js-import-imported-symbols-map helm-map)
-    (define-key js-import-imported-symbols-map
-      (kbd "M-d") (lambda()
-                    (interactive)
-                    (with-helm-alive-p
-                      (helm-attrset
-                       'js-import-delete-imported-item
-                       '(js-import-delete-imported-item . never-split))
-                      (helm-execute-persistent-action
-                       'js-import-delete-imported-item)
-                      (js-import-init-exports-candidates)
-                      (helm-refresh))))
-    (define-key js-import-imported-symbols-map
-      (kbd "M-D") (lambda()
-                    (interactive)
-                    (with-helm-alive-p
-                      (helm-attrset
-                       'js-import-delete-whole-import
-                       '(js-import-delete-whole-import . never-split))
-                      (helm-execute-persistent-action
-                       'js-import-delete-whole-import)
-                      (helm-refresh))))
-    (define-key js-import-imported-symbols-map
-      (kbd "M-r") (lambda()
-                    (interactive)
-                    (helm-exit-and-execute-action 'js-import-rename-import)))
+    (setq js-import-imported-symbols-map (js-import-build-helm-imported-keymap))
     (put 'js-import-imported-symbols-map 'helm-only t))
   (unless js-import-imported-symbols-source
     (setq js-import-imported-symbols-source
@@ -1229,7 +1203,55 @@ Default section is `dependencies'"
                                     (js-import-jump-to-item-in-buffer
                                      (helm-get-selection nil 'withprop))))))))))
 
-(defun js-import-preselect()
+(defun js-import-build-helm-exports-keymap()
+  "Make keymap for helm symbols type."
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map helm-map)
+    (define-key
+      map (kbd "C-c o")
+      (lambda() (interactive)
+        (helm-run-after-exit 'js-import-jump-to-item-other-window
+                             (helm-get-selection nil 'withprop))))
+    (define-key
+      map
+      (kbd "C-c C-j")
+      (lambda() (interactive)
+        (helm-run-after-exit 'js-import-find-export-definition
+                             (helm-get-selection nil 'withprop))))
+    map))
+
+(defun js-import-build-helm-imported-keymap()
+  "Make keymap for helm symbols type."
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map helm-map)
+    (define-key map
+      (kbd "M-d") (lambda()
+                    (interactive)
+                    (with-helm-alive-p
+                      (helm-attrset
+                       'js-import-delete-imported-item
+                       '(js-import-delete-imported-item . never-split))
+                      (helm-execute-persistent-action
+                       'js-import-delete-imported-item)
+                      (js-import-init-exports-candidates)
+                      (helm-refresh))))
+    (define-key map
+      (kbd "M-D") (lambda()
+                    (interactive)
+                    (with-helm-alive-p
+                      (helm-attrset
+                       'js-import-delete-whole-import
+                       '(js-import-delete-whole-import . never-split))
+                      (helm-execute-persistent-action
+                       'js-import-delete-whole-import)
+                      (helm-refresh))))
+    (define-key map
+      (kbd "M-r") (lambda()
+                    (interactive)
+                    (helm-exit-and-execute-action 'js-import-rename-import)))
+    map))
+
+(defun js-import-preselect-file()
   "Preselect function for file sources."
   (if  (and (> (point-max) (point))
             (stringp (or (js-import-get-path-at-point)
