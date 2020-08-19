@@ -429,8 +429,7 @@ https://github.com/emacs-helm/helm")))
 (defun js-import-from-path(path)
   "Insert import statement with marked symbols, exported from PATH."
   (with-current-buffer js-import-current-buffer
-    (when-let ((display-path (or (js-import-get-prop path
-                                                     :display-path)
+    (when-let ((display-path (or (js-import-get-prop path :display-path)
                                  path)))
       (setq js-import-current-export-path display-path)
       (setq js-import-last-export-path display-path)))
@@ -449,7 +448,7 @@ https://github.com/emacs-helm/helm")))
                     (js-import-exported-candidates-transformer
                      js-import-export-candidates-in-path))))
       (if (null choices)
-          (message "Cannot find ivy")
+          (message "No exports found")
         (ivy-read
          "Symbols\s" choices
          :require-match t
@@ -1253,13 +1252,13 @@ Default section is `dependencies'"
 
 (defun js-import-preselect-file()
   "Preselect function for file sources."
-  (if  (and (> (point-max) (point))
-            (stringp (or (js-import-get-path-at-point)
-                         js-import-last-export-path
-                         js-import-current-export-path)))
-      (regexp-quote (or (js-import-get-path-at-point)
-                        js-import-last-export-path
-                        js-import-current-export-path)) ""))
+  (if-let ((path (with-current-buffer js-import-current-buffer
+                   (or js-import-last-export-path
+                       js-import-current-export-path
+                       (when (> (point-max) (point))
+                         (js-import-get-path-at-point))))))
+      (regexp-quote path)
+    ""))
 
 (defun js-import-preselect-symbol()
   "Preselect function for symbols."
