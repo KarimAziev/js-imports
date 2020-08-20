@@ -436,7 +436,7 @@
                              buffer-file-name))))))
         (unless (js-import-get-prop item :var-type)
           (setq item (js-import-find-definition item)))
-        (when (js-import-get-prop item :var-type)
+        (when item
           (find-file (js-import-get-prop item :real-path))
           (progn (goto-char (js-import-get-prop item :pos))
                  (js-import-highlight-word)))))))
@@ -1676,7 +1676,7 @@ File is specified in the variable `js-import-current-export-path.'."
          (when-let ((real-name (js-import-get-word-if-valid)))
            (js-import-make-item
             real-name
-            :type (if (string= real-name "default")  1 4)
+            :type 1
             :real-name real-name
             :as-name real-name
             :real-path path
