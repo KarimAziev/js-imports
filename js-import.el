@@ -558,7 +558,7 @@
              (helm-attrset 'current-candidate candidate))))
   (unless js-import-buffer-files-source
     (setq js-import-buffer-files-source
-          (helm-build-in-buffer-source "Imported files"
+          (helm-make-source "Imported files" 'helm-source-in-buffer
             :init (lambda() (with-current-buffer (helm-candidate-buffer 'global)
                          (let ((items (with-current-buffer
                                           js-import-current-buffer
@@ -576,7 +576,7 @@
             :mode-line (list "Imports"))))
   (unless js-import-node-modules-source
     (setq js-import-node-modules-source
-          (helm-build-sync-source "Node Modules"
+          (helm-make-source "Node Modules" 'helm-source-sync
             :candidates #'js-import-node-modules-candidates
             :candidate-number-limit js-import-dependencies-number-limit
             :action action
@@ -588,7 +588,7 @@
     (helm-attr 'candidates js-import-node-modules-source t))
   (unless js-import-project-files-source
     (setq js-import-project-files-source
-          (helm-build-sync-source "Project files"
+          (helm-make-source "Project files" 'helm-source-sync
             :group 'js-import
             :mode-line (list "File(s)")
             :candidate-number-limit js-import-files-number-limit
@@ -1130,7 +1130,7 @@ Default section is `dependencies'"
     (put 'js-import-imported-symbols-map 'helm-only t))
   (unless js-import-imported-symbols-source
     (setq js-import-imported-symbols-source
-          (helm-build-sync-source "Imported"
+          (helm-make-source "Imported" 'helm-source-sync
             :candidates 'js-import-imported-candidates-in-buffer
             :candidate-transformer
             (lambda(candidates)
@@ -1156,7 +1156,7 @@ Default section is `dependencies'"
             :marked-with-props 'withprop)))
   (unless js-import-exports-source
     (setq js-import-exports-source
-          (helm-build-sync-source "Exports"
+          (helm-make-source "Exports" 'helm-source-sync
             :header-name (lambda (_name)
                            (with-current-buffer js-import-current-buffer
                              (format "Exports in %s"
@@ -1225,7 +1225,7 @@ Default section is `dependencies'"
                     (helm-attrset 'current-candidate item)))))))
     (unless js-import-definitions-source
       (setq js-import-definitions-source
-            (helm-build-sync-source "Definitions"
+            (helm-make-source "Definitions" 'helm-source-sync
               :candidates (lambda() (with-current-buffer js-import-current-buffer
                                  (js-import-search-backward-identifiers
                                   buffer-file-name (point))))
