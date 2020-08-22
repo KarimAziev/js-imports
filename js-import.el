@@ -82,7 +82,7 @@
   :type 'string)
 
 (defcustom js-import-preffered-extensions
-  '("d.ts" "ts""tsx" "jsx" "mjs" "js" "cjs")
+  '("d.ts" "ts" "tsx" "jsx" "mjs" "js" "cjs")
   "Preffered suffixes for files with different extension."
   :group 'js-import
   :type '(repeat string))
@@ -160,15 +160,22 @@
                                  words
                                (list words)) t) "\\_>"))
 
-(defconst js-import-enabled-extension-regexp "\\.[jt]s\\(x\\)?$")
+(defconst js-import-file-ext-regexp
+  (concat "[.]" (regexp-opt js-import-preffered-extensions) "$")
+  "Regexp matching js, jsx and ts extensions files.")
+
+(defvar js-import-file-index-regexp
+  (concat "\\(/\\|^\\)index" "\\($\\|" js-import-file-ext-regexp "\\)"))
 
 (defconst js-import-expression-keywords
   '("const" "var" "let" "interface" "type" "class"))
 
 (defconst js-import-expression-keywords--re
   (js-import-make-opt-symbol-regexp js-import-expression-keywords))
+
 (defconst js-import-from-keyword--re
   (js-import-make-opt-symbol-regexp "from"))
+
 (defconst js-import-delcaration-keywords
   (append '("function" "function*") js-import-expression-keywords))
 
@@ -182,16 +189,9 @@
 (defconst js-import-name-as--re
   "\\([a-zA-Z_$]\\(?:\\s_\\|\\sw\\)*\\)\\([\s\t\n]+as[\s\t\n]+\\([_$A-Za-z0-9]+\\)\\)?")
 
-(defvar js-import-white-space-or-comments-re
-  "[\n\s\t]\\|\\(//[^\n]*\\)\\|\\(/[*]\\)")
-
 (defconst js-import-regexp-name-set
-  (concat "[" js-import-regexp-name "]")
+  "[_$A-Za-z0-9]"
   "Regexp set matching the start of a js identifier.")
-
-(defconst js-import-regexp-name-with-separators
-  (concat js-import-regexp-name ",\s\n\t")
-  "Regexp matching js identifier's chars with separators.")
 
 (defconst js-import-regexp-import-keyword
   (js-import-make-opt-symbol-regexp "import")
@@ -206,15 +206,8 @@
   "Regexp matching keyword for exports.")
 
 (defconst js-import-node-modules-regexp
-  "\\(/\\|^\\)node_modules\\(\\/\\|$\\)"
+  "\\(/\\|^\\)node_modules\\(/\\|$\\)"
   "Regexp matching path with node_modules.")
-
-(defconst js-import-file-ext-regexp
-  "\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)$"
-  "Regexp matching js, jsx and ts extensions files.")
-
-(defvar js-import-file-index-regexp
-  "\\(/\\|^\\)\\index\\(\\(\\.d\\)?\\.tsx?\\|.jsx?\\)?$")
 
 (defconst js-import-reserved-js-words
   '("abstract" "any" "as" "async" "await" "boolean" "bigint"
@@ -701,14 +694,14 @@ Run sources defined in option `js-import-files-source'."
           dir
         (js-import-slash (js-import-find-project-root parent))))))
 
-(defun js-import-directory-files(dir &optional recursive regexp)
+(defun js-import-directory-files(dir &optional recursive re)
   "Return files in DIR that matches value of the variable
-`js-import-enabled-extension-regexp'.
+`js-import-file-ext-regexp'.
 Optional argument RECURSIVE non-nil means to search recursive."
-  (unless regexp (setq regexp js-import-enabled-extension-regexp))
+  (unless re (setq re js-import-file-ext-regexp))
   (if recursive
-      (directory-files-recursively dir regexp nil)
-    (directory-files dir t regexp t)))
+      (directory-files-recursively dir re nil)
+    (directory-files dir t re t)))
 
 (defun js-import-join-file (&rest args)
   "Join ARGS to a single path."
@@ -800,7 +793,7 @@ If PATH is a relative file, it will be returned without changes."
   (when (and path (stringp path))
     (setq path (js-import-strip-text-props path))
     (cond ((and (js-import-string-match-p
-                 js-import-enabled-extension-regexp path)
+                 js-import-file-ext-regexp path)
                 (file-exists-p path)
                 (not (js-import-relative-p path)))
            path)
@@ -829,7 +822,7 @@ If PATH is a relative file, it will be returned without changes."
                            alias-path
                            (replace-regexp-in-string alias-regexp "" path)))
              (found-path (if (and (js-import-string-match-p
-                                   js-import-enabled-extension-regexp
+                                   js-import-file-ext-regexp
                                    joined-path)
                                   (file-exists-p joined-path))
                              joined-path
@@ -842,7 +835,7 @@ If PATH is a relative file, it will be returned without changes."
     real-path))
 
 (defun js-import-add-ext(path ext)
-  (if (js-import-string-match-p js-import-enabled-extension-regexp path)
+  (if (js-import-string-match-p js-import-file-ext-regexp path)
       path
     (concat path "." ext)))
 
@@ -970,7 +963,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
                                 (js-import-find-node-modules)))
               (real-path (js-import-join-file node-modules module)))
     (unless (js-import-string-match-p
-             js-import-enabled-extension-regexp real-path)
+             js-import-file-ext-regexp real-path)
       (setq real-path (js-import-try-find-real-path real-path))
       real-path)))
 
@@ -988,7 +981,7 @@ PROJECT-ROOT."
 
 (defun js-import-try-find-real-path(path)
   (if (or (null path) (and (js-import-string-match-p
-                            js-import-enabled-extension-regexp path)
+                            js-import-file-ext-regexp path)
                            (file-exists-p path)))
       path
     (or (when-let* ((package-json (js-import-join-when-exists
@@ -997,7 +990,7 @@ PROJECT-ROOT."
                     (module (js-import-try-json-sections
                              package-json
                              js-import-node-modules-priority-section-to-read)))
-          (if (js-import-string-match-p js-import-enabled-extension-regexp
+          (if (js-import-string-match-p js-import-file-ext-regexp
                                         module)
               (expand-file-name module path)
             (js-import-try-find-real-path (js-import-try-ext module path))))
@@ -1018,7 +1011,7 @@ PROJECT-ROOT."
                     (module (js-import-try-json-sections
                              package-json
                              '("main"))))
-          (if (js-import-string-match-p js-import-enabled-extension-regexp
+          (if (js-import-string-match-p js-import-file-ext-regexp
                                         module)
               (expand-file-name module path)
             (js-import-try-find-real-path (js-import-try-ext module path)))))))
@@ -1570,7 +1563,7 @@ File is specified in the variable `js-import-current-export-path.'."
 
 (defun js-import-make-esm-export-at-point(&optional path)
   "Return exports in PATH defined with ES Module syntax."
-  (cond ((looking-at-p "*")
+  (cond ((looking-at-p "\\*")
          (let ((start (point))
                (as-name)
                (full-name)
@@ -1759,7 +1752,7 @@ File is specified in the variable `js-import-current-export-path.'."
                            (skip-chars-forward "\s\t\n")
                            (push (cons word pos) children))))))))))
       (when children
-        (cl-remove-duplicates (cl-remove 'null children) :test 'equal)))))
+        (seq-uniq (cl-remove 'null children))))))
 
 (defun js-import-parse-destructive()
   "Return object values."
@@ -1780,7 +1773,7 @@ File is specified in the variable `js-import-current-export-path.'."
           (while (re-search-backward "," nil t 1)
             (skip-chars-backward "},\s\t\n")
             (push (js-import-maybe-make-child-at-point parent) children))
-          (cl-remove 'null children))))))
+          (seq-remove 'null children))))))
 
 (defun js-import-skip-reserved-words(&optional separators)
   (unless separators (setq separators "\s\t\".='*"))
@@ -1818,7 +1811,7 @@ File is specified in the variable `js-import-current-export-path.'."
   (let (parts)
     (when (stringp names) (push (concat "{ " names" }") parts))
     (when (stringp default-name) (push default-name parts))
-    (js-import-join ", " (seq-remove (lambda(it) (null it)) parts))))
+    (js-import-join ", " (seq-remove 'null parts))))
 
 (defun js-import-goto-last-import()
   (goto-char (point-min))
@@ -1906,17 +1899,17 @@ File is specified in the variable `js-import-current-export-path.'."
   (when-let ((word (js-import-which-word)))
     (string= word str)))
 
-(defun js-import-which-word (&optional regexp)
+(defun js-import-which-word (&optional re)
   "Find closest to point whole word."
-  (unless regexp (setq regexp js-import-regexp-name))
+  (unless re (setq re js-import-regexp-name))
   (unless (= (point) (point-max))
     (save-excursion
       (let (p1 p2 word)
         (save-excursion
-          (skip-chars-backward regexp)
+          (skip-chars-backward re)
           (setq p1 (point))
           (right-char)
-          (skip-chars-forward regexp)
+          (skip-chars-forward re)
           (setq p2 (point)))
         (when (< p1 (point))
           (goto-char p1))
@@ -1931,12 +1924,12 @@ File is specified in the variable `js-import-current-export-path.'."
                                (string= "from" word))))
       (if (string= word "from")
           (search-forward-regexp "['\"]" nil t 1)
-        (search-forward-regexp "[ \s\t\n]+from[ \s\t\n]+['\"]" nil t 1)))
+        (search-forward-regexp "[\s\t\n]+from[\s\t\n]+['\"]" nil t 1)))
     (when (js-import-inside-string-p)
       (if (use-region-p)
           (buffer-substring-no-properties (region-beginning) (region-end))
         (let (p0 p1 p2 stops)
-          (setq stops "^  \t\n\"`'‘’“”|[]{}〙·\\")
+          (setq stops "^ \t\n\"`'‘’“”|[]{}·")
           (setq p0 (point))
           (skip-chars-backward stops)
           (setq p1 (point))
@@ -2033,10 +2026,10 @@ Result depends on syntax table's string quote character."
                  (4 (format "%s as %s" current-name new-name))
                  (16 (format "* as %s" new-name)))))
     name))
-
+(split-string "str fs-df gdfg \fv" "[ \f\t\n\r\v/.-]")
 (defun js-import-generate-name-from-path(path)
   "Generate name for default or module import from PATH."
-  (let* ((split-path (lambda(str) (split-string str "[ \f\t\n\r\v-/.]")))
+  (let* ((split-path (lambda(str) (split-string str "[ \f\t\n\r\v/.-]")))
          (map-capitalize (lambda(p) (mapcar 'capitalize p)))
          (take-two (lambda(parts) (seq-take parts 2))))
     (js-import-compose-from path
@@ -2278,10 +2271,10 @@ Result depends on syntax table's string quote character."
              (var-type (js-import-which-word)))
     (save-excursion
       (js-import-re-search-forward var-type nil t 1)
-      (when (looking-at "*")
+      (when (looking-at "\\*")
         (forward-char 1))
       (js-import-skip-whitespace-forward)
-      (when (looking-at "*")
+      (when (looking-at "\\*")
         (forward-char 1)
         (js-import-skip-whitespace-forward))
       (when-let* ((word (js-import-which-word))
@@ -2630,17 +2623,17 @@ CANDIDATE should be propertizied with property `display-path'."
             (setq p1 (point))
             (re-search-forward candidate nil t 1)
             (setq p2 (point))
-            (skip-chars-forward " ,\s\n\t")
+            (skip-chars-forward ",\s\n\t")
             (setq p2 (point))
             (when (looking-at-p "}")
               (setq p2 (point))
               (goto-char p1)
-              (skip-chars-backward " \s\t\n")
+              (skip-chars-backward "\s\t\n")
               (backward-char)
               (when (looking-at-p "{")
                 (setq p2 (1+ p2))
                 (setq p1 (point))
-                (skip-chars-backward  " \s\t\n")
+                (skip-chars-backward  "\s\t\n")
                 (backward-char))
               (when (looking-at-p ",")
                 (setq p1 (point))))
@@ -2704,9 +2697,9 @@ CANDIDATE should be propertizied with property `display-path'."
       (skip-chars-forward real-name)
       (if as-word
           (progn
-            (skip-chars-forward " \s\t\n")
+            (skip-chars-forward "\s\t\n")
             (skip-chars-forward "as")
-            (skip-chars-forward " \s\t\n")
+            (skip-chars-forward "\s\t\n")
             (when (and renamed-name
                        (string= renamed-name (js-import-which-word)))
               (query-replace-regexp (concat "\\_<" renamed-name "\\_>")
