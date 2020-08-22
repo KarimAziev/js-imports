@@ -31,11 +31,11 @@
 
 ;;; Code:
 
+(require 'cl-lib)
+(require 'json)
 
 (eval-when-compile
-  (require 'subr-x)
-  (require 'cl-lib)
-  (require 'json))
+  (require 'subr-x))
 
 (defgroup js-import nil
   "Minor mode providing JavaScript import."
