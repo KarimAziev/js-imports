@@ -2674,7 +2674,7 @@ Without argument KEEP-COMMENTS content will inserted without comments."
     (save-excursion
       (js-import-goto-last-import)
       (if (member path imports)
-          (js-import-add-to-current-imports default-name names)
+          (js-import-add-to-current-imports path default-name names)
         (let (module project-root)
           (setq project-root (js-import-find-project-root))
           (cond ((js-import-relative-p path)
@@ -2720,7 +2720,8 @@ Without argument KEEP-COMMENTS content will inserted without comments."
               (goto-char end)
               (skip-chars-forward ";")
               (newline-and-indent)
-              (insert "import " (js-import-join-imports-names default-name names)
+              (insert "import " (js-import-join-imports-names
+                                 default-name names)
                       " from " js-import-quote path js-import-quote ";"))
           (when default-name
             (when (looking-at-p js-import-regexp-name-set)
@@ -2741,8 +2742,8 @@ Without argument KEEP-COMMENTS content will inserted without comments."
                 (progn (js-import-re-search-forward "}" nil t 1)
                        (backward-char 1)
                        (js-import-skip-whitespace-backward)
-                       (let ((separator (if (save-excursion
-                                              (backward-char 1) (looking-at-p ","))
+                       (let ((separator (if (save-excursion (backward-char 1)
+                                                            (looking-at-p ","))
                                             " "
                                           ", ")))
                          (insert separator names)))
