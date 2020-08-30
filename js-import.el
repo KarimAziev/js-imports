@@ -2701,6 +2701,9 @@ Without argument KEEP-COMMENTS content will inserted without comments."
           (when module
             (goto-char (cdr (js-import-get-import-positions module)))
             (forward-line))))
+      (insert "import " (js-import-join-imports-names
+                         default-name names)
+              " from " js-import-quote path js-import-quote ";\n")
       (js-import-goto-last-import)
       (unless (looking-at-p "\n")
         (newline-and-indent)))))
