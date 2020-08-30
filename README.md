@@ -3,7 +3,7 @@
 
 ## js-import
 
-An Emacs package for import JavaScript and TypeScript modules with [helm](<https://github.com/emacs-helm/helm> "helm") interface.
+An Emacs package for import JavaScript and TypeScript modules with [helm](<https://github.com/emacs-helm/helm> "helm") or [ivy](https://github.com/abo-abo/swiper "ivy") completion systems.
 
 <a id="org7a05a1c"></a>
 
@@ -21,13 +21,13 @@ An Emacs package for import JavaScript and TypeScript modules with [helm](<https
 ### Requirements
 
 -   Emacs 26.1 or higher
--   Helm 3.0 or higher
+-   cl-lib
 
 <a id="org66d242b"></a>
 
 ### Installation
 
-Until `js-import` is not published on Melpa you can install the package from [quelpa](<https://github.com/quelpa/quelpa> "quelpa").
+You can install the package from [quelpa](<https://github.com/quelpa/quelpa> "quelpa").
 
 ```cl
     (quelpa '(js-import
@@ -41,7 +41,7 @@ Or if you want to always get the latest version:
 ```cl
     (quelpa '(js-import
         :repo "KarimAziev/js-import"
-        :fetcher git
+x        :fetcher git
         :url "git@github.com:KarimAziev/js-import.git")
     :upgrade t)
 ```
@@ -51,33 +51,29 @@ Or if you want to always get the latest version:
 
 ### Usage
 
-1.  Select a module with one of these commands
-    * `M-x js-import` to include alias, relative and node_modules files
-    * `M-x js-import-alias` to include alias and relative files
-    * `M-x js-import-dependency` to include dependencies
+#### `M-x js-import`
 
-    **Helm actions**
-    -  `C-r`  switches to a relative paths
-    -  `C->`  switches to next webpack alias
-    -  `C-<`  switches to previous previous webpack alias
+Main command which ask about a filename to extract exported symbols and automatically inserts selected an existing or a new import statement.
+
+**Helm actions for files**
+
+- `C-r`  switches to a relative paths
+- `C->`  switches to next webpack alias
+- `C-<`  switches to previous previous webpack alias
+- `C-c o` find file
 
 
-2. Select symbols
-    **Helm actions**
-    -  `f1`  inserts a symbol to an existing or new import statement
-    -  `f2`  makes a named import (`import { exportName as newName }`)
-    -  `f3`  jumps to a file
+**Helm actions for symbols**
 
-3. Edit current imports, jumping and deleting
-   * `M-x js-import-edit-buffer-imports`
-     Shows all imported symbols in current buffer.
+- makes a named import (`import { exportName as newName }`)
+- jump to export definition.
 
-     **Helm actions**
-     -  `f1`  jumps to a file
-     -  `f2`  renames symbol
-     -  `f2`  reads more imports from symbol's export path
-     -  `f3`  deletes an imported symbol
-     -  `f4`  deletes whole import statement
+#### `js-import-symbols-menu`
+A command for jumping and editing symbols in current buffer.
+
+#### `js-import-find-symbol-at-point`
+
+Jumps to a definition of symbol at point through renaming, re-exports.
 
 <a id="orgc8d9f05"></a>
 
