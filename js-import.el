@@ -2674,69 +2674,79 @@ Without argument KEEP-COMMENTS content will inserted without comments."
     (save-excursion
       (js-import-goto-last-import)
       (if (member path imports)
-          (progn
-            (goto-char (cdr (js-import-get-import-positions path)))
-            (js-import-add-to-current-imports default-name names))
-        (progn
-          (let (module project-root)
-            (setq project-root (js-import-find-project-root))
-            (cond ((js-import-relative-p path)
-                   (let* ((dir (file-name-directory path))
-                          (pred (lambda(it) (string= dir (file-name-directory it)))))
+          (js-import-add-to-current-imports default-name names)
+        (let (module project-root)
+          (setq project-root (js-import-find-project-root))
+          (cond ((js-import-relative-p path)
+                 (let* ((dir (file-name-directory path))
+                        (pred (lambda(it) (string= dir (file-name-directory it)))))
+                   (setq module (seq-find pred imports))
+                   (unless module
+                     (setq module (seq-find 'js-import-relative-p imports)))))
+                ((js-import-dependency-p path)
+                 (when-let ((dependencies (js-import-node-modules-candidates
+                                           project-root)))
+                   (setq module (seq-find (lambda(it) (member it dependencies))
+                                          imports))
+                   (unless module
+                     (goto-char (point-min)))))
+                (t (let ((pred (lambda(it) (not (js-import-relative-p it)))))
                      (setq module (seq-find pred imports))
                      (unless module
-                       (setq module (seq-find 'js-import-relative-p imports)))))
-                  ((js-import-dependency-p path)
-                   (when-let ((dependencies (js-import-node-modules-candidates
-                                             project-root)))
-                     (setq module (seq-find (lambda(it) (member it dependencies))
-                                            imports))
-                     (unless module
-                       (goto-char (point-min)))))
-                  (t (let ((pred (lambda(it) (not (js-import-relative-p it)))))
-                       (setq module (seq-find pred imports))
-                       (unless module
-                         (when-let* ((relative (seq-find 'js-import-relative-p
-                                                         imports))
-                                     (bounds (js-import-get-import-positions
-                                              module)))
-                           (goto-char (car bounds)))))))
-            (when module
-              (goto-char (cdr (js-import-get-import-positions module)))
-              (forward-line)))
-          (insert "import " (js-import-join-imports-names default-name names)
-                  " from " js-import-quote path js-import-quote ";\n")))
+                       (when-let* ((relative (seq-find 'js-import-relative-p
+                                                       imports))
+                                   (bounds (js-import-get-import-positions
+                                            module)))
+                         (goto-char (car bounds)))))))
+          (when module
+            (goto-char (cdr (js-import-get-import-positions module)))
+            (forward-line))))
       (js-import-goto-last-import)
       (unless (looking-at-p "\n")
         (newline-and-indent)))))
 
-(defun js-import-add-to-current-imports (default-name &optional names)
-  (js-import-re-search-backward js-import-regexp-import-keyword nil t 1)
-  (forward-word)
-  (js-import-skip-whitespace-forward)
-  (when default-name
-    (while (thing-at-point 'word)
-      (js-import-kill-thing-at-point 'word))
-    (insert default-name)
-    (skip-chars-forward default-name))
-  (when (looking-at-p js-import-regexp-name-set)
-    (skip-chars-forward js-import-regexp-name-set)
-    (js-import-skip-whitespace-forward)
-    (unless (looking-at-p ",")
-      (insert ","))
-    (skip-chars-forward ",")
-    (js-import-skip-whitespace-forward))
-  (when names
-    (if (looking-at-p "{")
-        (progn (js-import-re-search-forward "}" nil t 1)
-               (backward-char 1)
-               (js-import-skip-whitespace-backward)
-               (let ((separator (if (save-excursion
-                                      (backward-char 1) (looking-at-p ","))
-                                    " "
-                                  ", ")))
-                 (insert separator names)))
-      (insert "{" names "}"))))
+(defun js-import-add-to-current-imports (path default-name &optional names)
+  (when-let* ((bounds (js-import-get-import-positions path))
+              (start (car bounds))
+              (end (cdr bounds)))
+    (save-excursion
+      (save-restriction
+        (goto-char start)
+        (narrow-to-region start end)
+        (forward-word)
+        (js-import-skip-whitespace-forward)
+        (if (looking-at-p "\\*")
+            (progn
+              (goto-char end)
+              (skip-chars-forward ";")
+              (newline-and-indent)
+              (insert "import " (js-import-join-imports-names default-name names)
+                      " from " js-import-quote path js-import-quote ";"))
+          (when default-name
+            (when (looking-at-p js-import-regexp-name-set)
+              (js-import-kill-thing-at-point 'sexp))
+            (insert default-name))
+          (when (or (looking-at-p js-import-regexp-name-set)
+                    default-name)
+            (skip-chars-forward js-import-regexp-name-set)
+            (js-import-skip-whitespace-forward)
+            (unless (looking-at-p ",")
+              (js-import-re-search-backward js-import-regexp-name-set nil t 1)
+              (forward-char 1)
+              (insert ", "))
+            (skip-chars-forward ",")
+            (js-import-skip-whitespace-forward))
+          (when names
+            (if (looking-at-p "{")
+                (progn (js-import-re-search-forward "}" nil t 1)
+                       (backward-char 1)
+                       (js-import-skip-whitespace-backward)
+                       (let ((separator (if (save-excursion
+                                              (backward-char 1) (looking-at-p ","))
+                                            " "
+                                          ", ")))
+                         (insert separator names)))
+              (insert "{" names "}\s"))))))))
 
 (defun js-import-delete-import-statetement(candidate)
   "Remove whole import statement of CANDIDATE.
