@@ -103,15 +103,13 @@
     (define-key map (kbd "C-c C-.") 'js-import-symbols-menu)
     (define-key map (kbd "C-c C-j") 'js-import-find-symbol-at-point)
     (define-key map (kbd "C-.") 'js-import-find-file-at-point)
-    (define-key map (kbd "C-c C-n") 'js-import-next-declaration)
-    (define-key map (kbd "C-c C-p") 'js-import-previous-declaration)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
         ["Import from all sources" js-import]
-        ["Edit current buffer imports" js-import-symbols-menu]
-        ["Find file at point" js-import-find-file-at-point]
-        ["Jump to definition" js-import-find-symbol-at-point]))
+        ["Jump to symbol in buffer" js-import-symbols-menu]
+        ["Jump to definition" js-import-find-symbol-at-point]
+        ["Find file at point" js-import-find-file-at-point]))
     map)
   "Keymap for `js-import' mode.")
 
@@ -244,9 +242,7 @@
 (defvar-local js-import-last-export-path nil)
 (defvar-local js-import-export-candidates-in-path nil)
 (defvar-local js-import-cached-imports-in-buffer nil)
-(defvar-local js-import-cached-exports-in-buffer nil)
 
-(defvar js-import-buffer-source-name "Imported files")
 (defvar js-import-node-modules-source nil
   "Variable keeps source files from node_modules.")
 (defvar js-import-project-files-source nil
@@ -311,7 +307,7 @@
 
 ;;;###autoload
 (defun js-import ()
-  "Run all sources defined in option `js-import-files-source'."
+  "Read a filename to extract exported symbols and add selected ones in buffer."
   (interactive)
   (js-import-init-project)
   (let ((prompt "Module:\s"))
@@ -861,6 +857,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
   (when (fboundp 'helm-refresh)
     (helm-refresh)))
 
+;;;###autoload
 (defun js-import-switch-to-next-alias (&optional _cand)
   "Switch to next alias in `js-import-aliases' list."
   (interactive)
@@ -872,6 +869,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
   (when (fboundp 'helm-refresh)
     (helm-refresh)))
 
+;;;###autoload
 (defun js-import-switch-to-prev-alias (&optional _cand)
   "Switch to previous alias in `js-import-aliases' list."
   (interactive)
@@ -938,13 +936,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
                                             'directory-file-name
                                             'js-import-remove-ext)))
             files)))
-
-(defun js-import-find-node-module-path ()
-  "Find node_modules."
-  (let ((dir (locate-dominating-file default-directory "node_modules")))
-    (if dir
-        (concat (file-name-as-directory dir) "node_modules")
-      default-directory)))
 
 (defun js-import-find-node-modules (&optional project-dir)
   "Return the path to node-modules."
@@ -1311,19 +1302,6 @@ Default section is `dependencies'"
   (setq js-import-definitions-source nil)
   (setq js-import-exports-source nil)
   (setq js-import-imported-symbols-source nil))
-
-(defun js-import-clear-cache ()
-  (interactive)
-  (let ((buffers (buffer-list)))
-    (dotimes (i (length buffers))
-      (let ((buff (nth i buffers)))
-        (when (buffer-local-value 'js-import-mode buff)
-          (kill-buffer-if-not-modified buff))))))
-
-(defun js-import-exports-cleanup ()
-  "Reset filter for imported candidates."
-  (with-current-buffer js-import-current-buffer
-    (setq js-import-current-export-path nil)))
 
 (defun js-import-display-to-real-exports (str)
   "Find STR in the variable `js-import-export-candidates-in-path'."
@@ -2224,26 +2202,11 @@ Result depends on syntax table's string quote character."
     (when winner (goto-char winner))))
 
 (defun js-import-previous-declaration (&optional pos)
-  (interactive)
   (let ((init-pos (or pos (point)))
         (curr-pos))
     (goto-char init-pos)
     (while (and (not curr-pos)
                 (js-import-previous-declaration-or-skope))
-      (when (js-import-declaration-at-point)
-        (setq curr-pos (point))))
-    (when (null curr-pos)
-      (goto-char init-pos))
-    (unless (equal curr-pos init-pos)
-      curr-pos)))
-
-(defun js-import-next-declaration (&optional pos)
-  (interactive)
-  (let ((init-pos (or pos (point)))
-        (curr-pos))
-    (goto-char init-pos)
-    (while (and (not curr-pos)
-                (js-import-next-declaration-or-scope))
       (when (js-import-declaration-at-point)
         (setq curr-pos (point))))
     (when (null curr-pos)
