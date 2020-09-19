@@ -53,7 +53,17 @@ x        :fetcher git
 
 #### `M-x js-import`
 
-Main command which ask about a filename to extract exported symbols and automatically inserts selected an existing or a new import statement.
+# Commands
+
+-   **`js-import ()`:** Main command. Read a filename to extract exported symbols and add selected ones in buffer.
+-   **`js-import-find-symbol-at-point ()`:** Deep jump to a definition of symbol at point through renaming, re-exports.
+-   **`js-import-switch-to-next-alias (&optional CAND)`:** Switch to next alias in `js-import-aliases` list.
+-   **`js-import-switch-to-prev-alias (&optional CAND)`:** Switch to previous alias in `js-import-aliases` list.
+-   **`js-import-switch-to-relative (&optional CAND)`:** Toggle displaying aliased files to relative.
+-   **`js-import-symbols-menu ()`:** Jump or refactor to exported, imported and definitions in current buffer.
+-   **`js-import-reset-all-sources ()`:** Reset file and symbol sources. Also remove cache.
+
+
 
 **Helm actions for files**
 
@@ -61,7 +71,6 @@ Main command which ask about a filename to extract exported symbols and automati
 - `C->`  switches to next webpack alias
 - `C-<`  switches to previous previous webpack alias
 - `C-c o` find file
-
 
 **Helm actions for symbols**
 
@@ -79,7 +88,7 @@ Jumps to a definition of symbol at point through renaming, re-exports.
 
 ### Alias setup
 
-To use webpack-aliases customize variable `js-import-alias-map`. It is a list of strings with `("aliasA" "pathA" "aliasB" "pathB")`. Default is value `("" "src")`.
+To use alias customize variable `js-import-project-aliases`. It is a list of strings with `("aliasA" "pathA" "aliasB" "pathB")`. Default is value `("" "src")`.
 
 For example your webpack config includes two aliases *@* and *UI*:
 
@@ -96,15 +105,13 @@ module.exports = {
 };
 ```
 
-In this case `js-import-alias-map` should be `("@" "src" "UI" "src/components/UI")`. Put to the root directory of your project `.dir-locals` following:
+In this case `js-import-project-aliases` should be `("@" "src" "UI" "src/components/UI")`. Put to the root directory of your project `.dir-locals` following:
 
 ```cl
-((nil . (
-    (eval . (setq js-import-alias-map '("@" "src" "UI" "src/components/UI")))
-)))
+((nil . ((js-import-project-aliases "@" "src" "UI" "src/components/UI"))))
 
 ```
-Or configure it globally with `M-x customize-variable js-import-alias-map`.
+Or configure it globally with `M-x customize-variable js-import-project-aliases`.
 
 ### License
 

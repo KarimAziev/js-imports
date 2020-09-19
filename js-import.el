@@ -43,7 +43,7 @@
   :prefix 'js-import
   :group 'languages)
 
-(defcustom js-import-alias-map '("" "src")
+(defcustom js-import-project-aliases '()
   "List of pairs (alias and path)."
   :group 'js-import
   :type '(repeat string))
@@ -671,7 +671,7 @@ Run sources defined in option `js-import-files-source'."
           files))
 
 (defun js-import-get-alias-path (alias &optional project-root)
-  (when-let ((alias-path (plist-get js-import-alias-map alias)))
+  (when-let ((alias-path (plist-get js-import-project-aliases alias)))
     (if (file-exists-p alias-path)
         alias-path
       (js-import-join-file (or project-root
@@ -772,11 +772,11 @@ If PATH is a relative file, it will be returned without changes."
 (defun js-import-get-aliases (&optional project-root)
   "Get list of aliases of PROJECT-ROOT without real paths."
   (let ((root (or project-root (js-import-find-project-root)))
-        (pl js-import-alias-map)
+        (pl js-import-project-aliases)
         (vals))
     (while pl
       (when-let* ((alias (car pl))
-                  (path (plist-get js-import-alias-map alias))
+                  (path (plist-get js-import-project-aliases alias))
                   (exists (file-exists-p (js-import-join-file root path))))
         (push alias vals))
       (setq pl (cddr pl)))
