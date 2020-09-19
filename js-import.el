@@ -487,7 +487,7 @@
            :action (lambda(it) (js-import-insert-import
                            (js-import-display-to-real-exports
                             it)))))))))
-
+j
 (defun js-import-init-project ()
   "Initialize project by setting buffer, finding root and aliases."
   (setq js-import-current-buffer (current-buffer))
@@ -671,7 +671,9 @@ Run sources defined in option `js-import-files-source'."
           files))
 
 (defun js-import-get-alias-path (alias &optional project-root)
-  (when-let ((alias-path (plist-get js-import-project-aliases alias)))
+  (when-let ((alias-path (plist-get (with-current-buffer js-import-current-buffer
+                                      js-import-project-aliases)
+                                    alias)))
     (if (file-exists-p alias-path)
         alias-path
       (js-import-join-file (or project-root
@@ -772,11 +774,13 @@ If PATH is a relative file, it will be returned without changes."
 (defun js-import-get-aliases (&optional project-root)
   "Get list of aliases of PROJECT-ROOT without real paths."
   (let ((root (or project-root (js-import-find-project-root)))
-        (pl js-import-project-aliases)
+        (pl (with-current-buffer js-import-current-buffer
+              js-import-project-aliases))
         (vals))
     (while pl
       (when-let* ((alias (car pl))
-                  (path (plist-get js-import-project-aliases alias))
+                  (path (with-current-buffer js-import-current-buffer
+                          (plist-get js-import-project-aliases alias)))
                   (exists (file-exists-p (js-import-join-file root path))))
         (push alias vals))
       (setq pl (cddr pl)))
