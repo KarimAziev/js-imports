@@ -487,7 +487,7 @@
            :action (lambda(it) (js-import-insert-import
                            (js-import-display-to-real-exports
                             it)))))))))
-j
+
 (defun js-import-init-project ()
   "Initialize project by setting buffer, finding root and aliases."
   (setq js-import-current-buffer (current-buffer))
