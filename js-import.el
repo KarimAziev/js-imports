@@ -46,9 +46,16 @@
 (defvar js-import-next-alias nil)
 (defvar js-import-prev-alias nil)
 (defvar js-import-file-persistent-action nil)
-(defvar js-import-files-keymap nil)
 (defvar js-import-current-alias nil)
 (defvar js-import-aliases nil)
+(defvar js-import-files-map nil
+  "Keymap for files sources.")
+
+(defvar js-import-imported-symbols-map nil
+  "Keymap for symdol sources.")
+
+(defvar js-import-export-symbols-map nil
+  "Keymap for symdol sources.")
 
 (defvar js-import-project-aliases '()
   "List of pairs (alias and path).")
@@ -126,24 +133,6 @@
     (modify-syntax-entry ?' "\"" table)
     table)
   "Syntax table for command `js-import-mode'.")
-
-;;;###autoload
-(define-minor-mode js-import-mode
-  "js-import-mode is a minor mode for importing.
-\\{js-import-mode-map}"
-  :lighter " js-import"
-  :group 'js-import
-  :global nil
-  :keymap js-import-mode-map)
-
-(defvar js-import-files-map nil
-  "Keymap for files sources.")
-
-(defvar js-import-imported-symbols-map nil
-  "Keymap for symdol sources.")
-
-(defvar js-import-export-symbols-map nil
-  "Keymap for symdol sources.")
 
 (defcustom js-import-file-actions
   '(("Import" . js-import-from-path)
@@ -253,6 +242,170 @@
 (defvar js-import-exports-source nil)
 (defvar js-import-definitions-source nil)
 
+(defcustom js-import-files-source '(js-import-buffer-files-source
+                                    js-import-project-files-source
+                                    js-import-node-modules-source)
+  "Helm sources for files for command `js-import'."
+  :type '(repeat (choice symbol))
+  :group 'js-import)
+
+(defcustom js-import-symbol-sources '(js-import-imported-symbols-source
+                                      js-import-exports-source
+                                      js-import-definitions-source)
+  "Helm sources for symbols for command `js-import-symbols-menu'."
+  :type '(repeat (choice symbol))
+  :group 'js-import)
+
+(defun js-import-setup-ivy ()
+  (require 'ivy)
+  (setq js-import-file-persistent-action 'js-import-find-file)
+  (setq js-import-files-map (make-sparse-keymap))
+  (define-key js-import-files-map (kbd "C->")
+    (setq js-import-prev-alias
+          (lambda() (interactive)
+            (funcall 'js-import-next-or-prev-alias 1)
+            (let ((input (when (boundp 'ivy-text)
+                           ivy-text)))
+              (ivy-quit-and-run
+                (js-import-ivy-read-file-name
+                 (when (boundp 'ivy-last)
+                   (ivy-state-current ivy-last))
+                 input))))))
+  (define-key js-import-files-map (kbd "C-<")
+    (lambda() (interactive)
+      (funcall 'js-import-next-or-prev-alias -1)
+      (let ((input (when (boundp 'ivy-text)
+                     ivy-text)))
+        (ivy-quit-and-run
+          (js-import-ivy-read-file-name
+           (when (boundp 'ivy-last)
+             (ivy-state-current ivy-last))
+           input)))))
+  (ivy-set-sources
+   'js-import-ivy-read-file-name
+   '((original-source)
+     (js-import-node-modules-candidates)))
+  (ivy-set-actions
+   'js-import-ivy-read-file-name
+   '(("f" js-import-find-file "find file")
+     ("i" js-import-from-path "import")
+     ("o" js-import-find-file-other-window "find file other window"))))
+
+(defun js-import-setup-helm ()
+  (require 'helm)
+  (let* ((current 0)
+         (progress-reporter (make-progress-reporter "Setup helm" 0 10 current)))
+    (sit-for 0.1)
+    (setq js-import-files-map (make-sparse-keymap))
+    (js-import-reset-all-sources)
+    (setq current (1+ current))
+    (progress-reporter-update progress-reporter current)
+    (when (boundp 'helm-map)
+      (set-keymap-parent js-import-files-map helm-map))
+    (define-key js-import-files-map (kbd "C-c o")
+      (lambda() (interactive)
+        (helm-run-after-exit
+         'js-import-find-file
+         (helm-get-selection))))
+    (define-key js-import-files-map (kbd "C->")
+      (lambda()
+        (interactive)
+        (funcall 'js-import-next-or-prev-alias 1)
+        (when (and (fboundp 'helm-refresh)
+                   (bound-and-true-p helm-alive-p))
+          (helm-refresh))))
+    (define-key js-import-files-map (kbd "C-<")
+      (lambda()
+        (interactive)
+        (funcall 'js-import-next-or-prev-alias -1)
+        (when (and (fboundp 'helm-refresh)
+                   (bound-and-true-p helm-alive-p))
+          (helm-refresh))))
+    (define-key js-import-files-map (kbd "C-c C-.")
+      (lambda()
+        (interactive)
+        (funcall 'js-import-switch-to-relative)
+        (when (and (fboundp 'helm-refresh)
+                   (bound-and-true-p helm-alive-p))
+          (helm-refresh))))
+    (define-key js-import-files-map (kbd "C-c C-o")
+      (lambda() (interactive)
+        (helm-run-after-exit
+         'js-import-find-file-other-window
+         (helm-get-selection))))
+    (put 'js-import-files-map 'helm-only t)
+    (setq js-import-file-persistent-action
+          '(lambda(candidate)
+             (setq candidate (js-import-path-to-real candidate
+                                                     default-directory))
+             (when-let ((buf (get-buffer-create "*helm-js-import*"))
+                        (valid (and candidate (stringp candidate) (file-exists-p
+                                                                   candidate))))
+               (cl-flet ((preview (candidate)
+                                  (switch-to-buffer buf)
+                                  (setq inhibit-read-only t)
+                                  (erase-buffer)
+                                  (insert-file-contents candidate)
+                                  (let ((buffer-file-name candidate))
+                                    (set-auto-mode))
+                                  (font-lock-ensure)
+                                  (setq inhibit-read-only nil)))
+                 (if (and (helm-attr 'previewp)
+                          (string= candidate (helm-attr 'current-candidate)))
+                     (progn
+                       (kill-buffer buf)
+                       (helm-attrset 'previewp nil))
+                   (preview candidate)
+                   (helm-attrset 'previewp t)))
+               (helm-attrset 'current-candidate candidate))))
+    (setq current (1+ current))
+    (progress-reporter-update progress-reporter current)
+    (setq js-import-buffer-files-source
+          (helm-make-source "Imported files" 'helm-source-in-buffer
+            :init (lambda() (with-current-buffer (helm-candidate-buffer 'global)
+                         (let ((items (with-current-buffer
+                                          js-import-current-buffer
+                                        (js-import-find-imported-files))))
+                           (mapc (lambda(it) (insert it)
+                                   (newline-and-indent))
+                                 items))
+                         (goto-char (point-min))))
+            :get-line #'buffer-substring
+            :action 'js-import-file-actions
+            :keymap js-import-files-map
+            :group 'js-import
+            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                               it))
+            :mode-line (list "Imports")))
+    (setq current (1+ current))
+    (progress-reporter-update progress-reporter current)
+    (setq js-import-project-files-source
+          (helm-make-source "Project files" 'helm-source-sync
+            :group 'js-import
+            :mode-line (list "File(s)")
+            :candidate-number-limit js-import-files-number-limit
+            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                               it))
+            :action 'js-import-file-actions
+            :keymap js-import-files-map
+            :candidates #'js-import-find-project-files
+            :filtered-candidate-transformer
+            #'js-import-project-files-transformer))
+    (setq current (1+ current))
+    (progress-reporter-update progress-reporter current)
+    (setq js-import-node-modules-source
+          (helm-make-source "Node Modules" 'helm-source-sync
+            :candidates #'js-import-node-modules-candidates
+            :candidate-number-limit js-import-dependencies-number-limit
+            :action 'js-import-file-actions
+            :mode-line (list "Dependencies")
+            :keymap js-import-files-map
+            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                               it))
+            :group 'js-import))
+    (setq current (1+ current))
+    (progress-reporter-done progress-reporter)))
+
 (defun js-import-set-completion (var value &optional &rest _ignored)
   "Set VAR to VALUE."
   (pcase value
@@ -275,25 +428,11 @@
 
 (add-variable-watcher 'js-import-completion-system 'js-import-set-completion)
 
-(defcustom js-import-files-source '(js-import-buffer-files-source
-                                    js-import-project-files-source
-                                    js-import-node-modules-source)
-  "Helm sources for files for command `js-import'."
-  :type '(repeat (choice symbol))
-  :group 'js-import)
-
-(defcustom js-import-symbol-sources '(js-import-imported-symbols-source
-                                      js-import-exports-source
-                                      js-import-definitions-source)
-  "Helm sources for symbols for command `js-import-symbols-menu'."
-  :type '(repeat (choice symbol))
-  :group 'js-import)
-
 (defmacro js-import-with-buffer-or-file-content (filename &rest body)
   "Execute BODY in temp buffer with file or buffer content of FILENAME.
  Bind FILENAME to variables `buffer-file-name' and `current-path''.
  It is also bind `default-directory' into FILENAME's directory."
-  (declare (indent 2) (debug t))
+  (declare (indent 2))
   `(when-let ((current-path ,filename))
      (when (and current-path (file-exists-p current-path))
        (with-temp-buffer
@@ -311,7 +450,7 @@
              (progn ,@body)))))))
 
 (defmacro js-import-completion-clause (completion-symb bound-form)
-  (declare (indent 2) (debug t))
+  (declare (indent 2))
   `(when-let ((completion-system ,completion-symb))
      (if (eq js-import-completion-system completion-system)
          (if (and ,bound-form)
@@ -338,8 +477,9 @@
      :preselect (or preselect (js-import-preselect-file))
      :require-match t
      :initial-input input
-     :keymap js-import-files-keymap
-     :action (lambda(it) (if ivy-exit
+     :keymap js-import-files-map
+     :action (lambda(it) (if (and (boundp 'ivy-exit)
+                             ivy-exit)
                         (js-import-from-path it)
                       (js-import-find-file it)))
      :caller 'js-import-ivy-read-file-name)))
@@ -538,149 +678,6 @@
   (when (and js-import-current-alias
              (not (member js-import-current-alias js-import-aliases)))
     (setq js-import-current-alias nil)))
-
-(defun js-import-setup-ivy ()
-  (require 'ivy)
-  (setq js-import-file-persistent-action 'js-import-find-file)
-  (setq js-import-files-keymap (make-sparse-keymap))
-  (define-key js-import-files-keymap (kbd "C->")
-    (setq js-import-prev-alias
-          (lambda() (interactive)
-            (funcall 'js-import-next-or-prev-alias 1)
-            (let ((input ivy-text))
-              (ivy-quit-and-run
-                (js-import-ivy-read-file-name
-                 (ivy-state-current ivy-last)
-                 input))))))
-  (define-key js-import-files-keymap (kbd "C-<")
-    (lambda() (interactive)
-      (funcall 'js-import-next-or-prev-alias -1)
-      (ivy-quit-and-run
-        (js-import-ivy-read-file-name
-         (ivy-state-current ivy-last)))))
-  (ivy-set-sources
-   'js-import-ivy-read-file-name
-   '((original-source)
-     (js-import-node-modules-candidates)))
-  (ivy-set-actions
-   'js-import-ivy-read-file-name
-   '(("f" js-import-find-file "find file")
-     ("i" js-import-from-path "import")
-     ("o" js-import-find-file-other-window "find file other window"))))
-
-(defun js-import-setup-helm ()
-  (let* ((current 0)
-         (progress-reporter (make-progress-reporter "Setup helm" 0 10 current)))
-    (sit-for 0.1)
-    (require 'helm)
-    (setq js-import-files-map (make-sparse-keymap))
-    (js-import-reset-all-sources)
-    (setq current (1+ current))
-    (progress-reporter-update progress-reporter current)
-    (set-keymap-parent js-import-files-map helm-map)
-    (define-key js-import-files-map (kbd "C-c o")
-      (lambda() (interactive)
-        (helm-run-after-exit
-         'js-import-find-file
-         (helm-get-selection))))
-    (define-key js-import-files-map (kbd "C->")
-      (lambda()
-        (interactive)
-        (funcall 'js-import-next-or-prev-alias 1)
-        (when (and (fboundp 'helm-refresh)
-                   (bound-and-true-p helm-alive-p))
-          (helm-refresh))))
-    (define-key js-import-files-map (kbd "C-<")
-      (lambda()
-        (interactive)
-        (funcall 'js-import-next-or-prev-alias -1)
-        (when (and (fboundp 'helm-refresh)
-                   (bound-and-true-p helm-alive-p))
-          (helm-refresh))))
-    (define-key js-import-files-map (kbd "C-c C-.")
-      (lambda()
-        (interactive)
-        (funcall 'js-import-switch-to-relative)
-        (when (and (fboundp 'helm-refresh)
-                   (bound-and-true-p helm-alive-p))
-          (helm-refresh))))
-    (define-key js-import-files-map (kbd "C-c C-o")
-      (lambda() (interactive)
-        (helm-run-after-exit
-         'js-import-find-file-other-window
-         (helm-get-selection))))
-    (put 'js-import-files-map 'helm-only t)
-    (setq js-import-file-persistent-action
-          '(lambda(candidate)
-             (setq candidate (js-import-path-to-real candidate
-                                                     default-directory))
-             (when-let ((buf (get-buffer-create "*helm-js-import*"))
-                        (valid (and candidate (stringp candidate) (file-exists-p
-                                                                   candidate))))
-               (cl-flet ((preview (candidate)
-                                  (switch-to-buffer buf)
-                                  (setq inhibit-read-only t)
-                                  (erase-buffer)
-                                  (insert-file-contents candidate)
-                                  (let ((buffer-file-name candidate))
-                                    (set-auto-mode))
-                                  (font-lock-ensure)
-                                  (setq inhibit-read-only nil)))
-                 (if (and (helm-attr 'previewp)
-                          (string= candidate (helm-attr 'current-candidate)))
-                     (progn
-                       (kill-buffer buf)
-                       (helm-attrset 'previewp nil))
-                   (preview candidate)
-                   (helm-attrset 'previewp t)))
-               (helm-attrset 'current-candidate candidate))))
-    (setq current (1+ current))
-    (progress-reporter-update progress-reporter current)
-    (setq js-import-buffer-files-source
-          (helm-make-source "Imported files" 'helm-source-in-buffer
-            :init (lambda() (with-current-buffer (helm-candidate-buffer 'global)
-                         (let ((items (with-current-buffer
-                                          js-import-current-buffer
-                                        (js-import-find-imported-files))))
-                           (mapc (lambda(it) (insert it)
-                                   (newline-and-indent))
-                                 items))
-                         (goto-char (point-min))))
-            :get-line #'buffer-substring
-            :action 'js-import-file-actions
-            :keymap js-import-files-map
-            :group 'js-import
-            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
-                                               it))
-            :mode-line (list "Imports")))
-    (setq current (1+ current))
-    (progress-reporter-update progress-reporter current)
-    (setq js-import-project-files-source
-          (helm-make-source "Project files" 'helm-source-sync
-            :group 'js-import
-            :mode-line (list "File(s)")
-            :candidate-number-limit js-import-files-number-limit
-            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
-                                               it))
-            :action 'js-import-file-actions
-            :keymap js-import-files-map
-            :candidates #'js-import-find-project-files
-            :filtered-candidate-transformer
-            #'js-import-project-files-transformer))
-    (setq current (1+ current))
-    (progress-reporter-update progress-reporter current)
-    (setq js-import-node-modules-source
-          (helm-make-source "Node Modules" 'helm-source-sync
-            :candidates #'js-import-node-modules-candidates
-            :candidate-number-limit js-import-dependencies-number-limit
-            :action 'js-import-file-actions
-            :mode-line (list "Dependencies")
-            :keymap js-import-files-map
-            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
-                                               it))
-            :group 'js-import))
-    (setq current (1+ current))
-    (progress-reporter-done progress-reporter)))
 
 (defun js-import-find-project-files (&optional project-root)
   "Return project files without dependencies."
@@ -2850,6 +2847,15 @@ CANDIDATE should be propertizied with property `display-path'."
                 (remove-overlays p1 p2)
                 (delete-region p1 p2)))))
       (remove-overlays beg end))))
+
+;;;###autoload
+(define-minor-mode js-import-mode
+  "js-import-mode is a minor mode for importing.
+\\{js-import-mode-map}"
+  :lighter " js-import"
+  :group 'js-import
+  :global nil
+  :keymap js-import-mode-map)
 
 (provide 'js-import)
 ;;; js-import.el ends here
