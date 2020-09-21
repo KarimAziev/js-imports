@@ -253,6 +253,14 @@
 (defvar js-import-exports-source nil)
 (defvar js-import-definitions-source nil)
 
+(defun js-import-set-completion (var value &optional &rest _ignored)
+  "Set VAR to VALUE."
+  (pcase value
+    ('ivy (js-import-setup-ivy))
+    ('helm (js-import-setup-helm))
+    ('default (message "default")))
+  (set var value))
+
 (defcustom js-import-completion-system
   (pcase completing-read-function
     ('ivy-completing-read 'ivy)
@@ -265,13 +273,6 @@
                  (const :tag "Ivy" ivy)
                  (const :tag "Default" default)))
 
-(defun js-import-set-completion (var value &optional &rest _ignored)
-  "Set VAR to VALUE."
-  (pcase value
-    ('ivy (js-import-setup-ivy))
-    ('helm (js-import-setup-helm))
-    ('default (message "default")))
-  (set var value))
 (add-variable-watcher 'js-import-completion-system 'js-import-set-completion)
 
 (defcustom js-import-files-source '(js-import-buffer-files-source
