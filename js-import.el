@@ -487,15 +487,8 @@ string."
 (defun js-import-set-completion (var value &optional &rest _ignored)
   "Set VAR to VALUE."
   (pcase value
-    ('ivy (if (featurep 'ivy)
-              (js-import-setup-ivy)
-            (user-error "Please install ivy \
-https://github.com/abo-abo/swiper")))
-    ('helm (if (and (featurep 'helm)
-                    (fboundp 'js-import-setup-helm))
-               (js-import-setup-helm)
-             (user-error "Please install helm \
-https://github.com/emacs-helm/helm")))
+    ('ivy (funcall 'js-import-setup-ivy))
+    ('helm (funcall 'js-import-setup-helm))
     ('default (message "default")))
   (set var value))
 
