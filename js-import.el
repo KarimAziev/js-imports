@@ -292,7 +292,8 @@ string."
                              (put 'quit 'error-message "Quit")
                              (with-demoted-errors "Error: %S"
                                (js-import-ivy-read-file-name
-                                (when (boundp 'ivy-last)
+                                (when (and (boundp 'ivy-last)
+                                           (fboundp 'ivy-state-current))
                                   (ivy-state-current ivy-last))
                                 input))))
               (abort-recursive-edit)))))
@@ -308,18 +309,21 @@ string."
     js-import-next-alias-action)
   (define-key js-import-files-map (kbd "C-<")
     js-import-prev-alias-action)
-  (ivy-set-sources
-   'js-import-ivy-read-file-name
-   '((original-source)
-     (js-import-node-modules-candidates)))
-  (ivy-set-actions
-   'js-import-ivy-read-file-name
-   '(("f" js-import-find-file "find file")
-     ("i" js-import-from-path "import")
-     ("o" js-import-find-file-other-window "find file other window")))
-  (ivy-set-display-transformer
-   'js-import-symbols-menu
-   'js-import-transform-symbol))
+  (when (fboundp 'ivy-set-sources)
+    (ivy-set-sources
+     'js-import-ivy-read-file-name
+     '((original-source)
+       (js-import-node-modules-candidates))))
+  (when (fboundp 'ivy-set-actions)
+    (ivy-set-actions
+     'js-import-ivy-read-file-name
+     '(("f" js-import-find-file "find file")
+       ("i" js-import-from-path "import")
+       ("o" js-import-find-file-other-window "find file other window"))))
+  (when (fboundp 'ivy-set-display-transformer)
+    (ivy-set-display-transformer
+     'js-import-symbols-menu
+     'js-import-transform-symbol)))
 
 (defun js-import-setup-helm ()
   (require 'helm)
@@ -374,7 +378,9 @@ string."
                                                      default-directory))
              (when-let ((buf (get-buffer-create "*helm-js-import*"))
                         (valid (and candidate (stringp candidate) (file-exists-p
-                                                                   candidate))))
+                                                                   candidate)))
+                        (attrs (and (fboundp 'helm-attr)
+                                    (fboundp 'helm-attrset))))
                (cl-flet ((preview (candidate)
                                   (switch-to-buffer buf)
                                   (setq inhibit-read-only t)
@@ -396,49 +402,52 @@ string."
                (helm-attrset 'current-candidate candidate))))
     (setq current (1+ current))
     (progress-reporter-update progress-reporter current)
-    (setq js-import-buffer-files-source
-          (helm-make-source "Imported files" 'helm-source-in-buffer
-            :init (lambda() (with-current-buffer (helm-candidate-buffer 'global)
-                         (let ((items (with-current-buffer
-                                          js-import-current-buffer
-                                        (js-import-find-imported-files))))
-                           (mapc (lambda(it) (insert it)
-                                   (newline-and-indent))
-                                 items))
-                         (goto-char (point-min))))
-            :get-line #'buffer-substring
-            :action 'js-import-file-actions
-            :keymap js-import-files-map
-            :group 'js-import
-            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
-                                               it))
-            :mode-line (list "Imports")))
+    (when (and (fboundp 'helm-make-source)
+               (fboundp 'helm-candidate-buffer))
+      (setq js-import-buffer-files-source
+            (helm-make-source "Imported files" 'helm-source-in-buffer
+              :init (lambda() (with-current-buffer (helm-candidate-buffer 'global)
+                           (let ((items (with-current-buffer
+                                            js-import-current-buffer
+                                          (js-import-find-imported-files))))
+                             (mapc (lambda(it) (insert it)
+                                     (newline-and-indent))
+                                   items))
+                           (goto-char (point-min))))
+              :get-line #'buffer-substring
+              :action 'js-import-file-actions
+              :keymap js-import-files-map
+              :group 'js-import
+              :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                                 it))
+              :mode-line (list "Imports"))))
     (setq current (1+ current))
     (progress-reporter-update progress-reporter current)
-    (setq js-import-project-files-source
-          (helm-make-source "Project files" 'helm-source-sync
-            :group 'js-import
-            :mode-line (list "File(s)")
-            :candidate-number-limit js-import-files-number-limit
-            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
-                                               it))
-            :action 'js-import-file-actions
-            :keymap js-import-files-map
-            :candidates #'js-import-find-project-files
-            :filtered-candidate-transformer
-            #'js-import-project-files-transformer))
-    (setq current (1+ current))
-    (progress-reporter-update progress-reporter current)
-    (setq js-import-node-modules-source
-          (helm-make-source "Node Modules" 'helm-source-sync
-            :candidates #'js-import-node-modules-candidates
-            :candidate-number-limit js-import-dependencies-number-limit
-            :action 'js-import-file-actions
-            :mode-line (list "Dependencies")
-            :keymap js-import-files-map
-            :persistent-action (lambda(it) (funcall js-import-file-persistent-action
-                                               it))
-            :group 'js-import))
+    (when (fboundp 'helm-make-source)
+      (setq js-import-project-files-source
+            (helm-make-source "Project files" 'helm-source-sync
+              :group 'js-import
+              :mode-line (list "File(s)")
+              :candidate-number-limit js-import-files-number-limit
+              :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                                 it))
+              :action 'js-import-file-actions
+              :keymap js-import-files-map
+              :candidates #'js-import-find-project-files
+              :filtered-candidate-transformer
+              #'js-import-project-files-transformer))
+      (setq current (1+ current))
+      (progress-reporter-update progress-reporter current)
+      (setq js-import-node-modules-source
+            (helm-make-source "Node Modules" 'helm-source-sync
+              :candidates #'js-import-node-modules-candidates
+              :candidate-number-limit js-import-dependencies-number-limit
+              :action 'js-import-file-actions
+              :mode-line (list "Dependencies")
+              :keymap js-import-files-map
+              :persistent-action (lambda(it) (funcall js-import-file-persistent-action
+                                                 it))
+              :group 'js-import)))
     (setq current (1+ current))
     (js-import-setup-helm-symbols-sources)
     (setq current (1+ current))
@@ -492,15 +501,6 @@ string."
                (setq delay-mode-hooks nil)
                (progn ,@body))))))))
 
-(defmacro js-import-completion-clause (completion-symb bound-form)
-  (declare (indent 2))
-  `(when-let ((completion-system ,completion-symb))
-     (if (eq js-import-completion-system completion-system)
-         (if (and ,bound-form)
-             t
-           (user-error (concat "Cannot find "
-                               (symbol-name completion-system)))))))
-
 (defun js-import-make-files-prompt ()
   (when js-import-current-project-root
     (let ((project-name (car
@@ -532,20 +532,20 @@ string."
   "Read a filename to extract exported symbols and add selected ones in buffer."
   (interactive)
   (js-import-init-project)
-  (cond
-   ((js-import-completion-clause 'helm (fboundp 'helm))
-    (helm-attr 'candidates js-import-node-modules-source t)
-    (helm
-     :sources js-import-files-source
-     :buffer js-import-buffer
-     :preselect (js-import-preselect-file)
-     :prompt (js-import-make-files-prompt)))
-   ((js-import-completion-clause 'ivy (fboundp 'ivy-read))
-    (js-import-ivy-read-file-name))
-   (t (let ((module (funcall completing-read-function
-                             (js-import-make-files-prompt)
-                             (js-import-get-all-modules))))
-        (js-import-from-path module)))))
+  (pcase js-import-completion-system
+    ('helm (when (and (fboundp 'helm)
+                      (fboundp 'helm-attr))
+             (helm-attr 'candidates js-import-node-modules-source t)
+             (helm
+              :sources js-import-files-source
+              :buffer js-import-buffer
+              :preselect (js-import-preselect-file)
+              :prompt (js-import-make-files-prompt))))
+    ('ivy (js-import-ivy-read-file-name))
+    (_ (let ((module (funcall completing-read-function
+                              (js-import-make-files-prompt)
+                              (js-import-get-all-modules))))
+         (js-import-from-path module)))))
 
 ;;;###autoload
 (defun js-import-symbols-menu ()
@@ -553,57 +553,56 @@ string."
   (interactive)
   (js-import-init-project)
   (setq js-import-current-export-path nil)
-  (cond
-   ((js-import-completion-clause 'helm (fboundp 'helm))
-    (js-import-helm-build-symbols-sources)
-    (helm
-     :preselect (js-import-preselect-symbol)
-     :sources js-import-symbol-sources))
-   ((js-import-completion-clause 'ivy (fboundp 'ivy-read))
-    (let* ((choices (append
-                     (js-import-extract-imports buffer-file-name)
-                     (js-import-extract-all-exports buffer-file-name)
-                     (js-import-search-backward-identifiers
-                      buffer-file-name (point-max)))))
-      (ivy-read "Jump to\s"
-                choices
-                :preselect (js-import-preselect-symbol)
-                :action (lambda(it)
-                          (when-let ((item (js-import-find-definition it)))
-                            (let ((cands (js-import-get-prop item :stack))
-                                  (preselect))
-                              (when cands
-                                (push item cands)
-                                (setq cands (reverse cands))
-                                (setq cands (js-import-map-stack cands))
-                                (setq preselect
-                                      (seq-find
-                                       (lambda(d) (js-import-get-prop d
-                                                                 :var-type))
-                                       cands))
-                                (setq item (ivy-read "Jump:\s" cands
-                                                     :preselect (or preselect
-                                                                    it)))))
-                            (when-let ((pos (and item (js-import-get-prop
-                                                       item :pos))))
-                              (find-file (js-import-get-prop item :real-path))
-                              (goto-char pos)
-                              (js-import-highlight-word)))))))
-   (t (when-let* ((choices (append (js-import-extract-all-exports
-                                    buffer-file-name)
-                                   (js-import-extract-imports buffer-file-name)
-                                   (js-import-search-backward-identifiers
-                                    buffer-file-name (point-max))))
-                  (symbol (completing-read "Select symbol"
-                                           choices nil t
-                                           (js-import-preselect-symbol))))
-        (setq symbol (mapcar (lambda(it) (car (member it choices)))
-                             symbol))
-        (when-let ((item (js-import-find-definition symbol)))
-          (when (js-import-get-prop item :var-type)
-            (find-file (js-import-get-prop item :real-path))
-            (progn (goto-char (js-import-get-prop item :pos))
-                   (js-import-highlight-word))))))))
+  (pcase js-import-completion-system
+    ('helm (when (and (fboundp 'helm))
+             (helm
+              :preselect (js-import-preselect-symbol)
+              :sources js-import-symbol-sources)))
+    ('ivy (when (fboundp 'ivy-read)
+            (let* ((choices (append
+                             (js-import-extract-imports buffer-file-name)
+                             (js-import-extract-all-exports buffer-file-name)
+                             (js-import-search-backward-identifiers
+                              buffer-file-name (point-max)))))
+              (ivy-read "Jump to\s"
+                        choices
+                        :preselect (js-import-preselect-symbol)
+                        :action (lambda(it)
+                                  (when-let ((item (js-import-find-definition it)))
+                                    (let ((cands (js-import-get-prop item :stack))
+                                          (preselect))
+                                      (when cands
+                                        (push item cands)
+                                        (setq cands (reverse cands))
+                                        (setq cands (js-import-map-stack cands))
+                                        (setq preselect
+                                              (seq-find
+                                               (lambda(d) (js-import-get-prop d
+                                                                         :var-type))
+                                               cands))
+                                        (setq item (ivy-read "Jump:\s" cands
+                                                             :preselect (or preselect
+                                                                            it)))))
+                                    (when-let ((pos (and item (js-import-get-prop
+                                                               item :pos))))
+                                      (find-file (js-import-get-prop item :real-path))
+                                      (goto-char pos)
+                                      (js-import-highlight-word))))))))
+    (_ (when-let* ((choices (append (js-import-extract-all-exports
+                                     buffer-file-name)
+                                    (js-import-extract-imports buffer-file-name)
+                                    (js-import-search-backward-identifiers
+                                     buffer-file-name (point-max))))
+                   (symbol (completing-read "Select symbol"
+                                            choices nil t
+                                            (js-import-preselect-symbol))))
+         (setq symbol (mapcar (lambda(it) (car (member it choices)))
+                              symbol))
+         (when-let ((item (js-import-find-definition symbol)))
+           (when (js-import-get-prop item :var-type)
+             (find-file (js-import-get-prop item :real-path))
+             (progn (goto-char (js-import-get-prop item :pos))
+                    (js-import-highlight-word))))))))
 
 ;;;###autoload
 (defun js-import-find-symbol-at-point ()
@@ -1255,7 +1254,6 @@ Default section is `dependencies'"
             :display-to-real 'js-import-display-to-real-imports
             :persistent-help "Show symbol"
             :marked-with-props 'withprop))
-    (unless js-import-imported-symbols-source)
     (setq js-import-exports-source
           (helm-make-source "Exports" 'helm-source-sync
             :header-name (lambda (_name)
@@ -1291,7 +1289,9 @@ Default section is `dependencies'"
             :persistent-action
             (lambda(c)
               (when-let ((item (js-import-display-to-real-exports c)))
-                (when (js-import-get-prop item :pos)
+                (when (and (js-import-get-prop item :pos)
+                           (fboundp 'helm-attr)
+                           (fboundp 'helm-attrset))
                   (let ((js-buffer (get-buffer-create "*helm-js-import*")))
                     (cl-flet ((preview
                                (item)
@@ -1316,8 +1316,7 @@ Default section is `dependencies'"
                                  (js-import-highlight-word)
                                  (font-lock-ensure)
                                  (setq inhibit-read-only nil))))
-                      (if (and (helm-attr 'previewp)
-                               (equal item (helm-attr 'current-candidate)))
+                      (if (and (equal item (helm-attr 'current-candidate)))
                           (progn
                             (kill-buffer js-buffer)
                             (helm-attrset 'previewp nil))
@@ -1327,14 +1326,15 @@ Default section is `dependencies'"
     (setq js-import-definitions-source
           (helm-make-source "Definitions" 'helm-source-sync
             :candidates (lambda() (with-current-buffer js-import-current-buffer
-                                    (js-import-search-backward-identifiers
-                                     buffer-file-name (point))))
+                               (js-import-search-backward-identifiers
+                                buffer-file-name (point))))
             :marked-with-props 'withprop
             :volatile t
             :action '(("Jump" .
                        (lambda(_it)
-                         (js-import-jump-to-item-in-buffer
-                          (helm-get-selection nil 'withprop)))))))))
+                         (when (fboundp 'helm-get-selection)
+                           (js-import-jump-to-item-in-buffer
+                            (helm-get-selection nil 'withprop))))))))))
 
 (defun js-import-build-helm-exports-keymap ()
   "Make keymap for helm symbols type."
