@@ -277,6 +277,7 @@ string."
   :group 'js-import)
 
 (defun js-import-setup-ivy ()
+  (require 'ivy)
   (setq js-import-files-map (make-sparse-keymap))
   (setq js-import-switch-alias-post-command
         (lambda()
@@ -303,28 +304,13 @@ string."
   (define-key js-import-files-map (kbd "C->")
     js-import-next-alias-action)
   (define-key js-import-files-map (kbd "C-<")
-    js-import-prev-alias-action)
-  (when (fboundp 'ivy-set-sources)
-    (ivy-set-sources
-     'js-import-ivy-read-file-name
-     '((original-source)
-       (js-import-node-modules-candidates))))
-  (when (fboundp 'ivy-set-actions)
-    (ivy-set-actions
-     #'js-import-ivy-read-file-name
-     '(("f" js-import-find-file "find file")
-       ("i" js-import-from-path "import")
-       ("o" js-import-find-file-other-window
-        "find file other window"))))
-  (when (fboundp 'ivy-set-display-transformer)
-    (ivy-set-display-transformer
-     'js-import-symbols-menu
-     'js-import-transform-symbol)))
+    js-import-prev-alias-action))
 
 (defun js-import-view-file (candidate)
-  (when-let ((file (js-import-path-to-real
-                    candidate)))
-    (view-file file)))
+  (if-let ((file (js-import-path-to-real
+                  candidate)))
+      (view-file file)
+    (message "Couldn't find %s" candidate)))
 
 (defun js-import-setup-helm ()
   (setq js-import-files-map (make-sparse-keymap))
@@ -556,17 +542,19 @@ string."
   (when (fboundp 'ivy-read)
     (ivy-read
      (js-import-make-files-prompt)
-     (js-import-project-files-transformer
-      (or js-import-project-files (js-import-find-project-files)))
+     (append (js-import-project-files-transformer
+              (or js-import-project-files
+                  (js-import-find-project-files)))
+             (js-import-node-modules-candidates))
      :preselect (or preselect (js-import-preselect-file))
      :require-match t
+     :caller 'js-import-ivy-read-file-name
      :initial-input input
      :keymap js-import-files-map
      :action (lambda(it) (if (and (boundp 'ivy-exit)
                              ivy-exit)
                         (js-import-from-path it)
-                      (js-import-find-file it)))
-     :caller 'js-import-ivy-read-file-name)))
+                      (js-import-find-file it))))))
 
 ;;;###autoload
 (defun js-import ()
@@ -608,6 +596,7 @@ string."
               (ivy-read "Jump to\s"
                         choices
                         :preselect (js-import-preselect-symbol)
+                        :caller 'js-import-symbols-menu
                         :action
                         (lambda(it)
                           (when-let ((item (js-import-find-definition it)))
@@ -2866,6 +2855,30 @@ CANDIDATE should be propertizied with property `display-path'."
                 (remove-overlays p1 p2)
                 (delete-region p1 p2)))))
       (remove-overlays beg end))))
+
+(with-eval-after-load 'ivy
+  (when (fboundp 'ivy-set-actions)
+    (ivy-set-actions
+     'js-import
+     '(("f"
+        js-import-find-file
+        "find file")
+       ("j"
+        js-import-find-file-other-window
+        "other window"))))
+  (when (fboundp 'ivy-set-display-transformer)
+    (ivy-set-display-transformer
+     'js-import-symbols-menu
+     'js-import-transform-symbol))
+  (when (fboundp 'ivy-set-sources)
+    (ivy-set-sources
+     'js-import-ivy-read-file-name
+     '((original-source)
+       (js-import-node-modules-candidates)))
+    (ivy-set-sources
+     'js-import-ivy-read-file-name
+     '((original-source)
+       (js-import-node-modules-candidates)))))
 
 ;;;###autoload
 (define-minor-mode js-import-mode
