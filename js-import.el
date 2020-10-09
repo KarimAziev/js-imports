@@ -2328,7 +2328,7 @@ Result depends on syntax table's string quote character."
 
 (defun js-import-looking-at-function-expression ()
   (and (js-import-looking-at "function")
-       (> (point-min) (point))
+       (< (point-min) (point))
        (save-excursion
          (js-import-skip-whitespace-backward)
          (let ((c (char-before (point))))
