@@ -277,7 +277,6 @@ string."
   :group 'js-import)
 
 (defun js-import-setup-ivy ()
-  (require 'ivy)
   (setq js-import-files-map (make-sparse-keymap))
   (setq js-import-switch-alias-post-command
         (lambda()
@@ -544,8 +543,7 @@ string."
      (js-import-make-files-prompt)
      (append (js-import-project-files-transformer
               (or js-import-project-files
-                  (js-import-find-project-files)))
-             (js-import-node-modules-candidates))
+                  (js-import-find-project-files))))
      :preselect (or preselect (js-import-preselect-file))
      :require-match t
      :caller 'js-import-ivy-read-file-name
@@ -2932,10 +2930,6 @@ CANDIDATE should be propertizied with property `display-path'."
      'js-import-symbols-menu
      'js-import-transform-symbol))
   (when (fboundp 'ivy-set-sources)
-    (ivy-set-sources
-     'js-import-ivy-read-file-name
-     '((original-source)
-       (js-import-node-modules-candidates)))
     (ivy-set-sources
      'js-import-ivy-read-file-name
      '((original-source)
