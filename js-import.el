@@ -702,9 +702,22 @@ string."
         (find-file-other-window path)
       (message "Could't find %s" file))))
 
-(defun js-import-from-path (path)
+;;;###autoload
+(defun js-import-from-path (&optional path)
   "Insert import statement with marked symbols, exported from PATH."
+  (interactive)
+  (unless path
+    (js-import-init-project)
+    (setq path (read-file-name "File:\s")))
   (with-current-buffer js-import-current-buffer
+    (when (file-name-absolute-p path)
+      (setq path (js-import-propertize
+                  path :display-path
+                  (funcall
+                   completing-read-function
+                   "Transform to\s"
+                   (js-import-get-file-variants path
+                                                default-directory)))))
     (when-let ((display-path (or (js-import-get-prop path :display-path)
                                  path)))
       (setq js-import-current-export-path display-path)
@@ -719,24 +732,27 @@ string."
                 js-import-imported-symbols-source)))
    ((and (eq js-import-completion-system 'ivy)
          (fboundp 'ivy-read))
-    (let ((choices (js-import-exported-candidates-transformer
-                    js-import-export-candidates-in-path)))
+    (let ((choices (js-import-export-filtered-candidate-transformer
+                    (js-import-exported-candidates-transformer
+                     js-import-export-candidates-in-path))))
       (if (null choices)
           (message "No exports found")
         (ivy-read
          "Symbols\s" choices
-         :require-match t
+         :require-match nil
          :caller 'js-import-from-path
          :preselect (js-import-preselect-symbol)
-         :action (lambda(it) (if (and (boundp 'ivy-exit) ivy-exit)
-                            (js-import-insert-import it)
-                          (if-let ((item (js-import-find-definition it)))
-                              (progn (view-file-other-window
-                                      (js-import-get-prop item
-                                                          :real-path))
-                                     (goto-char (js-import-get-prop item :pos))
-                                     (js-import-highlight-word))
-                            (js-import-insert-import it))))))))
+         :action (lambda(it)
+                   (setq it (or (js-import-display-to-real-exports it) it))
+                   (if (and (boundp 'ivy-exit) ivy-exit)
+                       (js-import-insert-import it)
+                     (if-let ((item (js-import-find-definition it)))
+                         (progn (view-file-other-window
+                                 (js-import-get-prop item
+                                                     :real-path))
+                                (goto-char (js-import-get-prop item :pos))
+                                (js-import-highlight-word))
+                       (js-import-insert-import it))))))))
    (t (let ((choices (js-import-export-filtered-candidate-transformer
                       (js-import-exported-candidates-transformer
                        js-import-export-candidates-in-path))))
@@ -809,6 +825,24 @@ string."
     (if js-import-current-alias
         (js-import-transform-files-to-alias js-import-current-alias files)
       (js-import-transform-files-to-relative current-dir files))))
+
+(defun js-import-get-file-variants (&optional path dir)
+  (let ((relative (js-import-path-to-relative path (or dir default-directory)))
+        (aliased (mapcar (apply-partially 'js-import-transform-file-to-alias
+                                          path)
+                         (js-import-get-aliases))))
+    (push relative aliased)))
+
+(defun js-import-transform-file-to-alias (filename alias)
+  (when-let* ((absolute-p (file-name-absolute-p filename))
+              (alias-path (js-import-compose-from alias
+                                                  'js-import-slash
+                                                  'js-import-get-alias-path))
+              (match-alias-path (js-import-string-match-p alias-path filename)))
+    (js-import-normalize-path (replace-regexp-in-string
+                               alias-path
+                               (js-import-slash alias)
+                               filename))))
 
 (defun js-import-transform-files-to-alias (alias files)
   (when-let* ((alias-path (js-import-compose-from alias
@@ -1860,7 +1894,7 @@ File is specified in the variable `js-import-current-export-path.'."
 
 (defun js-import-join-names (symbols)
   (when (and (listp symbols) (<= 1 (length symbols)))
-    (js-import-join ", " symbols)))
+    (string-join symbols ", ")))
 
 (defun js-import-join-imports-names (default-name names)
   (let (parts)
@@ -2683,22 +2717,49 @@ Without argument KEEP-COMMENTS content will inserted without comments."
           (insert (format " as %s" new-name))
           (query-replace-regexp (concat "\\_<" real-name "\\_>") new-name))))))
 
+(defun js-import-items-from-string (&optional str)
+  (let* ((parts (split-string str "{"))
+         (default (unless (or
+                           (null (nth 0 parts))
+                           (string-blank-p (nth 0 parts)))
+                    (nth 0 parts)))
+         (default-type (unless (null default)
+                         (if (string-match-p "\\*" default)
+                             16 1)))
+         (named (unless (or
+                         (null (nth 1 parts))
+                         (string-blank-p (nth 1 parts)))
+                  (nth 1 parts)))
+         (default-as-name (and (numberp default-type)
+                               (car (cdr (split-string default))))))
+    (when (and default-as-name
+               (not (js-import-valid-identifier-p default-as-name)))
+      (setq default-as-name nil))
+    (when (and default-as-name
+               (= default-type 16))
+      (setq default (format "* as %s" default-as-name)))
+    (list default named)))
+
 (defun js-import-insert-import (candidate)
   "Insert CANDIDATE into existing or new import statement."
   (save-excursion
-    (let ((as-name (js-import-get-prop candidate :as-name))
-          (type (js-import-get-prop candidate :type))
-          (display-path js-import-last-export-path))
-      (pcase type
-        (1 (js-import-insert-exports
-            (js-import-propose-name candidate) nil display-path))
-        (4 (js-import-insert-exports
-            nil
-            (js-import-strip-text-props as-name)
-            display-path))
-        (16 (js-import-insert-exports
-             (js-import-propose-name candidate)
-             nil display-path))))))
+    (if-let ((as-name (js-import-get-prop candidate :as-name))
+             (type (or (js-import-get-prop candidate :type)))
+             (display-path js-import-last-export-path))
+        (pcase type
+          (1 (js-import-insert-exports
+              (js-import-propose-name candidate) nil display-path))
+          (4 (js-import-insert-exports
+              nil
+              (js-import-strip-text-props as-name)
+              display-path))
+          (16 (js-import-insert-exports
+               (js-import-propose-name candidate)
+               nil display-path)))
+      (let ((items (js-import-items-from-string (format "%s" candidate))))
+        (js-import-insert-exports (pop items)
+                                  (pop items)
+                                  js-import-last-export-path)))))
 
 (defun js-import-insert-import-as (candidate)
   "Insert and renames CANDIDATE into existing or new import statement."
@@ -2735,9 +2796,9 @@ Without argument KEEP-COMMENTS content will inserted without comments."
                  (when-let ((dependencies (js-import-node-modules-candidates
                                            project-root)))
                    (setq module (seq-find (lambda(it) (member it dependencies))
-                                          imports))
-                   (unless module
-                     (goto-char (point-min)))))
+                                          imports)))
+                 (unless module
+                   (goto-char (point-min))))
                 (t (let ((pred (lambda(it) (not (js-import-relative-p it)))))
                      (setq module (seq-find pred imports))
                      (unless module
