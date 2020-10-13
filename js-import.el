@@ -1386,7 +1386,7 @@ Default section is `dependencies'"
 (defun js-import-display-to-real-imports (item)
   "Find ITEM in the variable `js-import-cached-imports-in-buffer.'."
   (with-current-buffer js-import-current-buffer
-    (seq-find (lambda(elt) (string= elt item))
+    (seq-find (lambda(elt) (equal elt item))
               js-import-cached-imports-in-buffer item)))
 
 (defun js-import-imported-candidates-in-buffer (&optional buffer)
@@ -1423,8 +1423,9 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
                             exports))
       exports)))
 
-(defun js-import-export-filtered-candidate-transformer (candidates &optional
-                                                                  _source)
+(defun js-import-export-filtered-candidate-transformer (candidates
+                                                        &optional
+                                                        _source)
   (mapcar (lambda(c) (js-import-get-prop c :as-name))
           candidates))
 
@@ -2443,41 +2444,54 @@ Default value for POSITION also current point position."
     (js-import-jump-to-item-in-buffer item)
     item))
 
+(defun js-import-transform-export-symbol (it)
+  (when-let ((item (js-import-display-to-real-exports
+                    it)))
+    (js-import-transform-symbol item)))
+
 (defun js-import-transform-symbol (c &optional margin)
-  (let* ((real-path (js-import-get-prop c :real-path))
-         (short-path (if (equal (with-current-buffer
-                                    js-import-current-buffer
-                                  buffer-file-name)
-                                real-path)
-                         (format "%s" js-import-current-buffer)
-                       (replace-regexp-in-string
-                        (concat "^" (js-import-slash
-                                     js-import-current-project-root))
-                        ""
-                        real-path )))
-         (display-path (js-import-get-prop c :display-path))
-         (export (and (js-import-get-prop c :export)
-                      (if display-path
-                          "Reexport"
-                        "Export")))
-         (import (and (js-import-get-prop c :import)
-                      "Import"))
-         (var (js-import-get-prop c :var-type))
-         (indents (make-string (or margin 1) ?\s))
-         (parts (seq-remove 'null
-                            (list
-                             indents c "/" (propertize
-                                            (or export import var "")
-                                            'face
-                                            'font-lock-keyword-face)
-                             (and display-path
-                                  (concat "from\s"
-                                          (propertize display-path
-                                                      'face
-                                                      'font-lock-builtin-face)))
-                             "in" short-path))))
-    (apply 'js-import-propertize (mapconcat 'identity parts "\s")
-           (text-properties-at 0 c))))
+  (unless (null c)
+    (let* ((real-path (js-import-get-prop c :real-path))
+           (short-path (if (equal (with-current-buffer
+                                      js-import-current-buffer
+                                    buffer-file-name)
+                                  real-path)
+                           (format "%s" js-import-current-buffer)
+                         (replace-regexp-in-string
+                          (concat "^" (js-import-slash
+                                       js-import-current-project-root))
+                          ""
+                          real-path)))
+           (display-path (js-import-get-prop c :display-path))
+           (export (and (js-import-get-prop c :export)
+                        (if display-path
+                            "Reexport"
+                          "Export")))
+           (import (and (js-import-get-prop c :import)
+                        "Import"))
+           (var (js-import-get-prop c :var-type))
+           (default (and (equal
+                          (js-import-get-prop c :type)
+                          1)
+                         "Default"))
+           (parts (string-trim (mapconcat
+                                (lambda(it) (propertize (format "%s" it)
+                                                   'face
+                                                   'font-lock-builtin-face))
+                                (seq-remove 'null (list
+                                                   (or export import "")
+                                                   (or default "")
+                                                   (or var "")))
+                                "\s")))
+           (indents (make-string (or margin 1) ?\s))
+           (name (replace-regexp-in-string " default$" ""
+                                           (format " %s" c)))
+           (result (concat indents
+                           (string-trim (or parts ""))
+                           name
+                           " in " short-path)))
+      (apply 'propertize (append (list result)
+                                 (text-properties-at 0 c))))))
 (defun js-import-map-stack (cands)
   (seq-map-indexed
    'js-import-transform-symbol cands))
@@ -2903,7 +2917,10 @@ CANDIDATE should be propertizied with property `display-path'."
   (when (fboundp 'ivy-set-display-transformer)
     (ivy-set-display-transformer
      'js-import-symbols-menu
-     'js-import-transform-symbol))
+     'js-import-transform-symbol)
+    (ivy-set-display-transformer
+     'js-import-from-path
+     'js-import-transform-export-symbol))
   (when (fboundp 'ivy-set-sources)
     (ivy-set-sources
      'js-import-ivy-read-file-name
