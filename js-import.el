@@ -433,13 +433,10 @@ string."
               (if (with-current-buffer js-import-current-buffer
                     js-import-current-export-path)
                   '(("Import" . (lambda(_it)
-                                  (mapc
-                                   'js-import-insert-import
-                                   (mapcar 'js-import-display-to-real-exports
-                                           (helm-marked-candidates)))))
-                    ("Import as " . (lambda(_it)
-                                      (js-import-insert-import-as
-                                       (helm-get-selection nil 'with-prop))))
+                                  (let ((marked (helm-marked-candidates)))
+                                    (dotimes (i (length marked))
+                                      (let ((item (nth i marked)))
+                                        (js-import-insert-import item))))))
                     ("Jump to export" . js-import-jump-to-item-other-window)
                     ("Jump to definition" . js-import-find-export-definition))
                 '(("Jump" . (lambda(it)
@@ -740,17 +737,11 @@ string."
          :require-match nil
          :caller 'js-import-from-path
          :preselect (js-import-preselect-symbol)
-         :action (lambda(it)
-                   (setq it (or (js-import-display-to-real-exports it) it))
-                   (if (and (boundp 'ivy-exit) ivy-exit)
-                       (js-import-insert-import it)
-                     (if-let ((item (js-import-find-definition it)))
-                         (progn (view-file-other-window
-                                 (js-import-get-prop item
-                                                     :real-path))
-                                (goto-char (js-import-get-prop item :pos))
-                                (js-import-highlight-word))
-                       (js-import-insert-import it))))))))
+         :multi-action (lambda(marked)
+                         (dotimes (i (length marked))
+                           (let ((it (nth i marked)))
+                             (js-import-insert-import it))))
+         :action 'js-import-ivy-insert-or-view-export))))
    (t (let ((choices (js-import-export-filtered-candidate-transformer
                       (js-import-exported-candidates-transformer
                        js-import-export-candidates-in-path))))
@@ -759,8 +750,7 @@ string."
           (js-import-completing-read
            "Symbols\s" choices
            :require-match t
-           :action (lambda(it) (js-import-insert-import
-                           (js-import-display-to-real-exports it)))))))))
+           :action 'js-import-insert-import))))))
 
 (defun js-import-init-project ()
   "Initialize project by setting buffer, finding root and aliases."
@@ -1284,10 +1274,6 @@ Default section is `dependencies'"
       (funcall action result))
     result))
 
-(defun js-import-setup-helm-symbols-sources ()
-  "Build helm sources for symbols menu."
-  )
-
 (defun js-import-build-helm-exports-keymap ()
   "Make keymap for helm symbols type."
   (when-let ((h-map (and (boundp 'helm-map)
@@ -1593,8 +1579,7 @@ File is specified in the variable `js-import-current-export-path.'."
                              ((not (null result))
                               (push result cjs-exports))))))
     (push (js-import-path-to-real init-path) external-paths)
-    (while external-paths
-      (setq path (pop external-paths))
+    (while (setq path (pop external-paths))
       (push path processed-paths)
       (when path
         (js-import-with-buffer-or-file-content path
@@ -1710,23 +1695,26 @@ File is specified in the variable `js-import-current-export-path.'."
            symbols))
         ((looking-at js-import-regexp-name-set)
          (let* ((stack (js-import-skip-reserved-words "\s\t*"))
-                (default (assoc "default" stack))
-                (real-name (car (seq-find (lambda(it) (js-import-valid-identifier-p
-                                                  (car it)))
-                                          stack)))
+                (default (car (assoc "default" stack)))
+                (real-name (or (car (seq-find (lambda(it)
+                                                (let ((name (car it)))
+                                                  (js-import-valid-identifier-p
+                                                   name)))
+                                              stack))
+                               default))
                 (var-type (car
                            (seq-find (lambda(it)
                                        (member
                                         (car it)
                                         js-import-delcaration-keywords))
                                      stack)))
-                (as-name real-name))
+                (as-name (or real-name default)))
            (js-import-make-item
-            (or real-name as-name)
+            (or as-name real-name)
             :type (if default 1 4)
-            :real-name real-name
-            :as-name as-name
+            :real-name (or real-name default as-name)
             :real-path path
+            :as-name as-name
             :var-type var-type
             :pos (point))))))
 
@@ -1863,21 +1851,23 @@ File is specified in the variable `js-import-current-export-path.'."
           (seq-remove 'null children))))))
 
 (defun js-import-skip-reserved-words (&optional separators)
-  (unless separators (setq separators "\s\t\".='*"))
+  (unless separators (setq separators "\s\t*"))
   (let* ((stack)
-         (stop)
-         (func (lambda()
-                 (let ((w (js-import-which-word))
-                       (p (point)))
-                   (when (rassoc p stack)
-                     (setq stop t))
-                   (push (cons w p) stack)
-                   w))))
-    (while (and (js-import-reserved-word-p (funcall func))
-                (not stop))
-      (skip-chars-forward js-import-regexp-name)
-      (skip-chars-forward separators))
-    stack))
+         (prev)
+         (word))
+    (while (and
+            (not (equal prev (point)))
+            (js-import-reserved-word-p (setq word (js-import-which-word))))
+      (setq prev (point))
+      (skip-chars-forward word)
+      (js-import-skip-whitespace-forward)
+      (push (cons word prev) stack))
+    (when (and (looking-at-p (concat
+                              js-import-regexp-name-set
+                              "+\\([\s\t\n,;/]\\|$\\)"))
+               (not (js-import-reserved-word-p (js-import-which-word))))
+      (push (cons (js-import-which-word) (point)) stack))
+    (seq-remove 'null stack)))
 
 (defun js-import-kill-thing-at-point (&optional $thing)
   "Kill the `thing-at-point' for the specified kind of THING."
@@ -2079,40 +2069,10 @@ Result depends on syntax table's string quote character."
 
 (defun js-import-valid-identifier-p (str)
   "Return t if STR is a valid variable name, otherwise nil."
-  (not (or (js-import-invalid-name-p str)
-           (js-import-reserved-word-p str))))
-
-(defun js-import-propose-name (candidate)
-  (let* ((parts (split-string candidate))
-         (type (js-import-get-prop candidate :type))
-         (current-name (car parts))
-         (display-path (js-import-get-prop candidate :display-path))
-         (proposed-symbol (pcase type
-                            (1 (if (js-import-valid-identifier-p candidate)
-                                   candidate
-                                 (js-import-generate-name-from-path
-                                  display-path)))
-                            (4 (js-import-generate-name-from-path
-                                display-path))
-                            (16 (js-import-generate-name-from-path
-                                 display-path))))
-         (prompt (format "%s %s"
-                         (pcase type
-                           (1 "Import (default: %s): ")
-                           (4 "Import { (default: %s) }: ")
-                           (16 "Import all exports as (default: %s): "))
-                         proposed-symbol))
-         (read-symbols
-          (read-string
-           prompt
-           proposed-symbol
-           nil nil proposed-symbol))
-         (new-name (car (split-string (string-trim read-symbols))))
-         (name (pcase type
-                 (1 new-name)
-                 (4 (format "%s as %s" current-name new-name))
-                 (16 (format "* as %s" new-name)))))
-    name))
+  (not (or
+        (null str)
+        (js-import-invalid-name-p str)
+        (js-import-reserved-word-p str))))
 
 (defun js-import-generate-name-from-path (path)
   "Generate name for default or module import from PATH."
@@ -2738,40 +2698,55 @@ Without argument KEEP-COMMENTS content will inserted without comments."
       (setq default (format "* as %s" default-as-name)))
     (list default named)))
 
+(defun js-import-ivy-insert-or-view-export (item)
+  "Add ITEM into existing or new import statement."
+  (if-let* ((real (js-import-display-to-real-exports item))
+            (definition (js-import-find-definition real))
+            (exit (and (boundp 'ivy-exit)
+                       (not ivy-exit))))
+      (progn (view-file-other-window
+              (js-import-get-prop definition
+                                  :real-path))
+             (goto-char (js-import-get-prop definition :pos))
+             (js-import-highlight-word))
+    (js-import-insert-import item)))
+
 (defun js-import-insert-import (candidate)
   "Insert CANDIDATE into existing or new import statement."
   (save-excursion
-    (if-let ((as-name (js-import-get-prop candidate :as-name))
-             (type (or (js-import-get-prop candidate :type)))
-             (display-path js-import-last-export-path))
+    (if-let* ((real (js-import-display-to-real-exports candidate))
+              (type (or (js-import-get-prop real :type)))
+              (display-path js-import-last-export-path)
+              (as-name (js-import-get-prop real :as-name))
+              (default-name (if (or (= type 4)
+                                    (js-import-valid-identifier-p as-name))
+                                as-name
+                              (js-import-generate-name-from-path
+                               display-path)))
+              (prompt (pcase type
+                        (1 (format "Import default as (default %s)\s"
+                                   default-name))
+                        (4 (format "Import (default %s)\s"
+                                   as-name))
+                        (16 (format "Import * as (default %s)\s"
+                                    default-name))))
+              (confirmed-name (read-string
+                               prompt default-name nil default-name))
+              (full-name (pcase type
+                           (1 confirmed-name)
+                           (4 (if (string= default-name confirmed-name)
+                                  default-name
+                                (format "%s as %s" as-name confirmed-name)))
+                           (16 (if (string= default-name confirmed-name)
+                                   default-name
+                                 (format "* as %s" confirmed-name))))))
         (pcase type
-          (1 (js-import-insert-exports
-              (js-import-propose-name candidate) nil display-path))
-          (4 (js-import-insert-exports
-              nil
-              (js-import-strip-text-props as-name)
-              display-path))
-          (16 (js-import-insert-exports
-               (js-import-propose-name candidate)
-               nil display-path)))
+          (4 (js-import-insert-exports nil full-name display-path))
+          (_ (js-import-insert-exports full-name nil display-path)))
       (let ((items (js-import-items-from-string (format "%s" candidate))))
         (js-import-insert-exports (pop items)
                                   (pop items)
                                   js-import-last-export-path)))))
-
-(defun js-import-insert-import-as (candidate)
-  "Insert and renames CANDIDATE into existing or new import statement."
-  (let* ((type (js-import-get-prop candidate :type))
-         (normalized-path (js-import-get-prop candidate :display-path))
-         (real-name (or (js-import-get-prop candidate :as-name) candidate))
-         (renamed-name (car (split-string
-                             (read-string
-                              (format "import %s as " real-name)))))
-         (full-name (concat real-name " as " renamed-name)))
-    (pcase type
-      (1 (js-import-insert-exports renamed-name nil normalized-path))
-      (4 (js-import-insert-exports nil full-name normalized-path))
-      (16 (js-import-insert-exports full-name nil normalized-path)))))
 
 (defun js-import-insert-exports (default-name named-list path)
   (let ((names (if (stringp named-list)
