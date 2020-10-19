@@ -1695,7 +1695,7 @@ File is specified in the variable `js-import-current-export-path.'."
                            (mapcar map-func symbols)))
            symbols))
         ((looking-at js-import-regexp-name-set)
-         (let* ((stack (js-import-skip-reserved-words "\s\t*"))
+         (let* ((stack (js-import-skip-reserved-words "\s\t\\*"))
                 (default (car (assoc "default" stack)))
                 (real-name (or (car (seq-find (lambda(it)
                                                 (let ((name (car it)))
@@ -1852,7 +1852,7 @@ File is specified in the variable `js-import-current-export-path.'."
           (seq-remove 'null children))))))
 
 (defun js-import-skip-reserved-words (&optional separators)
-  (unless separators (setq separators "\s\t*"))
+  (unless separators (setq separators "\s\t\\*"))
   (let* ((stack)
          (prev)
          (word))
@@ -1862,12 +1862,10 @@ File is specified in the variable `js-import-current-export-path.'."
       (setq prev (point))
       (skip-chars-forward word)
       (js-import-skip-whitespace-forward)
+      (skip-chars-forward separators)
       (push (cons word prev) stack))
-    (when (and (looking-at-p (concat
-                              js-import-regexp-name-set
-                              "+\\([\s\t\n,;/]\\|$\\)"))
-               (not (js-import-reserved-word-p (js-import-which-word))))
-      (push (cons (js-import-which-word) (point)) stack))
+    (when-let ((id (js-import-which-word)))
+      (push (cons id (point)) stack))
     (seq-remove 'null stack)))
 
 (defun js-import-kill-thing-at-point (&optional $thing)
