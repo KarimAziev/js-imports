@@ -989,10 +989,48 @@ If PATH is a relative file, it will be returned without changes."
            (js-import-node-module-to-real path))
           (t (js-import-alias-path-to-real path)))))
 
+(defun js-import-get-ext (str)
+  (when-let ((ext-pos (string-match
+                       "\\.\\([a-zZ-A0-9]+\\)$"
+                       str)))
+    (substring str (1+ ext-pos))))
+
+(defun js-import-sort-by-exts (files &optional extensions)
+  (setq extensions (or extensions js-import-preffered-extensions))
+  (seq-sort-by (lambda (a)
+                 (if-let ((ext (js-import-get-ext a)))
+                     (or (seq-position extensions ext 'string=) -1)
+                   -1))
+               #'>
+               files))
+
 (defun js-import-relative-to-real (path &optional dir)
-  (unless dir (setq dir default-directory))
-  (or (js-import-try-ext path dir)
-      (js-import-try-ext (js-import-join-file path "index") dir)))
+  (when (or (string= path ".")
+            (string= path ".."))
+    (setq path (js-import-slash path)))
+  (let* ((base (file-name-base path))
+         (ext (js-import-get-ext path))
+         (up (if (string-empty-p base)
+                 path
+               (replace-regexp-in-string (format "/%s\\(\\.[a-zZ-A0-9]+\\)*$" base) "" path)))
+         (parent (expand-file-name up (or dir default-directory)))
+         (files (cond ((and ext)
+                       (directory-files parent nil (format "^%s\\.%s$" base ext)))
+                      ((string-empty-p base)
+                       (js-import-sort-by-exts
+                        (directory-files parent nil
+                                         "^index\\(\\.[a-zZ-A0-9]+\\)$")))
+                      (t (js-import-sort-by-exts
+                          (directory-files parent nil
+                                           (format "^%s\\(\\.[a-zZ-A0-9]+\\)?$" base))))))
+         (found (car files))
+         (result (and found (expand-file-name found parent))))
+    (cond ((and (null ext)
+                result
+                (file-directory-p result))
+           (when-let ((index (car (directory-files result nil "^index\\(\\.[a-zZ-A0-9]+\\)+$"))))
+             (expand-file-name index result)))
+          (t result))))
 
 (defun js-import-alias-path-to-real (path)
   "Convert aliased PATH to absolute file name."
