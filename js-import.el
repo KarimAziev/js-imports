@@ -592,32 +592,13 @@ string."
                         choices
                         :preselect (js-import-preselect-symbol)
                         :caller 'js-import-symbols-menu
-                        :action
-                        (lambda(it)
-                          (when-let ((item (js-import-find-definition it)))
-                            (let ((cands
-                                   (js-import-get-prop item :stack))
-                                  (preselect))
-                              (when cands
-                                (push item cands)
-                                (setq cands (reverse cands))
-                                (setq cands (js-import-map-stack cands))
-                                (setq preselect
-                                      (seq-find
-                                       (lambda(d)
-                                         (js-import-get-prop d
-                                                             :var-type))
-                                       cands))
-                                (setq item
-                                      (ivy-read "Jump:\s" cands
-                                                :preselect (or preselect
-                                                               it)))))
-                            (when-let ((pos (and item (js-import-get-prop
-                                                       item :pos))))
-                              (find-file
-                               (js-import-get-prop item :real-path))
-                              (goto-char pos)
-                              (js-import-highlight-word))))))))
+                        :action (lambda(it)
+                                  (if (and (boundp 'ivy-exit)
+                                           ivy-exit)
+                                      (js-import-jump-to-symbol-action it)
+                                    (js-import-jump-to-item-in-buffer
+                                     it
+                                     js-import-current-buffer)))))))
     (_ (when-let* ((choices (append (js-import-extract-all-exports
                                      buffer-file-name)
                                     (js-import-extract-imports buffer-file-name)
@@ -633,6 +614,23 @@ string."
              (find-file (js-import-get-prop item :real-path))
              (progn (goto-char (js-import-get-prop item :pos))
                     (js-import-highlight-word))))))))
+
+(defun js-import-jump-to-symbol-action (it)
+  (when-let ((item (js-import-find-definition it)))
+    (let ((stack (js-import-get-prop item :stack)))
+      (when stack
+        (push item stack)
+        (setq stack (js-import-compose-from stack
+                                            'js-import-map-stack
+                                            'reverse))
+        (setq item
+              (completing-read "Jump:\s" stack nil t))))
+    (when-let ((pos (and item (js-import-get-prop
+                               item :pos))))
+      (find-file
+       (js-import-get-prop item :real-path))
+      (goto-char pos)
+      (js-import-highlight-word))))
 
 ;;;###autoload
 (defun js-import-find-symbol-at-point ()
@@ -1012,23 +1010,30 @@ If PATH is a relative file, it will be returned without changes."
          (ext (js-import-get-ext path))
          (up (if (string-empty-p base)
                  path
-               (replace-regexp-in-string (format "/%s\\(\\.[a-zZ-A0-9]+\\)*$" base) "" path)))
+               (replace-regexp-in-string
+                (format "/%s\\(\\.[a-zZ-A0-9]+\\)*$" base) "" path)))
          (parent (expand-file-name up (or dir default-directory)))
          (files (cond ((and ext)
-                       (directory-files parent nil (format "^%s\\.%s$" base ext)))
+                       (directory-files parent nil
+                                        (format "^%s\\.%s$" base ext)))
                       ((string-empty-p base)
                        (js-import-sort-by-exts
                         (directory-files parent nil
                                          "^index\\(\\.[a-zZ-A0-9]+\\)$")))
                       (t (js-import-sort-by-exts
-                          (directory-files parent nil
-                                           (format "^%s\\(\\.[a-zZ-A0-9]+\\)?$" base))))))
+                          (directory-files
+                           parent nil
+                           (format
+                            "^%s\\(\\.[a-zZ-A0-9]+\\)?$" base))))))
          (found (car files))
          (result (and found (expand-file-name found parent))))
     (cond ((and (null ext)
                 result
                 (file-directory-p result))
-           (when-let ((index (car (directory-files result nil "^index\\(\\.[a-zZ-A0-9]+\\)+$"))))
+           (when-let ((index
+                       (car
+                        (directory-files
+                         result nil "^index\\(\\.[a-zZ-A0-9]+\\)+$"))))
              (expand-file-name index result)))
           (t result))))
 
@@ -2486,51 +2491,59 @@ Default value for POSITION also current point position."
     (js-import-transform-symbol item)))
 
 (defun js-import-transform-symbol (c &optional margin)
-  (unless (null c)
-    (let* ((real-path (js-import-get-prop c :real-path))
-           (short-path (if (equal (with-current-buffer
-                                      js-import-current-buffer
-                                    buffer-file-name)
-                                  real-path)
-                           (format "%s" js-import-current-buffer)
-                         (replace-regexp-in-string
-                          (concat "^" (js-import-slash
-                                       js-import-current-project-root))
-                          ""
-                          real-path)))
-           (display-path (js-import-get-prop c :display-path))
-           (export (and (js-import-get-prop c :export)
-                        (if display-path
-                            "Reexport"
-                          "Export")))
-           (import (and (js-import-get-prop c :import)
-                        "Import"))
-           (var (js-import-get-prop c :var-type))
-           (default (and (equal
-                          (js-import-get-prop c :type)
-                          1)
-                         "Default"))
-           (parts (string-trim (mapconcat
-                                (lambda(it) (propertize (format "%s" it)
-                                                   'face
-                                                   'font-lock-builtin-face))
-                                (seq-remove 'null (list
-                                                   (or export import "")
-                                                   (or default "")
-                                                   (or var "")))
-                                "\s")))
-           (indents (make-string (or margin 1) ?\s))
-           (name (replace-regexp-in-string " default$" ""
-                                           (format " %s" c)))
-           (result (concat indents
-                           (string-trim (or parts ""))
-                           name
-                           " in " short-path)))
-      (apply 'propertize (append (list result)
-                                 (text-properties-at 0 c))))))
+  (let* ((real-path (js-import-get-prop c :real-path))
+         (short-path (if (equal (with-current-buffer
+                                    js-import-current-buffer
+                                  buffer-file-name)
+                                real-path)
+                         (format "%s" js-import-current-buffer)
+                       (replace-regexp-in-string
+                        (concat "^" (js-import-slash
+                                     js-import-current-project-root))
+                        ""
+                        real-path)))
+         (display-path (js-import-get-prop c :display-path))
+         (export (and (js-import-get-prop c :export)
+                      (if display-path
+                          "Reexport"
+                        "Export")))
+         (import (and (js-import-get-prop c :import)
+                      "Import"))
+         (var (js-import-get-prop c :var-type))
+         (default (and (equal
+                        (js-import-get-prop c :type)
+                        1)
+                       "Default"))
+         (parts (string-trim (mapconcat
+                              (lambda(it) (propertize (capitalize (string-trim it))
+                                                 'face
+                                                 'font-lock-function-name-face))
+                              (seq-remove 'null (list
+                                                 export
+                                                 import
+                                                 default
+                                                 var))
+                              "\s")))
+         (indents (make-string (or margin 1) ?\s))
+         (name (replace-regexp-in-string " default$" ""
+                                         (or (js-import-get-prop c :as-name)
+                                             c)))
+         (path-part (cond ((and import)
+                           (concat "from\s" display-path))
+                          (t "")))
+         (result (string-join
+                  (seq-remove 'null (list
+                                     (and margin (make-string margin ?\s))
+                                     (string-trim (or parts ""))
+                                     name
+                                     path-part))
+                  "\s")))
+    (apply 'propertize (append (list result)
+                               (text-properties-at 0 c)))))
 (defun js-import-map-stack (cands)
   (seq-map-indexed
-   'js-import-transform-symbol cands))
+   'js-import-transform-symbol
+   (seq-remove 'null cands)))
 
 (defun js-import-find-export-definition (export-symbol)
   "Jumps to ITEM in buffer. ITEM must be propertized with prop :pos."
