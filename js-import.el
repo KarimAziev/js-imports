@@ -134,7 +134,6 @@ string."
     (define-key map (kbd "C-c C-i") 'js-import)
     (define-key map (kbd "C-c C-.") 'js-import-symbols-menu)
     (define-key map (kbd "C-c C-j") 'js-import-find-symbol-at-point)
-    (define-key map (kbd "C-.") 'js-import-find-file-at-point)
     (easy-menu-define js-import-mode-menu map
       "Menu for Js import"
       '("Js import"
@@ -637,45 +636,48 @@ string."
   "Deep jump to a definition of symbol at point through renaming, re-exports."
   (interactive)
   (js-import-init-project)
-  (when-let ((name (js-import-get-word-if-valid)))
-    (let (real-name as-name)
-      (save-excursion (skip-chars-backward name)
-                      (if (save-excursion
-                            (js-import-skip-whitespace-backward)
-                            (js-import-looking-at "as"))
+  (if-let ((name (and
+                  (not (js-import-inside-string-p))
+                  (js-import-get-word-if-valid))))
+      (let (real-name as-name)
+        (save-excursion (skip-chars-backward name)
+                        (if (save-excursion
+                              (js-import-skip-whitespace-backward)
+                              (js-import-looking-at "as"))
+                            (progn
+                              (setq as-name name)
+                              (js-import-re-search-backward "as" nil t 1)
+                              (js-import-skip-whitespace-backward)
+                              (setq real-name (js-import-get-word-if-valid)))
                           (progn
-                            (setq as-name name)
-                            (js-import-re-search-backward "as" nil t 1)
-                            (js-import-skip-whitespace-backward)
-                            (setq real-name (js-import-get-word-if-valid)))
-                        (progn
-                          (setq real-name name)
-                          (js-import-re-search-forward real-name)
-                          (js-import-skip-whitespace-forward)
-                          (if (not (js-import-looking-at "as"))
-                              (setq as-name real-name)
-                            (js-import-re-search-forward "as" nil t 1)
+                            (setq real-name name)
+                            (js-import-re-search-forward real-name)
                             (js-import-skip-whitespace-forward)
-                            (setq as-name (js-import-get-word-if-valid))))))
-      (when-let ((item (and (or real-name as-name)
-                            (or (js-import-find-by-prop
-                                 :real-name real-name
-                                 (js-import-search-backward-identifiers
-                                  buffer-file-name (point)))
-                                (js-import-find-by-prop
-                                 :as-name as-name
-                                 (js-import-extract-imports
-                                  buffer-file-name))
-                                (js-import-find-by-prop
-                                 :real-name real-name
-                                 (js-import-extract-all-exports
-                                  buffer-file-name))))))
-        (unless (js-import-get-prop item :var-type)
-          (setq item (js-import-find-definition item)))
-        (when item
-          (find-file (js-import-get-prop item :real-path))
-          (progn (goto-char (js-import-get-prop item :pos))
-                 (js-import-highlight-word)))))))
+                            (if (not (js-import-looking-at "as"))
+                                (setq as-name real-name)
+                              (js-import-re-search-forward "as" nil t 1)
+                              (js-import-skip-whitespace-forward)
+                              (setq as-name (js-import-get-word-if-valid))))))
+        (when-let ((item (and (or real-name as-name)
+                              (or (js-import-find-by-prop
+                                   :real-name real-name
+                                   (js-import-search-backward-identifiers
+                                    buffer-file-name (point)))
+                                  (js-import-find-by-prop
+                                   :as-name as-name
+                                   (js-import-extract-imports
+                                    buffer-file-name))
+                                  (js-import-find-by-prop
+                                   :real-name real-name
+                                   (js-import-extract-all-exports
+                                    buffer-file-name))))))
+          (unless (js-import-get-prop item :var-type)
+            (setq item (js-import-find-definition item)))
+          (when item
+            (find-file (js-import-get-prop item :real-path))
+            (progn (goto-char (js-import-get-prop item :pos))
+                   (js-import-highlight-word)))))
+    (js-import-find-file-at-point)))
 
 ;;;###autoload
 (defun js-import-find-file (&optional file)
@@ -1997,7 +1999,7 @@ File is specified in the variable `js-import-current-export-path.'."
     (unless (null curr-pos)
       (js-import-re-search-backward "[^\s\t\n]+" pos t 1)
       (unless (looking-at "/")
-        (skip-chars-backward (js-import-which-word))
+        (skip-chars-backward js-import-regexp-name)
         (when (< pos (point))
           (setq curr-pos (point))))
       (goto-char curr-pos))))
