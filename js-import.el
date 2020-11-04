@@ -276,6 +276,7 @@ string."
   :group 'js-import)
 
 (defun js-import-setup-ivy ()
+  (require 'ivy)
   (setq js-import-files-map (make-sparse-keymap))
   (setq js-import-switch-alias-post-command
         (lambda()
@@ -311,6 +312,7 @@ string."
     (message "Couldn't find %s" candidate)))
 
 (defun js-import-setup-helm ()
+  (require 'helm)
   (setq js-import-files-map (make-sparse-keymap))
   (js-import-reset-all-sources)
   (when (boundp 'helm-map)
@@ -556,14 +558,17 @@ string."
   (interactive)
   (js-import-init-project)
   (pcase js-import-completion-system
-    ('helm (when (and (fboundp 'helm)
-                      (fboundp 'helm-attr))
-             (helm-attr 'candidates js-import-node-modules-source t)
-             (helm
-              :sources js-import-files-source
-              :buffer js-import-buffer
-              :preselect (js-import-preselect-file)
-              :prompt (js-import-make-files-prompt))))
+    ('helm
+     (require 'helm)
+     (when (and (fboundp 'helm)
+                (fboundp 'helm-attr))
+       (unless js-import-node-modules-source
+         (js-import-setup-helm))
+       (helm
+        :sources js-import-files-source
+        :buffer js-import-buffer
+        :preselect (js-import-preselect-file)
+        :prompt (js-import-make-files-prompt))))
     ('ivy (js-import-ivy-read-file-name))
     (_ (let ((module (funcall completing-read-function
                               (js-import-make-files-prompt)
@@ -2959,8 +2964,7 @@ CANDIDATE should be propertizied with property `display-path'."
   (when (fboundp 'ivy-set-actions)
     (ivy-set-actions
      'js-import
-     '(("f"
-        js-import-find-file
+     '(("f" js-import-find-file
         "find file")
        ("j"
         js-import-find-file-other-window
