@@ -734,19 +734,24 @@ string."
          (fboundp 'ivy-read))
     (let ((choices (js-import-export-filtered-candidate-transformer
                     (js-import-exported-candidates-transformer
-                     js-import-export-candidates-in-path))))
-      (if (null choices)
-          (message "No exports found")
-        (ivy-read
-         "Symbols\s" choices
-         :require-match nil
-         :caller 'js-import-from-path
-         :preselect (js-import-preselect-symbol)
-         :multi-action (lambda(marked)
-                         (dotimes (i (length marked))
-                           (let ((it (nth i marked)))
-                             (js-import-insert-import it))))
-         :action 'js-import-ivy-insert-or-view-export))))
+                     js-import-export-candidates-in-path)))
+          (imports (js-import-filter-with-prop
+                    :display-path
+                    js-import-current-export-path
+                    (js-import-imported-candidates-in-buffer
+                     js-import-current-buffer))))
+      (js-import-ivy-read-multy
+       (if (null imports)
+           "Import\s"
+         (concat "Import" "\s" (mapconcat (lambda(it) (format "%s" it))
+                                          imports
+                                          ",\s")
+                 ",\s"))
+       choices
+       :require-match nil
+       :caller 'js-import-from-path
+       :preselect (js-import-preselect-symbol)
+       :action 'js-import-insert-import)))
    (t (let ((choices (js-import-export-filtered-candidate-transformer
                       (js-import-exported-candidates-transformer
                        js-import-export-candidates-in-path))))
@@ -756,6 +761,73 @@ string."
            "Symbols\s" choices
            :require-match t
            :action 'js-import-insert-import))))))
+
+(cl-defun js-import-ivy-read-multy (prompt collection
+                                           &key
+                                           predicate
+                                           action
+                                           require-match
+                                           initial-input
+                                           def
+                                           history
+                                           preselect
+                                           update-fn
+                                           sort
+                                           unwind
+                                           re-builder
+                                           matcher
+                                           dynamic-collection
+                                           extra-props
+                                           caller)
+  (require 'ivy)
+  (let ((choices collection)
+        (count (length collection))
+        (map (make-sparse-keymap))
+        (next-prompt)
+        (result))
+    (define-key map (kbd "RET") (lambda()
+                                  (interactive)
+                                  (let ((curr (ivy-state-current ivy-last)))
+                                    (when (string-empty-p curr)
+                                      (setq curr ivy-text))
+                                    (ivy--kill-current-candidate)
+                                    (if (null result)
+                                        (progn
+                                          (push curr result)
+                                          (setq ivy--prompt (concat ivy--prompt
+                                                                    curr)))
+                                      (setq result (append result (list curr)))
+                                      (setq ivy--prompt (concat ivy--prompt
+                                                                ", "
+                                                                curr))))
+                                  (when (= count (length result))
+                                    (ivy-immediate-done))))
+    (define-key map (kbd "<C-return>") (lambda()
+                                         (interactive)
+                                         (ivy-immediate-done)))
+    (ivy-read (if (null result)
+                  prompt
+                (concat prompt "\s" (string-join result ", ")))
+              choices
+              :predicate predicate
+              :require-match require-match
+              :initial-input initial-input
+              :def def
+              :history history
+              :preselect preselect
+              :keymap map
+              :update-fn update-fn
+              :sort sort
+              :unwind unwind
+              :re-builder re-builder
+              :matcher matcher
+              :dynamic-collection dynamic-collection
+              :extra-props extra-props
+              :caller caller)
+    (unless (null action)
+      (dolist (it result)
+        (funcall action it)))
+    result))
 
 (defun js-import-init-project ()
   "Initialize project by setting buffer, finding root and aliases."
@@ -1458,12 +1530,12 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
   "Remove duplicates and imported members from CANDIDATES plist."
   (with-current-buffer js-import-current-buffer
     (let (imports exports)
-      (setq imports (js-import-imported-candidates-in-buffer
-                     js-import-current-buffer))
-      (setq imports (js-import-filter-with-prop
-                     :display-path
-                     js-import-current-export-path
-                     imports))
+      (setq imports
+            (js-import-filter-with-prop
+             :display-path
+             js-import-current-export-path
+             (js-import-imported-candidates-in-buffer
+              js-import-current-buffer)))
       (setq exports (if imports (js-import-filter-exports candidates imports)
                       candidates))
       (setq exports (cl-remove-duplicates exports))
@@ -2801,7 +2873,7 @@ Without argument KEEP-COMMENTS content will inserted without comments."
                         (16 (format "Import * as (default %s)\s"
                                     default-name))))
               (confirmed-name (read-string
-                               prompt default-name nil default-name))
+                               prompt nil nil default-name))
               (full-name (pcase type
                            (1 confirmed-name)
                            (4 (if (string= default-name confirmed-name)
