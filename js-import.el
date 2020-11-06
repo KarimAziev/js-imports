@@ -1124,7 +1124,7 @@ If PATH is a relative file, it will be returned without changes."
       (setq alias (pop aliases))
       (let* ((alias-regexp (if (js-import-string-blank-p alias)
                                (concat "^" alias)
-                             (concat "^" alias "\\(/\\|$\\)" )))
+                             (concat "^" (js-import-slash alias))))
              (alias-path (js-import-get-alias-path alias))
              (joined-path (js-import-join-file
                            alias-path
