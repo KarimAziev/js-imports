@@ -1035,6 +1035,18 @@ If PATH is a relative file, it will be returned without changes."
 
 (defun js-import-get-aliases (&optional project-root aliases-plist)
   "Extract keys from ALIASES-PLIST of PROJECT-ROOT."
+  (if-let ((ts-aliases (js-import-read-tsconfig project-root)))
+      (if js-import-current-buffer
+          (with-current-buffer js-import-current-buffer
+            (setq js-import-project-aliases (append
+                                             ts-aliases
+                                             js-import-project-aliases)))
+        (setq js-import-project-aliases (append ts-aliases
+                                                js-import-project-aliases)))
+    (if js-import-current-buffer
+        (with-current-buffer js-import-current-buffer
+          js-import-project-aliases)
+      js-import-project-aliases))
   (unless aliases-plist (setq aliases-plist
                               (if js-import-current-buffer
                                   (with-current-buffer js-import-current-buffer
@@ -1298,6 +1310,43 @@ PROJECT-ROOT."
                                         module)
               (expand-file-name module path)
             (js-import-try-find-real-path (js-import-try-ext module path)))))))
+
+(defun js-import-read-tsconfig (&optional root filename)
+  "Read tsconfig and returns plist of aliases and paths. "
+  (unless root (setq root (js-import-find-project-root)))
+  (let ((configs-list (seq-filter 'file-exists-p
+                                  (list (expand-file-name (or filename "tsconfig.json") root)
+                                        (expand-file-name "jsconfig.json" root))))
+        (extends)
+        (baseUrl)
+        (config)
+        (aliases))
+    (while (setq config (pop configs-list))
+      (when-let* ((extends (js-import-read-package-json-section
+                            config "extends"))
+                  (path (expand-file-name extends root)))
+        (when (file-exists-p path)
+          (push path configs-list)))
+      (when-let* ((options (js-import-read-package-json-section
+                            config
+                            "compilerOptions"))
+                  (paths (gethash "paths" options))
+                  (baseUrl (or (gethash "baseUrl" options)
+                               "./")))
+        (maphash (lambda(key value)
+                   (setq key (replace-regexp-in-string "*$" "" key))
+                   (message "key %s value %s  %s"
+                            key value
+                            (stringp key))
+                   (setq value (replace-regexp-in-string "*$" "" (car
+                                                                  (append
+                                                                   value nil))))
+                   (when baseUrl
+                     (setq value (js-import-join-when-exists root baseUrl value)))
+                   (push value aliases)
+                   (push key aliases))
+                 paths)))
+    aliases))
 
 (defun js-import-read-package-json-section (&optional package-json-path section)
   "Reads a SECTION from PACKAGE-JSON-PATH and returns its hash.
