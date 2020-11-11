@@ -833,8 +833,8 @@ string."
   "Initialize project by setting buffer, finding root and aliases."
   (setq js-import-current-buffer (current-buffer))
   (setq js-import-current-project-root (js-import-find-project-root))
-  (setq js-import-aliases (js-import-get-aliases
-                           js-import-current-project-root))
+  (setq js-import-aliases (delete-dups (js-import-get-aliases
+                           js-import-current-project-root)))
   (when js-import-current-alias
     (unless (member js-import-current-alias js-import-aliases)
       (setq js-import-current-alias nil)))
@@ -1035,26 +1035,24 @@ If PATH is a relative file, it will be returned without changes."
 
 (defun js-import-get-aliases (&optional project-root aliases-plist)
   "Extract keys from ALIASES-PLIST of PROJECT-ROOT."
-  (if-let ((ts-aliases (js-import-read-tsconfig project-root)))
-      (if js-import-current-buffer
-          (with-current-buffer js-import-current-buffer
-            (setq js-import-project-aliases (append
-                                             ts-aliases
-                                             js-import-project-aliases)))
-        (setq js-import-project-aliases (append ts-aliases
-                                                js-import-project-aliases)))
-    (if js-import-current-buffer
-        (with-current-buffer js-import-current-buffer
-          js-import-project-aliases)
-      js-import-project-aliases))
-  (unless aliases-plist (setq aliases-plist
-                              (if js-import-current-buffer
-                                  (with-current-buffer js-import-current-buffer
-                                    js-import-project-aliases)
-                                js-import-project-aliases)))
   (let ((root (or project-root (js-import-find-project-root)))
-        (pl aliases-plist)
+        (pl)
         (vals))
+    (unless (and (with-current-buffer (or js-import-current-buffer
+                                          (current-buffer))
+                   js-import-project-aliases)
+                 aliases-plist)
+      (with-current-buffer (or js-import-current-buffer
+                               (current-buffer))
+        (setq js-import-project-aliases
+              (if-let ((ts-aliases (js-import-read-tsconfig project-root)))
+                  (delete-dups
+                   (append
+                    ts-aliases
+                    js-import-project-aliases))
+                js-import-project-aliases))
+        (setq aliases-plist js-import-project-aliases)
+        (setq pl js-import-project-aliases)))
     (while pl
       (when-let* ((alias (car pl))
                   (path (with-current-buffer js-import-current-buffer
@@ -1185,7 +1183,10 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
                                       (car (cdr
                                             (member js-import-current-alias
                                                     aliases)))
-                                    (car aliases))))
+                                    (car aliases)))
+    (message "js-import-current-alias %s %s"
+             js-import-current-alias
+             aliases))
   (when js-import-switch-alias-post-command
     (funcall js-import-switch-alias-post-command)))
 
