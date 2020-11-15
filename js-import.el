@@ -244,10 +244,6 @@ string."
 
 (defvar js-import-closed-paren-re (regexp-opt '("}") t))
 
-(defvar js-import-dependencies-cache (make-hash-table :test 'equal))
-
-(defvar js-import-dependencies-cache-tick nil)
-
 (defvar js-import-current-project-root nil)
 
 (defvar js-import-current-buffer nil)
@@ -289,6 +285,28 @@ string."
   "Helm sources for symbols for command `js-import-symbols-menu'."
   :type '(repeat (choice symbol))
   :group 'js-import)
+
+(defvar js-import-files-cache (make-hash-table :test 'equal))
+
+(defun js-import-get-file-cache (path)
+  (let* ((cache (gethash path js-import-files-cache))
+         (cache-tick (and cache (plist-get cache :tick)))
+         (tick (file-attribute-modification-time (file-attributes
+                                                  path
+                                                  'string))))
+    (when (equal cache-tick tick)
+      (plist-get cache :cache))))
+
+(defun js-import-set-file-cache (path content)
+  (let* ((cache (gethash path js-import-files-cache))
+         (tick (file-attribute-modification-time (file-attributes
+                                                  path
+                                                  'string))))
+    (setq cache (list :tick tick
+                      :cache content))
+    (puthash path cache
+             js-import-files-cache)
+    (plist-get cache :cache)))
 
 (defun js-import-setup-ivy ()
   (require 'ivy)
@@ -798,7 +816,6 @@ string."
   (let ((choices collection)
         (count (length collection))
         (map (make-sparse-keymap))
-        (next-prompt)
         (result))
     (define-key map (kbd "RET") (lambda ()
                                   (interactive)
@@ -891,8 +908,9 @@ string."
          (aliases (js-import-get-aliases project-root))
          (relative-files (js-import-transform-files-to-relative
                           default-directory project-files))
-         (transformed-files (mapcan (lambda (a) (js-import-transform-files-to-alias
-                                           a project-files))
+         (transformed-files (mapcan (lambda (a)
+                                      (js-import-transform-files-to-alias
+                                       a project-files))
                                     aliases)))
     (append transformed-files node-modules relative-files)))
 
@@ -1198,55 +1216,56 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
                                       (car (cdr
                                             (member js-import-current-alias
                                                     aliases)))
-                                    (car aliases)))
-    (message "js-import-current-alias %s %s"
-             js-import-current-alias
-             aliases))
+                                    (car aliases))))
   (when js-import-switch-alias-post-command
     (funcall js-import-switch-alias-post-command)))
+
+(defun js-import-get-package-json-modules (&optional project-root)
+  (when-let*
+      ((root (or project-root (js-import-find-project-root)))
+       (package-json-path
+        (expand-file-name
+         "package.json" (if (js-import-string-match-p
+                             js-import-node-modules-regexp
+                             root)
+                            (car
+                             (split-string
+                              root
+                              js-import-node-modules-regexp))
+                          root)))
+       (json-object-type 'hash-table)
+       (package-json (js-import-read-json package-json-path)))
+    (mapcan (lambda (section) (hash-table-keys
+                          (gethash section package-json)))
+            js-import-package-json-sections)))
+
+(defun js-import-find-node-modules-submodules (node-modules-path modules)
+  (let ((submodules))
+    (dolist (element modules)
+      (unless (js-import-string-contains-p "/" element)
+        (setq submodules (append submodules
+                                 (js-import-find-interfaces
+                                  element
+                                  node-modules-path)))))
+    submodules))
 
 (defun js-import-node-modules-candidates (&optional project-root)
   "Return dependencies of PROJECT-ROOT from package json."
   (unless project-root (setq project-root (js-import-find-project-root)))
-  (unless js-import-dependencies-cache
-    (setq js-import-dependencies-cache (make-hash-table :test 'equal)))
   (when (js-import-string-match-p js-import-node-modules-regexp project-root)
     (setq project-root (car
                         (split-string project-root
                                       js-import-node-modules-regexp))))
-  (let* ((package-json (js-import-join-file project-root "package.json"))
-         (package-json-tick (file-attribute-modification-time (file-attributes
-                                                               package-json
-                                                               'string)))
-         (project-cache (gethash project-root js-import-dependencies-cache)))
-    (when (or (not (equal js-import-dependencies-cache-tick package-json-tick))
-              (not project-cache))
-      (remhash project-root js-import-dependencies-cache)
-      (let (submodules modules progress-reporter max)
-        (dolist-with-progress-reporter (section js-import-package-json-sections
-                                                modules)
-            "Reading package.json"
-          (when-let ((hash (js-import-read-package-json-section package-json
-                                                                section)))
-            (setq modules (append modules (hash-table-keys hash)))))
-        (setq max (length modules))
-        (setq progress-reporter
-              (make-progress-reporter "Scaning node modules" 0  max))
-        (when-let ((node-modules (js-import-find-node-modules project-root)))
-          (dotimes (k max)
-            (let ((element (nth k modules)))
-              (sit-for 0.01)
-              (unless (js-import-string-contains-p "/" element)
-                (setq submodules (append submodules
-                                         (js-import-find-interfaces
-                                          element
-                                          node-modules))))
-              (progress-reporter-update progress-reporter k))))
-        (setq modules (append modules submodules))
-        (puthash project-root modules js-import-dependencies-cache)
-        (setq js-import-dependencies-cache-tick package-json-tick)
-        (progress-reporter-done progress-reporter)))
-    (gethash project-root js-import-dependencies-cache)))
+  (let ((modules (js-import-get-package-json-modules project-root)))
+    (if-let* ((node-modules-path (js-import-find-node-modules project-root))
+              (submodules (or (js-import-get-file-cache node-modules-path)
+                              (js-import-set-file-cache
+                               node-modules-path
+                               (js-import-find-node-modules-submodules
+                                node-modules-path
+                                modules)))))
+        (append modules submodules)
+      modules)))
 
 (defun js-import-find-interfaces (display-path dir)
   (when-let* ((real-path (js-import-join-when-exists dir display-path))
@@ -1254,11 +1273,11 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
                                  (js-import-directory-files
                                   real-path nil "\\.d.ts$"))))
     (mapcar (lambda (it) (js-import-join-file
-                    display-path
-                    (js-import-compose-from it
-                                            'file-name-nondirectory
-                                            'directory-file-name
-                                            'js-import-remove-ext)))
+                     display-path
+                     (js-import-compose-from it
+                                             'file-name-nondirectory
+                                             'directory-file-name
+                                             'js-import-remove-ext)))
             files)))
 
 (defun js-import-find-node-modules (&optional project-dir)
@@ -1327,48 +1346,85 @@ PROJECT-ROOT."
               (expand-file-name module path)
             (js-import-try-find-real-path (js-import-try-ext module path)))))))
 
+(defvar js-import-json-hash (make-hash-table :test 'equal))
+
+(defun js-import-read-json (&optional path)
+  (condition-case nil
+      (let* ((cache (gethash path js-import-json-hash))
+             (cache-tick (and cache (plist-get cache :tick)))
+             (tick (file-attribute-modification-time (file-attributes
+                                                      path
+                                                      'string)))
+             (content-json))
+        (when (or (null cache)
+                  (not (equal tick cache-tick)))
+          (setq content-json (json-read-file path))
+          (setq cache (list :tick tick
+                            :json content-json))
+          (puthash path cache js-import-json-hash))
+        (plist-get cache :json))
+    (error (message "Cannot read %s" path))))
+
+(defun js-import-plist-get-by-path (plist &rest args)
+  (let ((arg)
+        (pl plist))
+    (while (and pl (setq arg (pop args)))
+      (setq pl (plist-get pl arg)))
+    pl))
+
 (defun js-import-read-tsconfig (&optional root filename)
   "Read tsconfig and returns plist of aliases and paths. "
   (unless root (setq root (js-import-find-project-root)))
   (let ((configs-list (seq-filter 'file-exists-p
                                   (list (expand-file-name
-                                         (or filename "tsconfig.json") root)
+                                         (or filename
+                                             "tsconfig.json")
+                                         root)
                                         (expand-file-name "jsconfig.json"
                                                           root))))
+        (json-object-type 'plist)
         (extends)
         (baseUrl)
+        (aliases-paths)
         (config)
         (aliases))
     (while (setq config (pop configs-list))
-      (when-let* ((extends (js-import-read-package-json-section
-                            config "extends"))
-                  (path (expand-file-name extends root)))
-        (when (file-exists-p path)
-          (push path configs-list)))
-      (when-let* ((options (js-import-read-package-json-section
-                            config
-                            "compilerOptions"))
-                  (paths (gethash "paths" options))
-                  (baseUrl (or (gethash "baseUrl" options)
-                               "./")))
-        (maphash (lambda (key value)
-                   (setq key (replace-regexp-in-string "*$" "" key))
-                   (message "key %s value %s  %s"
-                            key value
-                            (stringp key))
-                   (setq value (replace-regexp-in-string
-                                "*$" "" (car
-                                         (append
-                                          value nil))))
-                   (when baseUrl
-                     (setq value (js-import-join-when-exists
-                                  root baseUrl value)))
-                   (push value aliases)
-                   (push key aliases))
-                 paths)))
+      (when-let ((config (js-import-read-json config)))
+        (when-let* ((extends (plist-get config :extends))
+                    (path (expand-file-name extends root)))
+          (when (file-exists-p path)
+            (push path configs-list)))
+        (let ((paths (js-import-plist-get-by-path
+                      config :compilerOptions :paths))
+              (basePath (js-import-plist-get-by-path config
+                                                     :compilerOptions
+                                                     :baseUrl)))
+          (when paths
+            (setq baseUrl (if basePath
+                              (expand-file-name basePath root)
+                            (js-import-dirname config)))
+            (setq aliases-paths paths)))))
+    (let (alias alias-path)
+      (while (and (setq alias (pop aliases-paths))
+                  (setq alias-path (pop aliases-paths)))
+        (setq alias (car (split-string
+                          (format "%s" alias)
+                          "^:\\|*$" t)))
+        (car (split-string
+              (format "%s" alias)
+              "^:\\|*$" t))
+        (setq alias-path (expand-file-name
+                          (replace-regexp-in-string "*$" ""
+                                                    (car
+                                                     (append
+                                                      alias-path nil)))
+                          baseUrl))
+        (push alias-path aliases)
+        (push alias aliases)))
     aliases))
 
-(defun js-import-read-package-json-section (&optional package-json-path section)
+(defun js-import-read-package-json-section (&optional package-json-path
+                                                      section)
   "Reads a SECTION from PACKAGE-JSON-PATH and returns its hash.
 By default PACKAGE-JSON-PATH is a value of `js-import-find-package-json'.
 Default section is `dependencies'"
@@ -1382,7 +1438,8 @@ Default section is `dependencies'"
                        (set-buffer-multibyte nil)
                        (setq buffer-file-coding-system 'binary)
                        (insert-file-contents-literally path)
-                       (buffer-substring-no-properties (point-min) (point-max)))
+                       (buffer-substring-no-properties
+                        (point-min) (point-max)))
                      'utf-8)
                   (error nil))))
       (condition-case nil
@@ -1414,7 +1471,7 @@ Default section is `dependencies'"
 (defun js-import-find-imported-files ()
   "Return list of with imported imported paths in current buffer."
   (save-excursion
-    (goto-char 0)
+    (goto-char (point-min))
     (let (symbols)
       (with-syntax-table js-import-mode-syntax-table
         (while (js-import-re-search-forward
@@ -1557,10 +1614,20 @@ Default section is `dependencies'"
           symbol))
       ""))
 
-(defun js-import-reset-all-sources ()
-  "Reset file and symbol sources. Also remove cache."
+(defun js-import-reset-cache ()
+  "Remove cache defined in the variables
+`js-import-files-cache' and `js-import-json-hash'."
   (interactive)
-  (remhash (js-import-find-project-root) js-import-dependencies-cache)
+  (maphash (lambda (key value)
+             (remhash key js-import-files-cache))
+           js-import-files-cache)
+  (maphash (lambda (key value)
+             (remhash key js-import-json-hash))
+           js-import-json-hash))
+
+(defun js-import-reset-all-sources ()
+  "Reset file and symbol sources."
+  (interactive)
   (setq js-import-buffer-files-source nil)
   (setq js-import-project-files-source nil)
   (setq js-import-node-modules-source nil)
@@ -2640,16 +2707,16 @@ Default value for POSITION also current point position."
 
 (defun js-import-transform-symbol (c &optional margin)
   (let* ((real-path (js-import-get-prop c :real-path))
-         (short-path (if (equal (with-current-buffer
-                                    js-import-current-buffer
-                                  buffer-file-name)
-                                real-path)
-                         (format "%s" js-import-current-buffer)
-                       (replace-regexp-in-string
-                        (concat "^" (js-import-slash
-                                     js-import-current-project-root))
-                        ""
-                        real-path)))
+         ;; (short-path (if (equal (with-current-buffer
+         ;;                            js-import-current-buffer
+         ;;                          buffer-file-name)
+         ;;                        real-path)
+         ;;                 (format "%s" js-import-current-buffer)
+         ;;               (replace-regexp-in-string
+         ;;                (concat "^" (js-import-slash
+         ;;                             js-import-current-project-root))
+         ;;                ""
+         ;;                real-path)))
          (display-path (js-import-get-prop c :display-path))
          (export (and (js-import-get-prop c :export)
                       (if display-path
@@ -2674,7 +2741,7 @@ Default value for POSITION also current point position."
                                      default
                                      var))
                   "\s")))
-         (indents (make-string (or margin 1) ?\s))
+         ;; (indents (make-string (or margin 1) ?\s))
          (name (replace-regexp-in-string " default$" ""
                                          (or (js-import-get-prop c :as-name)
                                              c)))
@@ -3124,7 +3191,8 @@ CANDIDATE should be propertizied with property `display-path'."
   (when (fboundp 'ivy-set-sources)
     (ivy-set-sources
      'js-import-ivy-read-file-name
-     '((original-source)
+     '((js-import-find-imported-files)
+       (original-source)
        (js-import-node-modules-candidates)))))
 
 ;;;###autoload
