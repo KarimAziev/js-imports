@@ -581,9 +581,9 @@ string."
      :initial-input input
      :keymap js-import-files-map
      :action (lambda (it) (if (and (boundp 'ivy-exit)
-                             ivy-exit)
-                        (js-import-from-path it)
-                      (js-import-find-file it))))))
+                              ivy-exit)
+                         (js-import-from-path it)
+                       (js-import-find-file it))))))
 
 ;;;###autoload
 (defun js-import ()
@@ -773,7 +773,7 @@ string."
                     js-import-current-export-path
                     (js-import-imported-candidates-in-buffer
                      js-import-current-buffer))))
-      (js-import-ivy-read-multy
+      (ivy-read
        (if (null imports)
            "Import\s"
          (concat "Import" "\s" (mapconcat (lambda (it) (format "%s" it))
@@ -784,7 +784,10 @@ string."
        :require-match nil
        :caller 'js-import-from-path
        :preselect (js-import-preselect-symbol)
-       :action 'js-import-insert-import)))
+       :multi-action (lambda (marked)
+                       (dolist (it marked)
+                         (js-import-insert-import it)))
+       :action 'js-import-ivy-insert-or-view-export)))
    (t (let ((choices (js-import-export-filtered-candidate-transformer
                       (js-import-exported-candidates-transformer
                        js-import-export-candidates-in-path))))
@@ -795,112 +798,46 @@ string."
            :require-match t
            :action 'js-import-insert-import))))))
 
-(cl-defun js-import-ivy-read-multy (prompt collection
-                                           &key
-                                           predicate
-                                           action
-                                           require-match
-                                           initial-input
-                                           def
-                                           history
-                                           preselect
-                                           update-fn
-                                           sort
-                                           unwind
-                                           re-builder
-                                           matcher
-                                           dynamic-collection
-                                           extra-props
-                                           caller)
-  (require 'ivy)
-  (let ((choices collection)
-        (count (length collection))
-        (map (make-sparse-keymap))
-        (result))
-    (define-key map (kbd "RET") (lambda ()
-                                  (interactive)
-                                  (let ((curr (ivy-state-current ivy-last)))
-                                    (when (string-empty-p curr)
-                                      (setq curr ivy-text))
-                                    (ivy--kill-current-candidate)
-                                    (if (null result)
-                                        (progn
-                                          (push curr result)
-                                          (setq ivy--prompt (concat ivy--prompt
-                                                                    curr)))
-                                      (setq result (append result (list curr)))
-                                      (setq ivy--prompt (concat ivy--prompt
-                                                                ", "
-                                                                curr))))
-                                  (when (= count (length result))
-                                    (ivy-immediate-done))))
-    (define-key map (kbd "<C-return>") (lambda ()
-                                         (interactive)
-                                         (ivy-immediate-done)))
-    (ivy-read (if (null result)
-                  prompt
-                (concat prompt "\s" (string-join result ", ")))
-              choices
-              :predicate predicate
-              :require-match require-match
-              :initial-input initial-input
-              :def def
-              :history history
-              :preselect preselect
-              :keymap map
-              :update-fn update-fn
-              :sort sort
-              :unwind unwind
-              :re-builder re-builder
-              :matcher matcher
-              :dynamic-collection dynamic-collection
-              :extra-props extra-props
-              :caller caller)
-    (unless (null action)
-      (dolist (it result)
-        (funcall action it)))
-    result))
-
 (defun js-import-init-project ()
   "Initialize project by setting buffer, finding root and aliases."
   (setq js-import-current-buffer (current-buffer))
   (setq js-import-current-project-root (js-import-find-project-root))
-  (setq js-import-aliases (delete-dups (js-import-get-aliases
-                           js-import-current-project-root)))
+  (setq js-import-aliases (delete-dups
+                           (js-import-get-aliases
+                            js-import-current-project-root)))
   (when js-import-current-alias
     (unless (member js-import-current-alias js-import-aliases)
       (setq js-import-current-alias nil)))
-  (setq js-import-project-files (js-import-find-project-files
-                                 js-import-current-project-root)))
+  (setq js-import-project-files
+        (js-import-find-project-files
+         js-import-current-project-root)))
 
 (defun js-import-find-project-files (&optional project-root)
   "Return project files without dependencies."
-  (let* ((root (js-import-slash (or project-root
-                                    (js-import-find-project-root))))
-         (alias-path (js-import-get-alias-path js-import-current-alias root))
-         (dirs (directory-files (or alias-path root) t))
-         (priority-dir (if (and alias-path
-                                (js-import-string-match-p
-                                 (concat "^" root)
-                                 alias-path))
-                           alias-path
-                         default-directory))
-         (dir-pred (lambda (it)
-                     (and (file-directory-p it)
-                          (not (or (string= it root)
-                                   (js-import-string-contains-p
-                                    "node_modules" it)
-                                   (js-import-string-match-p "/\\." it)
-                                   (js-import-string-match-p "\\.+" it))))))
-         (files))
-    (setq dirs (reverse (push priority-dir dirs)))
-    (setq dirs (cl-remove-duplicates dirs :test 'string=))
-    (setq dirs (seq-filter dir-pred dirs))
-    (setq dirs (reverse dirs))
-    (mapc (lambda (dir) (setq files (append files
-                                      (js-import-directory-files dir t))))
-          dirs)
-    files))
+  (unless project-root
+    (setq project-root (or js-import-current-project-root
+                           (js-import-find-project-root))))
+  (let ((def-dir (replace-regexp-in-string "/$" "" default-directory))
+        (dirs (seq-filter
+               (lambda (it) (and
+                        (not (string= it "node_modules"))
+                        (not (string-match-p "^[.]+" it))
+                        (file-directory-p (expand-file-name it
+                                                            project-root))))
+               (directory-files project-root
+                                nil "[^.]"))))
+    (seq-filter (lambda (it) (member (file-name-extension it)
+                                js-import-preffered-extensions))
+                (mapcan
+                 (lambda (it) (directory-files-recursively
+                          (expand-file-name
+                           it
+                           project-root)
+                          "/?[^.]"
+                          nil
+                          (lambda (d)
+                            (not (string= d def-dir)))))
+                 (push default-directory dirs)))))
 
 (defun js-import-get-all-modules (&optional project-root)
   (let* ((project-files (js-import-find-project-files project-root))
@@ -1383,7 +1320,6 @@ PROJECT-ROOT."
                                         (expand-file-name "jsconfig.json"
                                                           root))))
         (json-object-type 'plist)
-        (extends)
         (baseUrl)
         (aliases-paths)
         (config)
@@ -1618,10 +1554,10 @@ Default section is `dependencies'"
   "Remove cache defined in the variables
 `js-import-files-cache' and `js-import-json-hash'."
   (interactive)
-  (maphash (lambda (key value)
+  (maphash (lambda (key _value)
              (remhash key js-import-files-cache))
            js-import-files-cache)
-  (maphash (lambda (key value)
+  (maphash (lambda (key _value)
              (remhash key js-import-json-hash))
            js-import-json-hash))
 
@@ -1996,7 +1932,7 @@ File is specified in the variable `js-import-current-export-path.'."
            (when (looking-at-p "{")
              (forward-list))
            (mapcar (lambda (cell)
-                     (let ((name (car cell)) )
+                     (let ((name (car cell)))
                        (js-import-make-item
                         name
                         :pos (cdr cell)
@@ -2706,18 +2642,7 @@ Default value for POSITION also current point position."
     (js-import-transform-symbol item)))
 
 (defun js-import-transform-symbol (c &optional margin)
-  (let* ((real-path (js-import-get-prop c :real-path))
-         ;; (short-path (if (equal (with-current-buffer
-         ;;                            js-import-current-buffer
-         ;;                          buffer-file-name)
-         ;;                        real-path)
-         ;;                 (format "%s" js-import-current-buffer)
-         ;;               (replace-regexp-in-string
-         ;;                (concat "^" (js-import-slash
-         ;;                             js-import-current-project-root))
-         ;;                ""
-         ;;                real-path)))
-         (display-path (js-import-get-prop c :display-path))
+  (let* ((display-path (js-import-get-prop c :display-path))
          (export (and (js-import-get-prop c :export)
                       (if display-path
                           "Reexport"
@@ -3184,10 +3109,7 @@ CANDIDATE should be propertizied with property `display-path'."
   (when (fboundp 'ivy-set-display-transformer)
     (ivy-set-display-transformer
      'js-import-symbols-menu
-     'js-import-transform-symbol)
-    (ivy-set-display-transformer
-     'js-import-from-path
-     'js-import-transform-export-symbol))
+     'js-import-transform-symbol))
   (when (fboundp 'ivy-set-sources)
     (ivy-set-sources
      'js-import-ivy-read-file-name
