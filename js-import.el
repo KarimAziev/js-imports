@@ -1004,9 +1004,12 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
                           root)))
        (json-object-type 'hash-table)
        (package-json (js-import-read-json package-json-path)))
-    (mapcan (lambda (section) (hash-table-keys
-                          (gethash section package-json)))
-            js-import-package-json-sections)))
+    (seq-remove 'null
+                (mapcan (lambda (section)
+                          (when-let ((hash (gethash section
+                                                    package-json)))
+                            (hash-table-keys hash)))
+                        js-import-package-json-sections))))
 
 (defun js-import-find-node-modules-submodules (node-modules-path modules)
   (let ((submodules))
