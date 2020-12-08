@@ -321,8 +321,11 @@
                                              root)
                                             (expand-file-name "jsconfig.json"
                                                               root)))
-                          (seq-remove (lambda (it) (string= "package.json" it))
-                                      (directory-files root "\\.json$"))))
+                          (mapcar (lambda (p)
+                                    (expand-file-name p root))
+                                  (seq-remove
+                                   (lambda (it) (string= "package.json" it))
+                                   (directory-files root nil "\\.json$")))))
         (json-object-type 'plist)
         (baseUrl)
         (aliases-paths)
@@ -3185,6 +3188,7 @@ An exception is made for relative paths in current directory."
   "Remove cache defined in the variables
 `js-import-files-cache' and `js-import-json-hash'."
   (interactive)
+  (setq js-import-project-aliases nil)
   (maphash (lambda (key _value)
              (remhash key js-import-files-cache))
            js-import-files-cache)
