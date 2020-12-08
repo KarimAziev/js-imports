@@ -1415,7 +1415,6 @@ File is specified in the variable `js-import-current-export-path.'."
             (js-import-skip-whitespace-forward)
             (when (looking-at ";")
               (setq end (1+ (point))))
-            (print (buffer-substring-no-properties beg end))
             (push (cons beg end)
                   alist))))
       (reverse alist))))
@@ -1868,7 +1867,8 @@ Result depends on syntax table's string quote character."
                   (save-excursion
                     (forward-list)
                     (when (looking-at-p "[\s\t\n]*=[\s\t\n]*")
-                      (js-import-re-search-forward "[\s\t\n]*=[\s\t\n]*" nil t 1)
+                      (js-import-re-search-forward
+                       "[\s\t\n]*=[\s\t\n]*" nil t 1)
                       (setq parent (js-import-which-word))))
                   (setq children (js-import-parse-destructive))
                   (setq children (mapcar
@@ -2891,6 +2891,7 @@ CANDIDATE should be propertizied with property `display-path'."
                       'js-import-set-completion)
 
 (defun js-import-make-files-prompt ()
+  "Generates prompt for read file functions."
   (when js-import-current-project-root
     (let ((project-name (car
                          (reverse (split-string
@@ -2987,7 +2988,7 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import-jump-to-definition ()
-  "Deep jump to a definition of symbol at point through renaming, re-exports."
+  "Jump to a definition of symbol at point. Recognises re-exports and renamings."
   (interactive)
   (js-import-init-project)
   (if-let ((name (and
@@ -3109,7 +3110,7 @@ CANDIDATE should be propertizied with property `display-path'."
                     (js-import-highlight-word))))))))
 
 ;;;###autoload
-(defun js-import-customize-completion ()
+(defun js-import-change-completion ()
   (interactive)
   (let* ((choices '(helm ivy default))
          (result (completing-read (format "Completion:\s (Current: %s)"
@@ -3120,22 +3121,54 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import-convert-import-path-at-point ()
-  "Change module path of import statement to aliased one or relative."
+  "Replace path of import statement at point to aliased one or relative."
   (interactive)
   (js-import-init-project)
   (with-current-buffer js-import-current-buffer
-    (when-let* ((bounds (js-import-inside-import-p (point)))
-                (path-bounds (js-import-extract-import-path-bounds bounds))
-                (path (buffer-substring-no-properties
-                       (car path-bounds)
-                       (cdr path-bounds)))
-                (variants (js-import-get-file-variants path default-directory))
-                (choice (delete path (completing-read
-                                      (format "Replace %s with\s" path)
-                                      variants))))
-      (goto-char (car path-bounds))
-      (delete-char (length path))
-      (insert choice))))
+    (save-excursion
+      (when-let* ((bounds (js-import-inside-import-p (point)))
+                  (path-bounds (js-import-extract-import-path-bounds bounds))
+                  (path (buffer-substring-no-properties
+                         (car path-bounds)
+                         (cdr path-bounds)))
+                  (variants (js-import-get-file-variants
+                             path default-directory))
+                  (choice (delete path (completing-read
+                                        (format "Replace %s with\s" path)
+                                        variants))))
+        (goto-char (car path-bounds))
+        (delete-char (length path))
+        (insert choice)))))
+
+;;;###autoload
+(defun js-import-replace-relative-imports-to-aliases ()
+  "Replace relative paths in buffer to aliased ones.
+An exception is made for relative paths in current directory."
+  (interactive)
+  (js-import-init-project)
+  (save-excursion
+    (with-current-buffer js-import-current-buffer
+      (goto-char (point-min))
+      (while (js-import-re-search-forward
+              js-import-regexp-import-keyword nil t 1)
+        (when-let* ((bounds (js-import-inside-import-p (point)))
+                    (path-bounds (js-import-extract-import-path-bounds bounds))
+                    (path (buffer-substring-no-properties
+                           (car path-bounds)
+                           (cdr path-bounds)))
+                    (variants (and (js-import-relative-p path)
+                                   (string-match-p "\\.\\./" path)
+                                   (seq-remove 'js-import-relative-p
+                                               (js-import-get-file-variants
+                                                path default-directory))))
+                    (choice (if (> (length variants) 1)
+                                (completing-read
+                                 (format "Replace %s with\s" path)
+                                 variants)
+                              (car variants))))
+          (goto-char (car path-bounds))
+          (delete-char (length path))
+          (insert choice))))))
 
 ;;;###autoload
 (defun js-import-reset-cache ()
@@ -3153,12 +3186,13 @@ CANDIDATE should be propertizied with property `display-path'."
 (defun js-import-reset-all-sources ()
   "Reset file and symbol sources."
   (interactive)
-  (setq js-import-buffer-files-source nil)
-  (setq js-import-project-files-source nil)
-  (setq js-import-node-modules-source nil)
-  (setq js-import-definitions-source nil)
-  (setq js-import-exports-source nil)
-  (setq js-import-imported-symbols-source nil))
+  (setq js-import-buffer-files-source nil
+        js-import-project-files-source nil
+        js-import-imported-symbols-source nil
+        js-import-exports-source nil
+        js-import-definitions-source nil
+        js-import-node-modules-source nil
+        js-import-project-files-source nil))
 
 ;;;###autoload
 (define-minor-mode js-import-mode
