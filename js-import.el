@@ -111,6 +111,14 @@
   "Face used to highlight symbol."
   :group 'js-import)
 
+(defcustom js-import-normalize-paths-functions
+  '(js-import-remove-double-slashes
+    js-import-remove-ext
+    js-import-maybe-remove-path-index)
+  "List of functions to use in `js-import-normalize-path'."
+  :type '(repeat function)
+  :group 'js-import)
+
 (defvar js-import-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-i") 'js-import)
@@ -618,10 +626,10 @@ If PATH is a relative file, it will be returned without changes."
     (concat str "/")))
 
 (defun js-import-normalize-path (path)
-  (js-import-compose-from path
-                          'js-import-remove-double-slashes
-                          'js-import-remove-ext
-                          'js-import-maybe-remove-path-index))
+  (apply 'js-import-compose-from
+         (append
+          (list path)
+          js-import-normalize-paths-functions)))
 
 (defun js-import-remove-double-slashes (path)
   (replace-regexp-in-string "//"  "/" path))
