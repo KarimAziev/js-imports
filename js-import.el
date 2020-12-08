@@ -314,13 +314,15 @@
 (defun js-import-read-tsconfig (&optional root filename)
   "Read tsconfig and returns plist of aliases and paths. "
   (unless root (setq root (js-import-find-project-root)))
-  (let ((configs-list (seq-filter 'file-exists-p
-                                  (list (expand-file-name
-                                         (or filename
-                                             "tsconfig.json")
-                                         root)
-                                        (expand-file-name "jsconfig.json"
-                                                          root))))
+  (let ((configs-list (or (seq-filter 'file-exists-p
+                                      (list (expand-file-name
+                                             (or filename
+                                                 "tsconfig.json")
+                                             root)
+                                            (expand-file-name "jsconfig.json"
+                                                              root)))
+                          (seq-remove (lambda (it) (string= "package.json" it))
+                                      (directory-files root "\\.json$"))))
         (json-object-type 'plist)
         (baseUrl)
         (aliases-paths)
@@ -726,10 +728,10 @@ If PATH is a relative file, it will be returned without changes."
              (joined-path (js-import-join-file
                            alias-path
                            (replace-regexp-in-string alias-regexp "" path)))
-             (found-path (if (and (js-import-string-match-p
-                                   js-import-file-ext-regexp
-                                   joined-path)
-                                  (file-exists-p joined-path))
+             (found-path (if (and
+                              joined-path
+                              (js-import-get-ext joined-path)
+                              (file-exists-p joined-path))
                              joined-path
                            (or (js-import-try-ext joined-path)
                                (js-import-try-ext
