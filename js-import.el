@@ -523,7 +523,7 @@ Default section is `dependencies'"
                                    real-path
                                    it))
                           (js-import-get-aliases))))
-    (seq-remove 'null (push relative aliased))))
+    (seq-uniq (seq-remove 'null (push relative aliased)))))
 
 (defun js-import-transform-file-to-alias (filename alias)
   (when-let* ((absolute-p (and filename (file-name-absolute-p filename)))
