@@ -325,7 +325,10 @@
                                     (expand-file-name p root))
                                   (seq-remove
                                    (lambda (it) (string= "package.json" it))
-                                   (directory-files root nil "\\.json$")))))
+                                   (directory-files
+                                    root
+                                    nil
+                                    "[jt]sconfig\\.[a-zZ-A]+\\.json$")))))
         (json-object-type 'plist)
         (baseUrl)
         (aliases-paths)
