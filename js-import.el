@@ -119,6 +119,12 @@
   :type '(repeat function)
   :group 'js-import)
 
+(defcustom js-import-root-ignored-directories
+  '("build")
+  "A list of directories in project root to ignore."
+  :type '(repeat string)
+  :group 'js-import)
+
 (defvar js-import-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-i") 'js-import)
@@ -444,27 +450,23 @@ Default section is `dependencies'"
   (unless project-root
     (setq project-root (or js-import-current-project-root
                            (js-import-find-project-root))))
-  (let ((def-dir (replace-regexp-in-string "/$" "" default-directory))
-        (dirs (seq-filter
-               (lambda (it) (and
-                        (not (string= it "node_modules"))
-                        (not (string-match-p "^[.]+" it))
-                        (file-directory-p (expand-file-name it
-                                                            project-root))))
+  (let ((re (concat ".+" js-import-file-ext-regexp))
+        (dirs (seq-remove
+               (lambda (it) (let ((base (file-name-base it)))
+                         (or
+                          (string= base "node_modules")
+                          (member base
+                                  js-import-root-ignored-directories)
+                          (not (file-directory-p it))
+                          (string-match-p "^\\." base))))
                (directory-files project-root
-                                nil "[^.]"))))
-    (seq-filter (lambda (it) (member (file-name-extension it)
-                                js-import-preffered-extensions))
-                (mapcan
-                 (lambda (it) (directory-files-recursively
-                          (expand-file-name
-                           it
-                           project-root)
-                          "/?[^.]"
-                          nil
-                          (lambda (d)
-                            (not (string= d def-dir)))))
-                 (push default-directory dirs)))))
+                                t nil nil))))
+    (mapcan
+     (lambda (it) (directory-files-recursively
+              it
+              re
+              nil))
+     dirs)))
 
 (defun js-import-get-aliases (&optional project-root aliases-plist)
   "Extract keys from ALIASES-PLIST of PROJECT-ROOT."
@@ -1656,9 +1658,13 @@ Result depends on syntax table's string quote character."
 (defun js-import-maybe-make-child-at-point (&optional parent)
   (when-let ((valid-id (js-import-get-word-if-valid)))
     (skip-chars-backward valid-id)
+    (skip-chars-backward "\s\t\n")
     (js-import-make-item valid-id
                          :pos (point)
-                         :real-name valid-id
+                         :real-name (and (looking-back ":" 0)
+                                         (save-excursion
+                                           (backward-char 1)
+                                           (js-import-get-word-if-valid)))
                          :parent parent
                          :as-name valid-id)))
 
@@ -1878,21 +1884,35 @@ Result depends on syntax table's string quote character."
                                    :as-name word)
             (cond
              ((string= word "{")
-              (let (parent children)
+              (let (parent children display-path)
                 (when (looking-at-p "{")
                   (save-excursion
                     (forward-list)
                     (when (looking-at-p "[\s\t\n]*=[\s\t\n]*")
                       (js-import-re-search-forward
                        "[\s\t\n]*=[\s\t\n]*" nil t 1)
-                      (setq parent (js-import-which-word))))
+                      (setq parent (js-import-which-word))
+                      (setq display-path
+                            (and (string= parent "require")
+                                 (js-import-re-search-forward "([\s\t]*" nil t 1)
+                                 (looking-at "['\"]")
+                                 (buffer-substring-no-properties
+                                  (1+ (point))
+                                  (progn
+                                    (forward-sexp 1)
+                                    (1- (point))))))))
                   (setq children (js-import-parse-destructive))
-                  (setq children (mapcar
-                                  (lambda (it)
-                                    (js-import-propertize
-                                     it :var-type
-                                     var-type :parent parent))
-                                  children)))
+                  (when display-path
+                    (setq children (mapcar
+                                    (lambda (it)
+                                      (js-import-propertize
+                                       it
+                                       :var-type nil
+                                       :parent parent
+                                       :import t
+                                       :display-path display-path
+                                       :type 4))
+                                    children))))
                 children)))))))))
 
 (defun js-import-extract-definitions (&optional path position)
