@@ -2666,7 +2666,11 @@ CANDIDATE should be propertizied with property `display-path'."
   (define-key js-import-files-map (kbd "C->")
     js-import-next-alias-action)
   (define-key js-import-files-map (kbd "C-<")
-    js-import-prev-alias-action))
+    js-import-prev-alias-action)
+  (define-key js-import-files-map (kbd "C-c o")
+    (lambda ()
+      (interactive)
+      (ivy-exit-with-action 'js-import-find-file-other-window))))
 
 (defun js-import-setup-helm ()
   (require 'helm)
