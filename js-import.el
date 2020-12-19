@@ -125,20 +125,6 @@
   :type '(repeat string)
   :group 'js-import)
 
-(defvar js-import-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-i") 'js-import)
-    (define-key map (kbd "C-c C-.") 'js-import-symbols-menu)
-    (define-key map (kbd "C-c C-j") 'js-import-jump-to-definition)
-    (easy-menu-define js-import-mode-menu map
-      "Menu for Js import"
-      '("Js import"
-        ["Import from all sources" js-import]
-        ["Jump to symbol in buffer" js-import-symbols-menu]
-        ["Jump to definition" js-import-jump-to-definition]))
-    map)
-  "Keymap for `js-import' mode.")
-
 (defvar js-import-mode-syntax-table
   (let ((table (make-syntax-table)))
     (c-populate-syntax-table table)
@@ -1894,7 +1880,8 @@ Result depends on syntax table's string quote character."
                       (setq parent (js-import-which-word))
                       (setq display-path
                             (and (string= parent "require")
-                                 (js-import-re-search-forward "([\s\t]*" nil t 1)
+                                 (js-import-re-search-forward
+                                  "([\s\t]*" nil t 1)
                                  (looking-at "['\"]")
                                  (buffer-substring-no-properties
                                   (1+ (point))
@@ -1920,7 +1907,7 @@ Result depends on syntax table's string quote character."
 By default PATH is taken from a variable `buffer-file-name'.
 Default value for POSITION also current point position."
 (unless path (setq path buffer-file-name))
-(unless position (setq position (if (string= path buffer-file-name)
+(unless position (setq position (if (equal path buffer-file-name)
                                     (point)
                                   (point-max))))
 (let (ids depth depth-position)
@@ -2942,7 +2929,8 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import ()
-  "Read a filename to extract exported symbols and add selected ones in buffer."
+  "Read a filename to extract exports and add selected ones in current buffer.
+Addional actions to open or preview are configured for `helm' and `ivy'."
   (interactive)
   (js-import-init-project)
   (pcase js-import-completion-system
@@ -2965,7 +2953,8 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import-from-path (&optional path)
-  "Insert import statement with marked symbols, exported from PATH."
+  "Make completions with exports from PATH.
+Add selected choices to existing or new import statement."
   (interactive)
   (unless path
     (js-import-init-project)
@@ -3028,7 +3017,7 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import-jump-to-definition ()
-  "Jump to a definition of symbol at point. Recognises re-exports and renamings."
+  "Deep jump to a definition of symbol at point through re-exports and renamings."
   (interactive)
   (js-import-init-project)
   (if-let ((name (and
@@ -3076,7 +3065,7 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import-find-file (&optional file)
-  "Transform FILE to real and open it."
+  "An action for command `js-import' to open FILE."
   (interactive)
   (let ((path (js-import-path-to-real file)))
     (if (and path (file-exists-p path))
@@ -3085,7 +3074,7 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import-find-file-other-window (&optional file)
-  "Transform FILE to real and open it in other window."
+  "An action for command `js-import' to open FILE in other window."
   (interactive)
   (let ((path (js-import-path-to-real file)))
     (if (and path (file-exists-p path))
@@ -3151,17 +3140,23 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import-change-completion ()
+  "Customize or temporarly save one of available completions systems:
+`helm' `ivy' or default."
   (interactive)
   (let* ((choices '(helm ivy default))
-         (result (completing-read (format "Completion:\s (Current: %s)"
+         (result (completing-read (format "Change completion:\s (Current: %s)"
                                           js-import-completion-system)
-                                  choices)))
-    (js-import-set-completion 'js-import-completion-system
-                              (intern-soft result))))
+                                  choices))
+         (func (if (y-or-n-p "Save?")
+                   'customize-save-variable
+                 'js-import-set-completion)))
+    (funcall func 'js-import-completion-system (intern-soft result))))
 
 ;;;###autoload
 (defun js-import-convert-import-path-at-point ()
-  "Replace path of import statement at point to aliased one or relative."
+  "Replace path of import statement at point to aliased one or relative.
+Inside import statement generates completions with available replacements, e.g:
+`import someExport from '../../enums' to `import someExport from '@/enums''.'"
   (interactive)
   (js-import-init-project)
   (with-current-buffer js-import-current-buffer
@@ -3182,8 +3177,11 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-import-replace-relative-imports-to-aliases ()
-  "Replace relative paths in buffer to aliased ones.
-An exception is made for relative paths in current directory."
+  "Convert relative imports to aliased ones. An exception is made for paths from
+current buffer directory.
+
+For example `import someExport from '../enums' transforms to `import someExport from '@/enums',
+but not `import someExport from './enums'."
   (interactive)
   (js-import-init-project)
   (save-excursion
@@ -3221,7 +3219,10 @@ An exception is made for relative paths in current directory."
            js-import-files-cache)
   (maphash (lambda (key _value)
              (remhash key js-import-json-hash))
-           js-import-json-hash))
+           js-import-json-hash)
+  (with-current-buffer (or js-import-current-buffer (current-buffer))
+    (setq js-import-cached-imports-in-buffer nil)
+    (setq js-import-buffer-tick nil)))
 
 ;;;###autoload
 (defun js-import-reset-all-sources ()
@@ -3234,6 +3235,20 @@ An exception is made for relative paths in current directory."
         js-import-definitions-source nil
         js-import-node-modules-source nil
         js-import-project-files-source nil))
+
+(defvar js-import-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-i") 'js-import)
+    (define-key map (kbd "C-c C-.") 'js-import-symbols-menu)
+    (define-key map (kbd "C-c C-j") 'js-import-jump-to-definition)
+    (easy-menu-define js-import-mode-menu map
+      "Menu for Js import"
+      '("Js import"
+        ["Import from all sources" js-import]
+        ["Jump to symbol in buffer" js-import-symbols-menu]
+        ["Jump to definition" js-import-jump-to-definition]))
+    map)
+  "Keymap for `js-import' mode.")
 
 ;;;###autoload
 (define-minor-mode js-import-mode
