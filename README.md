@@ -1,17 +1,15 @@
 # Table of Contents
 
--   [js-import](#org314be73)
-    -   [Installation](#orgf257d9f)
-        -   [straight-use-package](#orga7b8cc6)
-        -   [quelpa](#orga9b51ea)
-    -   [Commands](#org6dce47f)
-    -   [Alias setup](#orgf5279ec)
-        -   [tsconfig](#org8f9a533)
-        -   [.dir-locals](#org4604c66)
-        -   [License](#org87e17ab)
+-   [js-import](#orgb371f4e)
+    -   [Installation](#org51435eb)
+        -   [straight-use-package](#org47774f1)
+        -   [quelpa](#org6a9e2b1)
+    -   [Commands](#org312dad8)
+    -   [Customizations](#org14430d6)
+        -   [License](#org90643cf)
 
 
-<a id="org314be73"></a>
+<a id="orgb371f4e"></a>
 
 # js-import
 
@@ -23,12 +21,12 @@ An Emacs package for importing JavaScript and TypeScript modules with
 A package proposes to select a file or dependency of the current project, extract its exports symbols and inserts an import statement with selected candidates into a buffer.
 
 
-<a id="orgf257d9f"></a>
+<a id="org51435eb"></a>
 
 ## Installation
 
 
-<a id="orga7b8cc6"></a>
+<a id="org47774f1"></a>
 
 ### straight-use-package
 
@@ -51,7 +49,7 @@ Example configuration using package managers [straight](https://github.com/raxod
                   ("C-c C-." . js-import-symbols-menu)))
 
 
-<a id="orga9b51ea"></a>
+<a id="org6a9e2b1"></a>
 
 ### quelpa
 
@@ -61,7 +59,7 @@ Example configuration using package managers [straight](https://github.com/raxod
             :url "git@github.com:KarimAziev/js-import.git"))
 
 
-<a id="org6dce47f"></a>
+<a id="org312dad8"></a>
 
 ## Commands
 
@@ -105,18 +103,11 @@ Inside import statement generates completions with available replacements.
 \`js-import-files-cache' and \`js-import-json-hash'.
 
 
-<a id="orgf5279ec"></a>
+<a id="org14430d6"></a>
 
-## Alias setup
+## Customizations
 
-There are two ways to setup file aliases:
-
-
-<a id="org8f9a533"></a>
-
-### tsconfig
-
-If project root contains the [TSConfig file](https://www.typescriptlang.org/tsconfig#paths) which be either a tsconfig.json or jsconfig.json. Path and baseUrl will be readed automatically.
+To use file aliases you project root directory should contain the [TSConfig file](https://www.typescriptlang.org/tsconfig#paths) (tsconfig.json or jsconfig.json) with configured paths and baseUrl in compilerOptions.
 
     {
       "compilerOptions": {
@@ -128,19 +119,16 @@ If project root contains the [TSConfig file](https://www.typescriptlang.org/tsco
       }
     }
 
+In no tsconfig.json or jsconfig.json found, a varible \`js-import-alias-map\` will be used.
 
-<a id="org4604c66"></a>
-
-### .dir-locals
+You can specify aliases as [directory local variable](https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html) to use differents settings per project in .dir-locals.el.
 
     ((nil . (
         (eval . (setq js-import-alias-map '("@" "src" "UI" "src/components/UI")))
         )))
 
-Or configure it with \`M-x customize-variable js-import-alias-map\`.
 
-
-<a id="org87e17ab"></a>
+<a id="org90643cf"></a>
 
 ### License
 
