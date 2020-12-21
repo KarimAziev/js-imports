@@ -142,6 +142,10 @@
   :group 'js-import
   :type '(alist :key-type string :value-type function))
 
+(defcustom js-import-tsconfig-filename "tsconfig.json"
+  "Name of tsconfig or jsconfig."
+  :type 'string)
+
 (defun js-import-make-opt-symbol-regexp (words)
   "Return regexp from `regexp-opt'"
   (concat "\\_<" (regexp-opt (if (listp words)
@@ -262,6 +266,32 @@
   :type '(repeat (choice symbol))
   :group 'js-import)
 
+(defmacro js-import-with-buffer-or-file-content (filename &rest body)
+  "Execute BODY in temp buffer with file or buffer content of FILENAME.
+ Bind FILENAME to variables `buffer-file-name' and `current-path''.
+ It is also bind `default-directory' into FILENAME's directory."
+  (declare (indent 2))
+  `(when-let ((current-path ,filename))
+     (when (and current-path (file-exists-p current-path))
+       (with-temp-buffer
+         (erase-buffer)
+         (let ((inhibit-read-only t))
+           (if (get-file-buffer current-path)
+               (progn
+                 (let ((inhibit-read-only t))
+                   (insert-buffer-substring-no-properties
+                    (get-file-buffer current-path))))
+             (progn
+               (let ((buffer-file-name current-path)
+                     (inhibit-read-only t))
+                 (insert-file-contents current-path))))
+           (with-syntax-table js-import-mode-syntax-table
+             (let* ((buffer-file-name current-path)
+                    (default-directory (js-import-dirname buffer-file-name)))
+               (delay-mode-hooks
+                 (set-auto-mode)
+                 (progn ,@body)))))))))
+
 (defvar js-import-files-cache (make-hash-table :test 'equal))
 
 (defun js-import-get-file-cache (path)
@@ -296,70 +326,78 @@
              (content-json))
         (when (or (null cache)
                   (not (equal tick cache-tick)))
-          (setq content-json (json-read-file path))
+          (setq content-json
+                (js-import-with-buffer-or-file-content
+                 path
+                 (goto-char (point-min))
+                 (js-import-remove-comments)
+                 (json-read)))
           (setq cache (list :tick tick
                             :json content-json))
           (puthash path cache js-import-json-hash))
         (plist-get cache :json))
     (error (message "Cannot read %s" path))))
 
+(defun js-import-parse-aliases (paths baseUrl)
+  (let (alias alias-paths aliases)
+    (while (and (setq alias (pop paths))
+                (setq alias-paths (pop paths)))
+      (setq alias (car (split-string
+                        (format "%s" alias)
+                        "^:\\|*$" t)))
+      (setq alias-paths (append alias-paths nil))
+      (setq alias-paths (mapcan (lambda (it)
+                                  (list
+                                   alias
+                                   (expand-file-name
+                                    (replace-regexp-in-string
+                                     "*+" "" it)
+                                    baseUrl)))
+                                alias-paths))
+      (setq aliases (append aliases alias-paths)))
+    aliases))
+
 (defun js-import-read-tsconfig (&optional root filename)
   "Read tsconfig and returns plist of aliases and paths. "
   (unless root (setq root (js-import-find-project-root)))
-  (let ((configs-list (or (seq-filter 'file-exists-p
-                                      (list (expand-file-name
-                                             (or filename
-                                                 "tsconfig.json")
-                                             root)
-                                            (expand-file-name "jsconfig.json"
-                                                              root)))
-                          (mapcar (lambda (p)
-                                    (expand-file-name p root))
-                                  (seq-remove
-                                   (lambda (it) (string= "package.json" it))
-                                   (directory-files
-                                    root
-                                    nil
-                                    "[jt]sconfig\\.[a-zZ-A]+\\.json$")))))
-        (json-object-type 'plist)
-        (baseUrl)
-        (aliases-paths)
-        (config)
-        (aliases))
-    (while (setq config (pop configs-list))
-      (when-let ((config (js-import-read-json config)))
-        (when-let* ((extends (plist-get config :extends))
-                    (path (expand-file-name extends root)))
-          (when (file-exists-p path)
-            (push path configs-list)))
-        (let ((paths (js-import-plist-get-by-path
-                      config :compilerOptions :paths))
-              (basePath (js-import-plist-get-by-path config
-                                                     :compilerOptions
-                                                     :baseUrl)))
-          (when paths
-            (setq baseUrl (if basePath
-                              (expand-file-name basePath root)
-                            (js-import-dirname config)))
-            (setq aliases-paths paths)))))
-    (let (alias alias-path)
-      (while (and (setq alias (pop aliases-paths))
-                  (setq alias-path (pop aliases-paths)))
-        (setq alias (car (split-string
-                          (format "%s" alias)
-                          "^:\\|*$" t)))
-        (car (split-string
-              (format "%s" alias)
-              "^:\\|*$" t))
-        (setq alias-path (expand-file-name
-                          (replace-regexp-in-string "*$" ""
-                                                    (car
-                                                     (append
-                                                      alias-path nil)))
-                          baseUrl))
-        (push alias-path aliases)
-        (push alias aliases)))
-    aliases))
+  (setq filename (or
+                  (and filename (if (and (file-name-absolute-p filename)
+                                         (file-exists-p filename))
+                                    filename
+                                  (js-import-join-when-exists root filename)))
+                  (js-import-join-when-exists root "jsconfig.json")
+                  (js-import-join-when-exists root "tsconfig.json")))
+  (when-let* ((json-object-type 'plist)
+              (config (js-import-read-json filename)))
+    (let ((baseUrl (js-import-plist-get-by-path
+                    config :compilerOptions :baseUrl))
+          (paths (js-import-plist-get-by-path config :compilerOptions :paths))
+          (extends (plist-get config :extends)))
+      (setq extends (and extends
+                         (js-import-join-when-exists root (if (string-suffix-p
+                                                               "json" extends)
+                                                              extends
+                                                            (concat extends
+                                                                    ".json")))))
+      (while (and
+              (not (and paths baseUrl))
+              (stringp extends)
+              (setq config (js-import-read-json extends)))
+        (unless paths
+          (setq paths (js-import-plist-get-by-path config
+                                                   :compilerOptions :paths)))
+        (unless baseUrl (setq baseUrl
+                              (js-import-plist-get-by-path
+                               config :compilerOptions :baseUrl)))
+        (setq extends (plist-get config :extends))
+        (unless (null extends)
+          (setq extends (js-import-join-when-exists
+                         root
+                         (unless (string-suffix-p "json" extends)
+                           extends)))))
+      (setq baseUrl (js-import-join-when-exists root baseUrl))
+      (when (and paths baseUrl)
+        (js-import-parse-aliases paths baseUrl)))))
 
 (defun js-import-plist-get-by-path (plist &rest args)
   (let ((arg)
@@ -391,32 +429,6 @@ Default section is `dependencies'"
           (gethash section (json-read-from-string content))
         (error nil)))))
 
-(defmacro js-import-with-buffer-or-file-content (filename &rest body)
-  "Execute BODY in temp buffer with file or buffer content of FILENAME.
- Bind FILENAME to variables `buffer-file-name' and `current-path''.
- It is also bind `default-directory' into FILENAME's directory."
-  (declare (indent 2))
-  `(when-let ((current-path ,filename))
-     (when (and current-path (file-exists-p current-path))
-       (with-temp-buffer
-         (erase-buffer)
-         (let ((inhibit-read-only t))
-           (if (get-file-buffer current-path)
-               (progn
-                 (let ((inhibit-read-only t))
-                   (insert-buffer-substring-no-properties
-                    (get-file-buffer current-path))))
-             (progn
-               (let ((buffer-file-name current-path)
-                     (inhibit-read-only t))
-                 (insert-file-contents current-path))))
-           (with-syntax-table js-import-mode-syntax-table
-             (let* ((buffer-file-name current-path)
-                    (default-directory (js-import-dirname buffer-file-name)))
-               (delay-mode-hooks
-                 (set-auto-mode)
-                 (progn ,@body)))))))))
-
 (defun js-import-init-project ()
   "Initialize project by setting buffer, finding root and aliases."
   (setq js-import-current-buffer (current-buffer))
@@ -444,7 +456,9 @@ Default section is `dependencies'"
                           (member base
                                   js-import-root-ignored-directories)
                           (not (file-directory-p it))
-                          (string-match-p "^\\." base))))
+                          (string-match-p "^\\." base)
+                          (file-exists-p (expand-file-name "package.json"
+                                                           it)))))
                (directory-files project-root
                                 t nil nil))))
     (mapcan
@@ -466,7 +480,9 @@ Default section is `dependencies'"
       (with-current-buffer (or js-import-current-buffer
                                (current-buffer))
         (setq js-import-project-aliases
-              (if-let ((ts-aliases (js-import-read-tsconfig project-root)))
+              (if-let ((ts-aliases (js-import-read-tsconfig
+                                    project-root
+                                    js-import-tsconfig-filename)))
                   (delete-dups
                    (append
                     ts-aliases
@@ -1850,8 +1866,7 @@ Result depends on syntax table's string quote character."
 (defun js-import-declaration-at-point ()
   (when (and (looking-at js-import-delcaration-keywords--re)
              (not (js-import-looking-at-function-expression)))
-    (let ((var-type (js-import-which-word))
-          (export))
+    (let ((var-type (js-import-which-word)))
       (save-excursion
         (js-import-re-search-forward var-type nil t 1)
         (when (looking-at "\\*")
@@ -2128,10 +2143,20 @@ in a buffer local variable `js-import-cached-imports-in-buffer'.
   (mapcar (lambda (c) (js-import-get-prop c :as-name))
           candidates))
 
-(defun js-import-filter-with-prop (property value items)
+(defun js-import-with-filter-prop (property value items)
   "Return filtered ITEMS with members whose PROPERTY equals VALUE."
   (seq-filter (lambda (str) (string= (js-import-get-prop str property) value))
               items))
+
+(defun js-import-filter-with-prop (property value items)
+  "Return filtered ITEMS with members whose PROPERTY equals VALUE."
+  (let ((comparator (cond ((numberp value) '=)
+                          ((stringp value) 'string=)
+                          (t 'equal))))
+    (seq-filter (lambda (str) (funcall comparator
+                                  (js-import-get-prop str property)
+                                  value))
+                items)))
 
 (defun js-import-find-by-prop (property value list)
   "Find item in LIST whose PROPERTY equals VALUE."
@@ -3063,19 +3088,15 @@ Add selected choices to existing or new import statement."
                    (js-import-highlight-word)))))
     (js-import-find-file-at-point)))
 
-;;;###autoload
 (defun js-import-find-file (&optional file)
   "An action for command `js-import' to open FILE."
-  (interactive)
   (let ((path (js-import-path-to-real file)))
     (if (and path (file-exists-p path))
         (find-file path)
       (message "Could't find %s" file))))
 
-;;;###autoload
 (defun js-import-find-file-other-window (&optional file)
   "An action for command `js-import' to open FILE in other window."
-  (interactive)
   (let ((path (js-import-path-to-real file)))
     (if (and path (file-exists-p path))
         (find-file-other-window path)
