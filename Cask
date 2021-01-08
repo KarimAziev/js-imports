@@ -1,2 +1,1 @@
-(package-file "js-import.el")
-
+(package-file "js-imports.el")
