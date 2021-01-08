@@ -42,7 +42,7 @@
 (defgroup js-imports nil
   "Minor mode providing JavaScript import."
   :link '(url-link :tag "Repository"
-                   "https://github.com/KarimAziev/js-imports")
+                   "https://github.com/KarimAziev/js-import")
   :prefix 'js-imports
   :group 'languages)
 
@@ -135,7 +135,7 @@
     table)
   "Syntax table for command `js-imports-mode'.")
 
-(defcustom js-importss-file-actions
+(defcustom js-imports-file-actions
   '(("Import" . js-imports-from-path)
     ("Find file" . js-imports-find-file)
     ("Find file other window" . js-imports-find-file-other-window))
@@ -2745,7 +2745,7 @@ CANDIDATE should be propertizied with property `display-path'."
                                    items))
                            (goto-char (point-min))))
               :get-line #'buffer-substring-no-properties
-              :action 'js-importss-file-actions
+              :action 'js-imports-file-actions
               :keymap js-imports-files-map
               :group 'js-imports
               :persistent-action #'js-imports-view-file
@@ -2755,7 +2755,7 @@ CANDIDATE should be propertizied with property `display-path'."
             :group 'js-imports
             :mode-line (list "File(s)")
             :candidate-number-limit js-imports-files-number-limit
-            :action 'js-importss-file-actions
+            :action 'js-imports-file-actions
             :persistent-action #'js-imports-view-file
             :keymap js-imports-files-map
             :candidates #'js-imports-find-project-files
@@ -2765,7 +2765,7 @@ CANDIDATE should be propertizied with property `display-path'."
           (helm-make-source "Node Modules" 'helm-source-sync
             :candidates #'js-imports-node-modules-candidates
             :candidate-number-limit js-imports-dependencies-number-limit
-            :action 'js-importss-file-actions
+            :action 'js-imports-file-actions
             :mode-line (list "Dependencies")
             :keymap js-imports-files-map
             :persistent-action #'js-imports-view-file
