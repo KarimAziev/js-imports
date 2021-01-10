@@ -19,7 +19,7 @@ An example of installation and configuration with package managers [[https://git
              :repo "KarimAziev/js-imports")
   :hook (js-mode . (lambda ()
                      (add-hook 'before-save-hook
-                               'js-imports-replace-relative-imports-to-aliases
+                               'js-imports-transform-relative-imports-to-aliases
                                nil t)))
   :bind (:map js-mode-map
               ("C-c C-i" . js-imports)
