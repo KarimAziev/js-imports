@@ -1,39 +1,38 @@
 * js-imports
 
-An Emacs package for importing JavaScript and TypeScript modules with
-[[https://github.com/emacs-helm/helm][helm]] and [[https://github.com/abo-abo/swiper][ivy]] (swiper) interface.
+An Emacs package for importing symbols from JavaScript and TypeScript modules with
+[[https://github.com/emacs-helm/helm][helm]] and [[https://github.com/abo-abo/swiper][ivy]] (swiper) interface. Also provides jumping and some refactor actions.
 
 [[./js-imports-demo.gif]]
-
-A package proposes to select a file or dependency of the current project, extract its exports symbols and inserts an import statement with selected candidates into a buffer.
 
 ** Installation
 
 *** straight-use-package
 
-Example configuration using package managers [[https://github.com/raxod502/straight.el][straight]] and [[https://github.com/jwiegley/use-package][use-package]].
+An example of installation and configuration with package managers [[https://github.com/raxod502/straight.el][straight]] and [[https://github.com/jwiegley/use-package][use-package]].
 
-#+BEGIN_SRC elisp
+#+BEGIN_SRC elisp :eval never-export
 (use-package js-imports
-  :straight (:type git
-                   :host github
-                   :branch "origin/dev-latest"
-                   :repo "KarimAziev/js-imports"
-                   :package "js-imports"
-                   :local-repo "js-imports")
-  :commands (js-imports-mode)
-  :hook ((js-mode . js-imports-mode)
-         (js2-mode . js-imports-mode)
-         (typescript-mode . js-imports-mode))
-  :bind (:map js-imports-mode-map
+  :straight (js-imports
+             :type git
+             :host github
+             :repo "KarimAziev/js-imports")
+  :hook (js-mode . (lambda ()
+                     (add-hook 'before-save-hook
+                               'js-imports-replace-relative-imports-to-aliases
+                               nil t)))
+  :bind (:map js-mode-map
               ("C-c C-i" . js-imports)
               ("C-c C-j" . js-imports-jump-to-definition)
-              ("C-c C-." . js-imports-symbols-menu)))
+              ("C-c C-f" . js-imports-find-file-at-point)
+              ("C-c C-." . js-imports-symbols-menu)
+              ("C->" . js-imports-transform-import-path-at-point)))
 #+END_SRC
 
 *** quelpa
+You can also install with quelpa or simply by downloading repo.
 
-#+BEGIN_SRC elisp
+#+BEGIN_SRC elisp :eval never-export
 (quelpa '(js-imports
         :repo "KarimAziev/js-imports"
         :fetcher git
@@ -42,33 +41,58 @@ Example configuration using package managers [[https://github.com/raxod502/strai
 
 ** Commands
 
-+ ~js-imports~ :: Read a filename to extract exports and add selected ones in current buffer.
-+ ~js-imports-symbols-menu~ :: Jump or refactor to exported, imported and definitions in current buffer.
-+ ~js-imports-jump-to-definition~ :: Deep jump to a definition of symbol at point through re-exports and renaming.
-+ ~js-imports-find-file-at-point~ :: Find a file when cursor are placed under stringed path.
-+ ~js-imports-change-completion~ :: Customize or temporarily save one of available completions systems: `helm', `ivy' or default.
-+ ~js-imports-mode~ :: Turn on/off minor mode
-+ ~js-imports-replace-relative-imports-to-aliases~ :: Convert relative imports to aliased ones. An exception is made for paths from current buffer directory.
++ ~js-imports~ ::
+Main command. Proposes to select a module, extracts exported symbols and inserts to a new or existing import statement with selected candidates.
+Switching beetwen relative and aliased filenames is bound to "C->" and "C-<".
++ ~js-imports-jump-to-definition~ ::
+Find and jump to a definition of a symbol at point skipping re-exports and renamings.
++ ~js-imports-symbols-menu~ ::
+Imenu like command for jumping and some refactor actions for *ivy* and *helm*.
++ ~js-imports-find-file-at-point~ ::
+Find a file under cursor.
++ ~js-imports-transform-relative-imports-to-aliases~ ::
+Replace relative paths in import statemetents to aliased ones. An exception is made for imports from current directory.
 
-#+BEGIN_SRC js
+For example such statements:
+
+#+BEGIN_SRC js :eval never-export
 import { a, b } from '../fileA';
 import { c, d } from './fileB';
 #+END_SRC
-transforms to
-#+BEGIN_SRC js
+
+transforms to:
+
+#+BEGIN_SRC js :eval never-export
 import { a, b } from '@/fileA';
 import { c, d } from './fileB';
 #+END_SRC
 
-+  ~js-imports-convert-import-path-at-point~ :: Replace path of import statement at point to aliased one or relative. Inside import statement generates completions with available replacements.
-+  ~js-imports-reset-all-sources~ :: Reset file and symbol sources.
-+  ~js-imports-reset-cache~ :: Remove cache.
++ ~js-imports-mode~ ::
+Turns on/off minor mode. It's optional, all commands can be used without turning on this mode, because currently it's just provides some keybings.
++ ~js-imports-transform-import-path-at-point~ ::
+Replaces path in import statement at point to aliased one or relative.
++ ~js-imports-change-completion~ ::
+Customize or temporarily set one of available completions systems:
+- helm
+- ivy
+- default
++ ~js-imports-reset-cache~ ::
+Manually removes cache. It is rarely needed to use, because cache invalidation is managed automatically.
++ ~js-imports-reset-all-sources~ ::
+Resets file and symbol sources for `helm`. Use it if some error occured.
 
-** Customization
+** Setup
 
-To use file aliases your project root directory should contain the [[https://www.typescriptlang.org/tsconfig#paths][TSConfig file]] (tsconfig.json or jsconfig.json) with configured paths and baseUrl in compilerOptions.
+*** Aliases
 
-#+BEGIN_SRC json
+There are two ways to configure file aliases:
+- automatically with [[https://www.typescriptlang.org/tsconfig#paths][TSConfig file]] (tsconfig.json or jsconfig.json):
+
+No setup needed if a project root directory contains either tsconfig.json or jsconfig.json (or extended ones from this files) with configured paths and baseUrl in the compilerOptions.
+
+For example with such config two aliases will be used: "@" for all files in "./src" directory and "UI" for "./src/components/UI".
+
+#+BEGIN_SRC json :eval never-export
 {
   "compilerOptions": {
     "baseUrl": ".",
@@ -80,12 +104,15 @@ To use file aliases your project root directory should contain the [[https://www
 }
 #+END_SRC
 
-If no tsconfig.json or jsconfig.json found, a varible `js-imports-alias-map` will be used. You can specify aliases as [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][directory local variable]] to use different settings per project in .dir-locals.el.
+- manually by customizing a varible *js-imports-project-aliases*:
 
-#+BEGIN_SRC elisp
-((nil . (
-    (eval . (setq js-imports-alias-map '("@" "src" "UI" "src/components/UI")))
-    )))
+If no tsconfig.json or jsconfig.json found, a varible *js-imports-project-aliases* will be used, which is a property list of paired elements. Each of the pairs should associate an alias as property name with expanded path as value.
+
+You can specify aliases as [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][directory local variable]] to use different settings per project in .dir-locals.el.  For example with such config two aliases will be used: "@" for all files in "./src" directory and "UI" for "./src/components/UI".
+
+#+BEGIN_SRC elisp :eval never-export
+((nil . ((js-imports-project-aliases "@" "src" "UI" "src/components/UI"))
+      ))
 #+END_SRC
 
 ** License
