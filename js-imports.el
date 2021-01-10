@@ -42,7 +42,7 @@
 (defgroup js-imports nil
   "Minor mode providing JavaScript import."
   :link '(url-link :tag "Repository"
-                   "https://github.com/KarimAziev/js-import")
+                   "https://github.com/KarimAziev/js-imports")
   :prefix 'js-imports
   :group 'languages)
 
