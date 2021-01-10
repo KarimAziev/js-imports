@@ -12,21 +12,29 @@ An Emacs package for importing symbols from JavaScript and TypeScript modules wi
 An example of installation and configuration with package managers [[https://github.com/raxod502/straight.el][straight]] and [[https://github.com/jwiegley/use-package][use-package]].
 
 #+BEGIN_SRC elisp :eval never-export
+
 (use-package js-imports
   :straight (js-imports
              :type git
              :host github
              :repo "KarimAziev/js-imports")
-  :hook (js-mode . (lambda ()
-                     (add-hook 'before-save-hook
-                               'js-imports-transform-relative-imports-to-aliases
-                               nil t)))
-  :bind (:map js-mode-map
+  :hook ((js-mode . js-imports-mode)
+         (js2-mode . js-imports-mode)
+         (typescript-mode . js-imports-mode)
+         (web-mode . js-imports-mode)
+         (js-imports-mode .
+                          (lambda ()
+                            (add-hook
+                             'before-save-hook
+                             'js-imports-transform-relative-imports-to-aliases
+                             nil t))))
+  :bind (:map js-imports-mode-map
               ("C-c C-i" . js-imports)
               ("C-c C-j" . js-imports-jump-to-definition)
               ("C-c C-f" . js-imports-find-file-at-point)
               ("C-c C-." . js-imports-symbols-menu)
               ("C->" . js-imports-transform-import-path-at-point)))
+
 #+END_SRC
 
 *** quelpa
@@ -41,19 +49,19 @@ You can also install with quelpa or simply by downloading repo.
 
 ** Commands
 
-+ ~js-imports~ ::
-Main command. Proposes to select a module, extracts exported symbols and inserts to a new or existing import statement with selected candidates.
-Switching beetwen relative and aliased filenames is bound to "C->" and "C-<".
-+ ~js-imports-jump-to-definition~ ::
-Find and jump to a definition of a symbol at point skipping re-exports and renamings.
-+ ~js-imports-symbols-menu~ ::
-Imenu like command for jumping and some refactor actions for *ivy* and *helm*.
-+ ~js-imports-find-file-at-point~ ::
-Find a file under cursor.
-+ ~js-imports-transform-relative-imports-to-aliases~ ::
-Replace relative paths in import statemetents to aliased ones. An exception is made for imports from current directory.
++ ~js-imports~ :: Main command. Proposes to select a module, extracts exported symbols and inserts to a new or existing import statement with selected candidates. Switching beetwen relative and aliased filenames is bound to "C->" and "C-<".
 
-For example such statements:
++ ~js-imports-mode~ :: Turns on/off minor mode.
+
++ ~js-imports-jump-to-definition~ :: Find and jump to a definition of a symbol at point skipping re-exports and renamings.
+
++ ~js-imports-symbols-menu~ :: Imenu like command for jumping and some refactor actions for *ivy* and *helm*.
+
++ ~js-imports-find-file-at-point~ :: Find a file under cursor.
+
++ ~js-imports-transform-relative-imports-to-aliases~ :: Replace relative paths in import statemetents to aliased ones. An exception is made for imports from current directory.
+
+For example such statements
 
 #+BEGIN_SRC js :eval never-export
 import { a, b } from '../fileA';
@@ -67,19 +75,16 @@ import { a, b } from '@/fileA';
 import { c, d } from './fileB';
 #+END_SRC
 
-+ ~js-imports-mode~ ::
-Turns on/off minor mode. It's optional, all commands can be used without turning on this mode, because currently it's just provides some keybings.
-+ ~js-imports-transform-import-path-at-point~ ::
-Replaces path in import statement at point to aliased one or relative.
-+ ~js-imports-change-completion~ ::
-Customize or temporarily set one of available completions systems:
-- helm
-- ivy
-- default
-+ ~js-imports-reset-cache~ ::
-Manually removes cache. It is rarely needed to use, because cache invalidation is managed automatically.
-+ ~js-imports-reset-all-sources~ ::
-Resets file and symbol sources for `helm`. Use it if some error occured.
++ ~js-imports-transform-import-path-at-point~ :: Replaces path in import statement at point to aliased one or relative.
+
++ ~js-imports-change-completion~ :: Customize or temporarily set one of available completions systems:
+ - helm
+ - ivy
+ - default
+
++ ~js-imports-reset-cache~ :: Manually removes cache. It is rarely needed to use, because cache invalidation is managed automatically.
+
++ ~js-imports-helm-reset-sources~ :: Resets file and symbol sources for *helm*. Use it if some error occured.
 
 ** Setup
 
