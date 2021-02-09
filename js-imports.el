@@ -510,7 +510,8 @@ Default section is `dependencies'"
            (or (js-imports-read-tsconfig
                 root
                 js-imports-tsconfig-filename)
-               js-imports-project-aliases)))
+               (js-imports-normalize-aliases
+                js-imports-project-aliases))))
     (setq js-imports-aliases
           (seq-sort-by 'length #'> (mapcar 'car js-imports-project-aliases)))))
 
@@ -528,13 +529,14 @@ Default section is `dependencies'"
 
 (defun js-imports-project-files-transformer (files &optional _source)
   "Filter and transform FILES to aliased or relative."
-  (let* ((current-file (buffer-file-name js-imports-current-buffer))
-         (current-dir (js-imports-dirname current-file)))
-    (setq files (seq-remove (lambda (filename) (string= filename current-file))
-                            files))
-    (if js-imports-current-alias
-        (js-imports-transform-files-to-alias js-imports-current-alias files)
-      (js-imports-transform-files-to-relative current-dir files))))
+  (with-current-buffer js-imports-current-buffer
+    (let* ((current-file (buffer-file-name js-imports-current-buffer))
+           (current-dir (js-imports-dirname current-file)))
+      (setq files (seq-remove (lambda (filename) (string= filename current-file))
+                              files))
+      (if js-imports-current-alias
+          (js-imports-transform-files-to-alias js-imports-current-alias files)
+        (js-imports-transform-files-to-relative current-dir files)))))
 
 (defun js-imports-get-file-variants (&optional path dir)
   (let* ((real-path (js-imports-path-to-real path dir))

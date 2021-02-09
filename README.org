@@ -116,8 +116,9 @@ If no tsconfig.json or jsconfig.json found, a varible *js-imports-project-aliase
 You can specify aliases as [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][directory local variable]] to use different settings per project in .dir-locals.el.  For example with such config two aliases will be used: "@" for all files in "./src" directory and "UI" for "./src/components/UI".
 
 #+BEGIN_SRC elisp :eval never-export
-((nil . ((js-imports-project-aliases . (("@/" "src/")
-                                        ("UI/" "src/components/UI/" "src/components/Layout/"))))))
+((nil .
+      ((js-imports-project-aliases . (("@/" "src/")
+                                      ("UI/" "src/components/UI/" "src/components/Layout/"))))))
 #+END_SRC
 
 ** License
