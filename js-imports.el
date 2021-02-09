@@ -63,12 +63,6 @@
 (defvar js-imports-helm-export-symbols-map nil
   "Keymap for symdol sources.")
 
-(defvar js-imports-aliases nil
-  "A list of aliases to use in projects.")
-
-(defvar js-imports-project-aliases '()
-  "A property list of paired elements (alias and path). Each of the pairs should associate a property name (file alias) with expanded path as value.")
-
 (defcustom js-imports-quote "'"
   "Quote type."
   :group 'js-imports
@@ -148,11 +142,63 @@
   "Name of tsconfig or jsconfig."
   :type 'string)
 
+(defun js-imports-expand-alias-path (path &optional base-url)
+  (setq path (replace-regexp-in-string "\\*[^$]+" "" path))
+  (cond
+   ((and
+     (file-name-absolute-p path)
+     (file-exists-p path))
+    (js-imports-slash (expand-file-name path)))
+   (t
+    (if-let ((root (or js-imports-current-project-root
+                       (js-imports-find-project-root))))
+        (expand-file-name (if (file-name-absolute-p ".") (concat "." path) path)
+                          (if base-url (expand-file-name base-url root) root))
+      path))))
+
+(defun js-imports-normalize-aliases (aliases-alist &optional base-url)
+  (let ((alist (mapcar (lambda (it)
+                         (let ((alias (js-imports-slash
+                                       (string-join
+                                        (split-string (format "%s" (car it))
+                                                      "*"))))
+                               (paths (cond
+                                       ((vectorp (cdr it))
+                                        (append (cdr it) nil))
+                                       ((listp (cdr it))
+                                        (cdr it))
+                                       (t `(,(cdr it))))))
+                           (setq paths (mapcar (lambda (p)
+                                                 (js-imports-expand-alias-path
+                                                  p base-url))
+                                               paths))
+                           (cons alias paths)))
+                       aliases-alist)))
+    (seq-sort-by (lambda (it) (length (car it))) #'> alist)))
+
+(defun js-imports-set-alias (var value &optional &rest _ignored)
+  "Set VAR (`js-imports-project-aliases') to VALUE."
+  (let ((aliases (js-imports-normalize-aliases value)))
+    (set var aliases)))
+
+(defcustom js-imports-project-aliases nil
+  "An associated list of ((ALIAS_A . DIRECTORY_A) (ALIAS_B . DIRECTORY_B DIRECTORY_C))."
+  :group 'js-imports
+  :set 'js-imports-set-alias
+  :type '(alist
+          :key-type (string :tag "Alias")
+          :value-type (repeat :tag "Path" directory)))
+
+(make-variable-buffer-local 'js-imports-project-aliases)
+
 (defun js-imports-make-opt-symbol-regexp (words)
-  "Return regexp from `regexp-opt'"
+  "Return regexp from WORDS surrounded with `\\\\_<' and `\\\\_>'."
   (concat "\\_<" (regexp-opt (if (listp words)
                                  words
                                (list words)) t) "\\_>"))
+
+(defvar js-imports-aliases nil
+  "A list of aliases to use in projects.")
 
 (defconst js-imports-file-ext-regexp
   (concat "[\\.]" (regexp-opt js-imports-preffered-extensions) "$")
@@ -318,95 +364,64 @@
 
 (defvar js-imports-json-hash (make-hash-table :test 'equal))
 
-(defun js-imports-read-json (&optional path)
+(defun js-imports-read-json (file &optional json-type)
+  "Read the JSON object in FILE, return object converted to JSON-TYPE.
+JSON-TYPE must be one of `alist', `plist', or `hash-table'."
   (condition-case nil
-      (let* ((cache (gethash path js-imports-json-hash))
+      (let* ((json-object-type (or json-type 'plist))
+             (cache (gethash (format "%s:%s" file json-object-type)
+                             js-imports-json-hash))
              (cache-tick (and cache (plist-get cache :tick)))
              (tick (file-attribute-modification-time (file-attributes
-                                                      path
+                                                      file
                                                       'string)))
              (content-json))
         (when (or (null cache)
                   (not (equal tick cache-tick)))
           (setq content-json
                 (js-imports-with-buffer-or-file-content
-                 path
-                 (goto-char (point-min))
-                 (js-imports-remove-comments)
-                 (json-read)))
+                    file
+                    (js-imports-remove-comments)
+                  (when-let ((str (buffer-substring-no-properties
+                                   (point-min)
+                                   (point-max))))
+                    (json-read-from-string str))))
           (setq cache (list :tick tick
                             :json content-json))
-          (puthash path cache js-imports-json-hash))
+          (puthash file cache js-imports-json-hash))
         (plist-get cache :json))
-    (error (message "Cannot read %s" path))))
-
-(defun js-imports-parse-aliases (paths baseUrl)
-  (let (alias alias-paths aliases)
-    (while (and (setq alias (pop paths))
-                (setq alias-paths (pop paths)))
-      (setq alias (car (split-string
-                        (format "%s" alias)
-                        "^:\\|*$" t)))
-      (setq alias-paths (append alias-paths nil))
-      (setq alias-paths (mapcan (lambda (it)
-                                  (list
-                                   alias
-                                   (expand-file-name
-                                    (replace-regexp-in-string
-                                     "*+" "" it)
-                                    baseUrl)))
-                                alias-paths))
-      (setq aliases (append aliases alias-paths)))
-    aliases))
+    (error (message "Cannot read %s" file))))
 
 (defun js-imports-read-tsconfig (&optional root filename)
   "Read tsconfig and returns plist of aliases and paths. "
   (unless root (setq root (js-imports-find-project-root)))
-  (setq filename (or
-                  (and filename (if (and (file-name-absolute-p filename)
-                                         (file-exists-p filename))
-                                    filename
-                                  (js-imports-join-when-exists root filename)))
-                  (js-imports-join-when-exists root "jsconfig.json")
-                  (js-imports-join-when-exists root "tsconfig.json")))
-  (when-let* ((json-object-type 'plist)
-              (config (js-imports-read-json filename)))
-    (let ((baseUrl (js-imports-plist-get-by-path
-                    config :compilerOptions :baseUrl))
-          (paths (js-imports-plist-get-by-path config :compilerOptions :paths))
-          (extends (plist-get config :extends)))
-      (setq extends (and extends
-                         (js-imports-join-when-exists root (if (string-suffix-p
-                                                               "json" extends)
-                                                              extends
-                                                            (concat extends
-                                                                    ".json")))))
-      (while (and
-              (not (and paths baseUrl))
-              (stringp extends)
-              (setq config (js-imports-read-json extends)))
-        (unless paths
-          (setq paths (js-imports-plist-get-by-path config
-                                                   :compilerOptions :paths)))
-        (unless baseUrl (setq baseUrl
-                              (js-imports-plist-get-by-path
-                               config :compilerOptions :baseUrl)))
-        (setq extends (plist-get config :extends))
-        (unless (null extends)
-          (setq extends (js-imports-join-when-exists
-                         root
-                         (unless (string-suffix-p "json" extends)
-                           extends)))))
-      (setq baseUrl (js-imports-join-when-exists root baseUrl))
-      (when (and paths baseUrl)
-        (js-imports-parse-aliases paths baseUrl)))))
-
-(defun js-imports-plist-get-by-path (plist &rest args)
-  (let ((arg)
-        (pl plist))
-    (while (and pl (setq arg (pop args)))
-      (setq pl (plist-get pl arg)))
-    pl))
+  (let ((config)
+        (compiler-options)
+        (found)
+        (base-url)
+        (extends (if filename
+                     (and root (expand-file-name filename root))
+                   (seq-find 'file-exists-p
+                             (and root
+                                  (expand-file-name "tsconfig.json" root)
+                                  (expand-file-name "jsconfig.json" root))))))
+    (while (and (not found)
+                extends
+                (file-exists-p extends))
+      (setq config (js-imports-read-json extends 'alist))
+      (setq compiler-options (cdr-safe (assoc 'compilerOptions config)))
+      (setq base-url (cdr (assoc 'baseUrl compiler-options)))
+      (setq found (cdr (assoc 'paths (cdr-safe compiler-options))))
+      (unless found
+        (setq extends
+              (and extends (assoc 'extends config)
+                   (expand-file-name (cdr (assoc 'extends config))
+                                     (js-imports-dirname extends))))))
+    (setq base-url (and base-url extends
+                        (expand-file-name
+                         base-url
+                         (js-imports-dirname extends))))
+    (js-imports-normalize-aliases found base-url)))
 
 (defun js-imports-read-package-json-section (&optional package-json-path
                                                       section)
@@ -433,73 +448,71 @@ Default section is `dependencies'"
 
 (defun js-imports-init-project ()
   "Initialize project by setting buffer, finding root and aliases."
-  (setq js-imports-current-buffer (current-buffer))
-  (setq js-imports-current-project-root (js-imports-find-project-root))
-  (setq js-imports-aliases (delete-dups
-                           (js-imports-get-aliases
-                            js-imports-current-project-root)))
-  (when js-imports-current-alias
-    (unless (member js-imports-current-alias js-imports-aliases)
-      (setq js-imports-current-alias nil)))
-  (setq js-imports-project-files
-        (js-imports-find-project-files
-         js-imports-current-project-root)))
+  (let ((root (js-imports-find-project-root)))
+    (setq js-imports-current-buffer (current-buffer))
+    (when (and js-imports-current-project-root
+               (not (equal root js-imports-current-project-root)))
+      (setq js-imports-aliases nil
+            js-imports-current-alias nil))
+    (setq js-imports-current-project-root root)
+    (setq js-imports-aliases (delete-dups
+                              (js-imports-get-aliases
+                               js-imports-current-project-root)))
+    (when js-imports-current-alias
+      (unless (member js-imports-current-alias js-imports-aliases)
+        (setq js-imports-current-alias nil)))
+    (setq js-imports-project-files
+          (js-imports-find-project-files
+           js-imports-current-project-root))))
 
-(defun js-imports-find-project-files (&optional project-root)
+(defun js-imports-find-project-files (&optional project-root include-dirs pred)
   "Return project files without dependencies."
   (unless project-root
     (setq project-root (or js-imports-current-project-root
                            (js-imports-find-project-root))))
-  (let ((re (concat ".+" js-imports-file-ext-regexp))
-        (dirs (seq-remove
-               (lambda (it) (let ((base (file-name-base it)))
-                         (or
-                          (string= base "node_modules")
-                          (member base
-                                  js-imports-root-ignored-directories)
-                          (not (file-directory-p it))
-                          (string-match-p "^\\." base)
-                          (file-exists-p (expand-file-name "package.json"
-                                                           it)))))
-               (directory-files project-root
-                                t nil nil))))
-    (mapcan
-     (lambda (it) (directory-files-recursively
-              it
-              re
-              nil))
-     dirs)))
+  (if project-root
+      (let ((re (if include-dirs
+                    "."
+                  (concat ".+" js-imports-file-ext-regexp)))
+            (dirs (seq-remove
+                   (lambda (it) (let ((base (file-name-base it)))
+                             (or
+                              (string= base "node_modules")
+                              (member base
+                                      js-imports-root-ignored-directories)
+                              (not (file-directory-p it))
+                              (string-match-p "^\\." base)
+                              (file-exists-p (expand-file-name "package.json"
+                                                               it)))))
+                   (directory-files project-root
+                                    t nil t)))
+            (files))
+        (setq files (mapcan
+                     (lambda (it) (directory-files-recursively
+                              it
+                              re
+                              include-dirs pred))
+                     dirs))
+        (if include-dirs
+            (seq-filter 'file-directory-p files)
+          files))
+    (and (message "Cannot find project root")
+         '())))
 
-(defun js-imports-get-aliases (&optional project-root aliases-plist)
+(defun js-imports-get-aliases (&optional project-root)
   "Extract keys from ALIASES-PLIST of PROJECT-ROOT."
-  (let ((root (or project-root (js-imports-find-project-root)))
-        (pl)
-        (vals))
-    (unless (and (with-current-buffer (or js-imports-current-buffer
-                                          (current-buffer))
-                   js-imports-project-aliases)
-                 aliases-plist)
-      (with-current-buffer (or js-imports-current-buffer
-                               (current-buffer))
-        (setq js-imports-project-aliases
-              (if-let ((ts-aliases (js-imports-read-tsconfig
-                                    project-root
-                                    js-imports-tsconfig-filename)))
-                  (delete-dups
-                   (append
-                    ts-aliases
-                    js-imports-project-aliases))
-                js-imports-project-aliases))
-        (setq aliases-plist js-imports-project-aliases)
-        (setq pl js-imports-project-aliases)))
-    (while pl
-      (when-let* ((alias (car pl))
-                  (path (with-current-buffer js-imports-current-buffer
-                          (plist-get aliases-plist alias)))
-                  (exists (file-exists-p (js-imports-join-file root path))))
-        (push alias vals))
-      (setq pl (cddr pl)))
-    (nreverse vals)))
+  (let* ((root (or project-root
+                   (js-imports-find-project-root))))
+    (setq js-imports-project-aliases
+          (seq-sort-by
+           (lambda (it) (length (car it)))
+           #'>
+           (or (js-imports-read-tsconfig
+                root
+                js-imports-tsconfig-filename)
+               js-imports-project-aliases)))
+    (setq js-imports-aliases
+          (seq-sort-by 'length #'> (mapcar 'car js-imports-project-aliases)))))
 
 (defun js-imports-get-all-modules (&optional project-root)
   (let* ((project-files (js-imports-find-project-files project-root))
@@ -536,53 +549,34 @@ Default section is `dependencies'"
 
 (defun js-imports-transform-file-to-alias (filename alias)
   (when-let* ((absolute-p (and filename (file-name-absolute-p filename)))
-              (alias-path (js-imports-compose-from alias
-                                                   'js-imports-slash
-                                                   'js-imports-get-alias-path))
-              (match-alias-path (js-imports-string-match-p alias-path
-                                                           filename)))
+              (paths (cdr (assoc alias js-imports-project-aliases)))
+              (alias-path (seq-find (lambda (parent)
+                                      (js-imports-string-match-p
+                                       (concat "^" parent)
+                                       filename))
+                                    paths)))
     (js-imports-normalize-path (replace-regexp-in-string
                                 alias-path
                                 (js-imports-slash alias)
                                 filename))))
 
 (defun js-imports-transform-files-to-alias (alias files)
-  (when-let* ((alias-path (js-imports-compose-from alias
-                                                  'js-imports-slash
-                                                  'js-imports-get-alias-path))
-              (slashed-alias (js-imports-slash alias))
-              (remove-pred (lambda (filename)
-                             (and (file-name-absolute-p filename)
-                                  (not (js-imports-string-match-p alias-path
-                                                                 filename)))))
-              (transformer (lambda (path) (js-imports-normalize-path
-                                     (replace-regexp-in-string alias-path
-                                                               slashed-alias
-                                                               path)))))
-    (mapcar transformer (seq-remove remove-pred files))))
+  (seq-remove 'null (mapcar (lambda (it)
+                              (js-imports-transform-file-to-alias it alias))
+                            files)))
 
 (defun js-imports-transform-files-to-relative (dir files)
   (mapcar (lambda (path) (js-imports-normalize-path
-                    (js-imports-path-to-relative
-                     path
-                     dir)))
+                     (js-imports-path-to-relative
+                      path
+                      dir)))
           files))
-
-(defun js-imports-get-alias-path (alias &optional project-root)
-  (when-let ((alias-path (plist-get (with-current-buffer
-                                        js-imports-current-buffer
-                                      js-imports-project-aliases)
-                                    alias)))
-    (if (file-exists-p alias-path)
-        alias-path
-      (js-imports-join-when-exists (or project-root
-                                      (js-imports-find-project-root))
-                                  alias-path))))
 
 (defun js-imports-find-project-root (&optional dir)
   (unless dir (setq dir default-directory))
   (let ((parent (expand-file-name ".." dir)))
     (unless (or (string= parent dir)
+                (string= dir "")
                 (string= dir "/"))
       (if (file-exists-p (expand-file-name "package.json" dir))
           dir
@@ -601,7 +595,8 @@ Optional argument RECURSIVE non-nil means to search recursive."
   "Join ARGS to a single path."
   (let (path (relative (not (file-name-absolute-p (car args)))))
     (mapc (lambda (arg)
-            (setq path (expand-file-name arg path)))
+            (unless (null arg)
+              (setq path (expand-file-name arg path))))
           args)
     (if relative (file-relative-name path) path)))
 
@@ -634,11 +629,12 @@ If PATH is a relative file, it will be returned without changes."
 
 (defun js-imports-slash (str)
   "Append slash to non-empty STR unless one already."
-  (if (or (null str)
-          (js-imports-string-match-p "/$" str)
-          (js-imports-string-blank-p str))
-      str
-    (concat str "/")))
+  (cond ((string= "" str) str)
+        ((string= "/" str) "")
+        ((stringp str)
+         (if (string-match "/$" str)
+             str
+           (concat str "/")))))
 
 (defun js-imports-normalize-path (path)
   (apply 'js-imports-compose-from
@@ -730,28 +726,32 @@ If PATH is a relative file, it will be returned without changes."
 
 (defun js-imports-alias-path-to-real (path)
   "Convert aliased PATH to absolute file name."
-  (let (aliases alias real-path)
+  (let (aliases alias-cell alias-paths alias alias-regexp real-path)
     (setq aliases (js-imports-get-aliases))
-    (while aliases
-      (setq alias (pop aliases))
-      (let* ((alias-regexp (if (js-imports-string-blank-p alias)
-                               (concat "^" alias)
-                             (concat "^" (js-imports-slash alias))))
-             (alias-path (js-imports-get-alias-path alias))
-             (joined-path (js-imports-join-file
-                           alias-path
-                           (replace-regexp-in-string alias-regexp "" path)))
-             (found-path (if (and
-                              joined-path
-                              (js-imports-get-ext joined-path)
-                              (file-exists-p joined-path))
-                             joined-path
-                           (or (js-imports-try-ext joined-path)
-                               (js-imports-try-ext
-                                (js-imports-join-file joined-path "index"))))))
-        (when (and found-path (file-exists-p found-path))
-          (setq real-path found-path)
-          (setq aliases nil))))
+    (while (setq alias (pop aliases))
+      (setq alias-regexp (if (js-imports-string-blank-p alias)
+                             (concat "^" alias)
+                           (concat "^" (js-imports-slash alias))))
+      (setq alias-cell (assoc alias js-imports-project-aliases))
+      (setq alias-paths (cdr alias-cell))
+      (let (alias-path)
+        (while (setq alias-path (pop alias-paths))
+          (let* ((joined-path (js-imports-join-file
+                               alias-path
+                               (replace-regexp-in-string
+                                alias-regexp "" path)))
+                 (found-path (if (and
+                                  joined-path
+                                  (js-imports-get-ext joined-path)
+                                  (file-exists-p joined-path))
+                                 joined-path
+                               (or (js-imports-try-ext joined-path)
+                                   (js-imports-try-ext
+                                    (js-imports-join-file
+                                     joined-path "index"))))))
+            (when (and found-path (file-exists-p found-path))
+              (setq real-path found-path)
+              (setq aliases nil))))))
     real-path))
 
 (defun js-imports-add-ext (path ext)
@@ -802,8 +802,7 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
                               root
                               js-imports-node-modules-regexp))
                           root)))
-       (json-object-type 'hash-table)
-       (package-json (js-imports-read-json package-json-path)))
+       (package-json (js-imports-read-json package-json-path 'hash-table)))
     (seq-remove 'null
                 (mapcan (lambda (section)
                           (when-let ((hash (gethash section
@@ -2146,15 +2145,10 @@ in a buffer local variable `js-imports-cached-imports-in-buffer'.
       exports)))
 
 (defun js-imports-export-filtered-candidate-transformer (candidates
-                                                        &optional
-                                                        _source)
+                                                         &optional
+                                                         _source)
   (mapcar (lambda (c) (js-imports-get-prop c :as-name))
           candidates))
-
-(defun js-imports-with-filter-prop (property value items)
-  "Return filtered ITEMS with members whose PROPERTY equals VALUE."
-  (seq-filter (lambda (str) (string= (js-imports-get-prop str property) value))
-              items))
 
 (defun js-imports-filter-with-prop (property value items)
   "Return filtered ITEMS with members whose PROPERTY equals VALUE."
@@ -2268,21 +2262,31 @@ in a buffer local variable `js-imports-cached-imports-in-buffer'.
   "Search backward from point for REGEXP ignoring strings and comments."
   (js-imports-re-search-forward regexp bound noerror (if count (- count) -1)))
 
-(defun js-imports-remove-comments (&optional start end)
+(defun js-imports-remove-comments (&optional buffer-start buffer-end)
   "Replaces comments in buffer beetween START and END with empty lines."
-  (let ((comments (js-imports-get-comments-bounds start end)))
-    (dotimes (idx (length comments))
-      (let* ((cell (nth idx comments))
-             (p1 (car cell))
-             (p2 (cdr cell))
-             (replace (lambda ()
-                        (let* ((content (buffer-substring-no-properties
-                                         (point-min)
-                                         (point-max)))
-                               (vect (make-vector (1+ (length content)) ""))
-                               (replacement (append vect nil)))
-                          (mapconcat 'identity replacement "\s")))))
-        (replace-region-contents p1 p2 replace)))))
+  (let ((comments (js-imports-get-comments-bounds buffer-start buffer-end))
+        (cell))
+    (save-excursion
+      (while (setq cell (pop comments))
+        (when-let* ((start (car cell))
+                    (end (or (cdr cell)
+                             (save-excursion (goto-char start)
+                                             (end-of-line)
+                                             (point)))))
+          (let ((content (buffer-substring-no-properties start end))
+                (lines))
+            (setq lines (split-string content "\n"))
+            (goto-char start)
+            (delete-region start end)
+            (insert (string-join (mapcar
+                                  (lambda (it)
+                                    (string-join
+                                     (append
+                                      (make-vector
+                                       (1+ (length it)) "")
+                                      nil)
+                                     "\s"))
+                                  lines) "\n"))))))))
 
 (defun js-imports-get-comments-bounds (&optional start end)
   (unless start (setq start (point-min)))
@@ -2655,7 +2659,7 @@ CANDIDATE should be propertizied with property `display-path'."
      :keymap js-imports-files-map
      :action (lambda (it) (if (and (boundp 'ivy-exit)
                               ivy-exit)
-                         (js-imports-from-path it)
+                         (funcall-interactively 'js-imports-from-path it)
                        (js-imports-find-file it))))))
 
 (defun js-imports-ivy-setup ()

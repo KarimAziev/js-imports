@@ -103,7 +103,7 @@ For example with such config two aliases will be used: "@" for all files in "./s
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "UI/*": ["src/components/UI/*"]
+      "UI/*": ["src/components/UI/*", "src/components/Layout/*"]
     }
   }
 }
@@ -111,13 +111,13 @@ For example with such config two aliases will be used: "@" for all files in "./s
 
 - manually by customizing a varible *js-imports-project-aliases*:
 
-If no tsconfig.json or jsconfig.json found, a varible *js-imports-project-aliases* will be used, which is a property list of paired elements. Each of the pairs should associate an alias as property name with expanded path as value.
+If no tsconfig.json or jsconfig.json found, a varible *js-imports-project-aliases* will be used, which is alist of paired elements. Each of the pairs should associate an alias as property name with expanded path as value.
 
 You can specify aliases as [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][directory local variable]] to use different settings per project in .dir-locals.el.  For example with such config two aliases will be used: "@" for all files in "./src" directory and "UI" for "./src/components/UI".
 
 #+BEGIN_SRC elisp :eval never-export
-((nil . ((js-imports-project-aliases "@" "src" "UI" "src/components/UI"))
-      ))
+((nil . ((js-imports-project-aliases . (("@/" "src/")
+                                        ("UI/" "src/components/UI/" "src/components/Layout/"))))))
 #+END_SRC
 
 ** License
