@@ -142,6 +142,38 @@
   "Name of tsconfig or jsconfig."
   :type 'string)
 
+(defvar js-imports-open-paren-re "[^=(]{")
+
+(defvar js-imports-closed-paren-re (regexp-opt '("}") t))
+
+(defvar js-imports-current-project-root nil)
+
+(defvar js-imports-current-buffer nil)
+
+(defvar js-imports-project-files nil)
+
+(defvar-local js-imports-buffer-tick nil
+  "Buffer modified tick.")
+(defvar-local js-imports-current-export-path nil)
+(defvar-local js-imports-last-export-path nil)
+(defvar-local js-imports-export-candidates-in-path nil)
+(defvar-local js-imports-cached-imports-in-buffer nil)
+
+(defvar js-imports-node-modules-source nil
+  "Variable keeps source files from node_modules.")
+
+(defvar js-imports-project-files-source nil
+  "Variable for source of relative and aliased files without dependencies.")
+
+(defvar js-imports-buffer-files-source nil
+  "Variable for source of imported files in the current buffer.")
+
+(defvar js-imports-imported-symbols-source nil)
+
+(defvar js-imports-exports-source nil)
+
+(defvar js-imports-definitions-source nil)
+
 (defun js-imports-expand-alias-path (path &optional base-url)
   (setq path (replace-regexp-in-string "\\*[^$]+" "" path))
   (cond
@@ -182,7 +214,7 @@
     (set var aliases)))
 
 (defcustom js-imports-project-aliases nil
-  "An associated list of ((ALIAS_A . DIRECTORY_A) (ALIAS_B . DIRECTORY_B DIRECTORY_C))."
+  "An associated list of ((ALIAS_A . DIRECTORY_A) (ALIAS_B . DIR_B DIR_C))."
   :group 'js-imports
   :set 'js-imports-set-alias
   :type '(alist
@@ -267,38 +299,6 @@
   (unless reserved-list (setq reserved-list js-imports-reserved-js-words))
   (when (stringp str)
     (member str reserved-list)))
-
-(defvar js-imports-open-paren-re "[^=(]{")
-
-(defvar js-imports-closed-paren-re (regexp-opt '("}") t))
-
-(defvar js-imports-current-project-root nil)
-
-(defvar js-imports-current-buffer nil)
-
-(defvar js-imports-project-files nil)
-
-(defvar-local js-imports-buffer-tick nil
-  "Buffer modified tick.")
-(defvar-local js-imports-current-export-path nil)
-(defvar-local js-imports-last-export-path nil)
-(defvar-local js-imports-export-candidates-in-path nil)
-(defvar-local js-imports-cached-imports-in-buffer nil)
-
-(defvar js-imports-node-modules-source nil
-  "Variable keeps source files from node_modules.")
-
-(defvar js-imports-project-files-source nil
-  "Variable for source of relative and aliased files without dependencies.")
-
-(defvar js-imports-buffer-files-source nil
-  "Variable for source of imported files in the current buffer.")
-
-(defvar js-imports-imported-symbols-source nil)
-
-(defvar js-imports-exports-source nil)
-
-(defvar js-imports-definitions-source nil)
 
 (defcustom js-imports-helm-files-source '(js-imports-buffer-files-source
                                           js-imports-project-files-source
@@ -2595,26 +2595,6 @@ CANDIDATE should be propertizied with property `display-path'."
                 (delete-region p1 p2)))))
       (remove-overlays beg end))))
 
-(with-eval-after-load 'ivy
-  (when (fboundp 'ivy-set-actions)
-    (ivy-set-actions
-     'js-imports
-     '(("f" js-imports-find-file
-        "find file")
-       ("j"
-        js-imports-find-file-other-window
-        "other window"))))
-  (when (fboundp 'ivy-set-display-transformer)
-    (ivy-set-display-transformer
-     'js-imports-symbols-menu
-     'js-imports-transform-symbol))
-  (when (fboundp 'ivy-set-sources)
-    (ivy-set-sources
-     'js-imports-ivy-read-file-name
-     '((js-imports-find-imported-files)
-       (original-source)
-       (js-imports-node-modules-candidates)))))
-
 (cl-defun js-imports-completing-read (prompt
                                      collection
                                      &key
@@ -2664,25 +2644,30 @@ CANDIDATE should be propertizied with property `display-path'."
                          (funcall-interactively 'js-imports-from-path it)
                        (js-imports-find-file it))))))
 
+(defvar ivy-last)
+
+(defvar ivy-exit)
+
 (defun js-imports-ivy-setup ()
   (require 'ivy)
   (setq js-imports-files-map (make-sparse-keymap))
-  (setq js-imports-switch-alias-post-command
-        (lambda ()
-          (let ((input (when (boundp 'ivy-text)
-                         ivy-text)))
-            (progn
-              (put 'quit 'error-message "")
-              (run-at-time nil nil
-                           (lambda ()
-                             (put 'quit 'error-message "Quit")
-                             (with-demoted-errors "Error: %S"
-                               (js-imports-ivy-read-file-name
-                                (when (and (fboundp 'ivy-state-current)
-                                           (boundp 'ivy-last))
-                                  (ivy-state-current ivy-last))
-                                input))))
-              (abort-recursive-edit)))))
+  (when (fboundp 'ivy-state-current)
+    (setq js-imports-switch-alias-post-command
+          (lambda ()
+            (let ((input (when (boundp 'ivy-text)
+                           ivy-text)))
+              (progn
+                (put 'quit 'error-message "")
+                (run-at-time nil nil
+                             (lambda ()
+                               (put 'quit 'error-message "Quit")
+                               (with-demoted-errors "Error: %S"
+                                 (js-imports-ivy-read-file-name
+                                  (when (and (fboundp 'ivy-state-current)
+                                             (boundp 'ivy-last))
+                                    (ivy-state-current ivy-last))
+                                  input))))
+                (abort-recursive-edit))))))
   (setq js-imports-next-alias-action
         (lambda () (interactive)
           (funcall 'js-imports-next-or-prev-alias 1)))
@@ -2696,13 +2681,32 @@ CANDIDATE should be propertizied with property `display-path'."
   (define-key js-imports-files-map (kbd "C-c o")
     (lambda ()
       (interactive)
-      (when-let ((filename (ivy-state-current ivy-last)))
+      (when-let ((filename (and (fboundp 'ivy-state-current)
+                                (ivy-state-current ivy-last))))
         (ivy-set-action
          `(lambda (x)
             (funcall 'js-imports-find-file-other-window x)
             (ivy-set-action ',(ivy-state-action ivy-last))))
         (setq ivy-exit 'done)
-        (exit-minibuffer)))))
+        (exit-minibuffer))))
+  (when (fboundp 'ivy-set-actions)
+    (ivy-set-actions
+     'js-imports
+     '(("f" js-imports-find-file
+        "find file")
+       ("j"
+        js-imports-find-file-other-window
+        "other window"))))
+  (when (fboundp 'ivy-set-display-transformer)
+    (ivy-set-display-transformer
+     'js-imports-symbols-menu
+     'js-imports-transform-symbol))
+  (when (fboundp 'ivy-set-sources)
+    (ivy-set-sources
+     'js-imports-ivy-read-file-name
+     '((js-imports-find-imported-files)
+       (original-source)
+       (js-imports-node-modules-candidates)))))
 
 (defun js-imports-helm-setup ()
   (require 'helm)
