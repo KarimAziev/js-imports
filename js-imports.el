@@ -362,11 +362,10 @@ It is also bind `default-directory' into FILENAME's directory."
                    (preserve-size . (nil . t))))
            (lambda (window _value)
              (with-selected-window window
-               (let ((key))
-                 (unwind-protect
-                     (read-key "Key\s")
-                   (when (window-live-p window)
-                     (quit-restore-window window 'kill))))))
+               (unwind-protect
+                   (read-key "Key\s")
+                 (when (window-live-p window)
+                   (quit-restore-window window 'kill)))))
          ;; Here we generate the popup buffer.
          (setq cursor-type nil)
          (goto-char (point-max))
@@ -503,39 +502,41 @@ Default section is `dependencies'"
           (js-imports-find-project-files
            js-imports-current-project-root))))
 
-(defun js-imports-find-project-files (&optional project-root include-dirs pred)
+(defun js-imports-find-project-files (&optional project-root)
   "Return files of PROJECT-ROOT without node_modules."
   (unless project-root
     (setq project-root (or js-imports-current-project-root
                            (js-imports-find-project-root))))
-  (if project-root
-      (let ((re (if include-dirs
-                    "."
-                  (concat ".+" js-imports-file-ext-regexp)))
-            (dirs (seq-remove
-                   (lambda (it) (let ((base (file-name-base it)))
-                             (or
-                              (string= base "node_modules")
-                              (member base
-                                      js-imports-root-ignored-directories)
-                              (not (file-directory-p it))
-                              (string-match-p "^\\." base)
-                              (file-exists-p (expand-file-name "package.json"
-                                                               it)))))
-                   (directory-files project-root
-                                    t nil t)))
-            (files))
-        (setq files (mapcan
-                     (lambda (it) (directory-files-recursively
-                              it
-                              re
-                              include-dirs pred))
-                     dirs))
-        (if include-dirs
-            (seq-filter 'file-directory-p files)
-          files))
-    (and (message "Cannot find project root")
-         '())))
+  (if (and js-imports-current-project-root
+           (string-match-p js-imports-current-project-root
+                           default-directory))
+      (let ((files)
+            (processed-dirs)
+            (re (concat ".+" js-imports-file-ext-regexp))
+            (node-modules (js-imports-find-node-modules))
+            (dir (replace-regexp-in-string "/$" "" default-directory))
+            (proj-root (replace-regexp-in-string
+                        "/$"
+                        ""
+                        js-imports-current-project-root)))
+        (push dir processed-dirs)
+        (while (string-match-p proj-root dir)
+          (setq files (append files
+                              (reverse
+                               (directory-files-recursively
+                                dir
+                                re
+                                nil
+                                (lambda (it)
+                                  (not (or
+                                        (member it processed-dirs)
+                                        (string= it dir)
+                                        (string= (or node-modules "") it))))))))
+          (setq dir (expand-file-name ".." dir))
+          (push dir processed-dirs))
+        files)
+    (message "Cannot find project files")
+    nil))
 
 (defun js-imports-get-aliases ()
   "Return sorted list of ALIASES."
@@ -3341,6 +3342,7 @@ If called interactively also show the version in echo area."
     (error
      "Package pkg-info is required for determining `js-imports' version")))
 
+;;;###autoload
 (defun js-imports-project-info ()
   (interactive)
   (let ((vars '(js-imports-current-alias
