@@ -250,7 +250,7 @@ relative to BASE-URL if provided or project directory."
   (concat "\\(/\\|^\\)index" "\\($\\|" js-imports-file-ext-regexp "\\)"))
 
 (defconst js-imports-expression-keywords
-  '("const" "var" "let" "interface" "type" "class"))
+  '("const" "var" "let" "interface" "type" "class" "enum"))
 
 (defconst js-imports-expression-keywords--re
   (js-imports-make-opt-symbol-regexp js-imports-expression-keywords))
@@ -260,6 +260,12 @@ relative to BASE-URL if provided or project directory."
 
 (defconst js-imports-delcaration-keywords
   (append '("function" "function*") js-imports-expression-keywords))
+
+(defvar js-imports-node-starts-keywords
+  (append '("export" "import") js-imports-delcaration-keywords))
+
+(defvar js-imports-node-starts-re
+  (concat "\\_<" (regexp-opt js-imports-node-starts-keywords t) "\\_>"))
 
 (defconst js-imports-delcaration-keywords--re
   (concat "\\_<" (regexp-opt js-imports-delcaration-keywords t) "\\_>"))
@@ -3023,6 +3029,103 @@ CANDIDATE should be propertizied with property `display-path'."
                                     js-imports-current-project-root) "/")))))
       (concat project-name "\s" "files" "\s" (or js-imports-current-alias
                                                  "./")))))
+
+(defun js-imports-skip-semicolon ()
+  (let ((p (if (looking-at ";")
+               (1+ (point))
+             (or (save-excursion
+                   (js-imports-skip-whitespace-forward)
+                   (when (looking-at ";")
+                     (point)))
+                 (point)))))
+    (goto-char p)
+    p))
+
+(defun js-imports-goto-end-brackets ()
+  (let ((winner)
+        (beg (point))
+        (words)
+        (w))
+    (save-excursion
+      (while (looking-at js-imports-node-starts-re)
+        (let ((w (js-imports-which-word)))
+          (push w words)
+          (skip-chars-forward w))
+        (js-imports-skip-whitespace-forward)
+        (when (looking-at "{")
+          (forward-list 1)
+          (js-imports-skip-whitespace-forward)))
+      (js-imports-skip-whitespace-forward)
+      (setq beg (point))
+      (let* ((depth (nth 0 (syntax-ppss (point))))
+             (next-node
+              (save-excursion
+                (when
+                    (js-imports-re-search-forward
+                     js-imports-node-starts-re nil t 1)
+                  (skip-chars-forward "a-z")
+                  (let ((p (point)))
+                    (skip-chars-backward "a-z")
+                    (when
+                        (and
+                         (equal (nth 0 (syntax-ppss (point)))
+                                depth)
+                         (not
+                          (js-imports-looking-at-function-expression)))
+                      (point))))))
+             (brackets (save-excursion (js-imports-re-search-forward
+                                        "[<(;{]" nil t 1))))
+        (cond ((and (null next-node)
+                    (null brackets))
+               (goto-char (point-max))
+               (skip-chars-backward "\s\t\n")
+               (js-imports-skip-whitespace-backward))
+              ((and (null brackets)
+                    next-node)
+               (goto-char next-node)
+               (skip-chars-backward "a-z")
+               (js-imports-skip-whitespace-backward))
+              ((and next-node brackets
+                    (> brackets next-node))
+               (goto-char next-node)
+               (skip-chars-backward "a-z")
+               (js-imports-skip-whitespace-backward))
+              (t
+               (progn (js-imports-re-search-forward "[<(;{]" nil t 1)
+                      (when (looking-back "<")
+                        (forward-char -1)
+                        (forward-list 1)
+                        (forward-char 1)
+                        (js-imports-re-search-forward "[({;]" nil t 1))
+                      (when (looking-back "(" 0)
+                        (forward-char -1)
+                        (forward-list 1)
+                        (js-imports-re-search-forward "[{;]" nil t 1))
+                      (when (looking-back "{" 0)
+                        (forward-char -1)
+                        (forward-list 1)))))
+        (setq winner (if (equal beg (point))
+                         nil
+                       (progn
+                         (js-imports-skip-semicolon)
+                         (point))))))
+    (when winner
+      (goto-char winner))
+    winner))
+
+;;;###autoload
+(defun js-imports-mark-it ()
+  (interactive)
+  (unless (and (looking-at js-imports-node-starts-re)
+               (not (js-imports-looking-at-function-expression)))
+    (js-imports-re-search-backward js-imports-node-starts-re nil t 1))
+  (let ((beg (point))
+        (end))
+    (push-mark beg nil t)
+    (when (js-imports-goto-end-brackets)
+      (setq end (point))
+      (activate-mark)
+      (buffer-substring beg end))))
 
 ;;;###autoload
 (defun js-imports ()
