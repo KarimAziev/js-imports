@@ -249,8 +249,16 @@ relative to BASE-URL if provided or project directory."
 (defvar js-imports-file-index-regexp
   (concat "\\(/\\|^\\)index" "\\($\\|" js-imports-file-ext-regexp "\\)"))
 
+(defconst js-imports-string-re "[\"'][^\"']+[\"']")
+
+(defconst js-imports-var-keywords '("const" "var" "let"))
+
 (defconst js-imports-expression-keywords
-  '("const" "var" "let" "interface" "type" "class" "enum"))
+  (append js-imports-var-keywords
+          '("interface" "type" "class" "enum")))
+
+(defconst js-imports-vars-keywords--re
+  (js-imports-make-opt-symbol-regexp js-imports-var-keywords))
 
 (defconst js-imports-expression-keywords--re
   (js-imports-make-opt-symbol-regexp js-imports-expression-keywords))
@@ -3113,19 +3121,65 @@ CANDIDATE should be propertizied with property `display-path'."
       (goto-char winner))
     winner))
 
+(defun js-imports-get-prev-node-start-if-matches (re)
+  (save-excursion
+    (js-imports-skip-whitespace-backward)
+    (when (looking-back re 0)
+      (skip-chars-backward js-imports-regexp-name-set)
+      (point))))
+
+(defun js-imports-goto-start-of-node ()
+  (let ((beg))
+    (save-excursion
+      (skip-chars-backward
+       js-imports-regexp-name-set)
+      (unless (looking-at js-imports-node-starts-re)
+        (js-imports-re-search-backward
+         js-imports-node-starts-re
+         nil t 1))
+      (cond
+       ((js-imports-looking-at-function-expression)
+        (js-imports-re-search-backward js-imports-vars-keywords--re nil t 1)
+        (setq beg (or (js-imports-get-prev-node-start-if-matches
+                       js-imports-esm-export-keyword--re)
+                      (point))))
+       ((looking-at js-imports-node-starts-re)
+        (setq beg (or (js-imports-get-prev-node-start-if-matches
+                       js-imports-esm-export-keyword--re)
+                      (point))))
+       (t (js-imports-re-search-backward
+           js-imports-node-starts-re
+           nil t 1)
+          (when (looking-at js-imports-node-starts-re)
+            (setq beg (or (js-imports-get-prev-node-start-if-matches
+                           js-imports-esm-export-keyword--re)
+                          (point)))))))
+    (when beg (goto-char beg))
+    beg))
+
+(defun js-imports-get-bounds-of-exp-at-point ()
+  (let ((beg)
+        (end))
+    (save-excursion
+      (when (setq beg
+                  (js-imports-goto-start-of-node))
+        (setq end (cond
+                   ((and (looking-at js-imports-regexp-import-keyword)
+                         (js-imports-re-search-forward js-imports-string-re
+                                                       nil t 1))
+                    (js-imports-skip-semicolon)
+                    (point))
+                   (t (js-imports-goto-end-brackets))))))
+    (when (and beg end)
+      (cons beg end))))
+
 ;;;###autoload
 (defun js-imports-mark-it ()
   (interactive)
-  (unless (and (looking-at js-imports-node-starts-re)
-               (not (js-imports-looking-at-function-expression)))
-    (js-imports-re-search-backward js-imports-node-starts-re nil t 1))
-  (let ((beg (point))
-        (end))
-    (push-mark beg nil t)
-    (when (js-imports-goto-end-brackets)
-      (setq end (point))
-      (activate-mark)
-      (buffer-substring beg end))))
+  (when-let ((bounds (js-imports-get-bounds-of-exp-at-point)))
+    (goto-char (car bounds))
+    (push-mark (cdr bounds) nil t)
+    (activate-mark)))
 
 ;;;###autoload
 (defun js-imports ()
