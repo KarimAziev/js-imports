@@ -1027,77 +1027,80 @@ PROJECT-ROOT."
       (regexp-quote path)
     ""))
 
+(defun js-imports-parse-es-imports (&optional real-path)
+  (goto-char 0)
+  (let (symbols)
+    (while (js-imports-re-search-forward
+            js-imports-regexp-import-keyword nil t 1)
+      (js-imports-skip-whitespace-forward)
+      (let (display-path imports)
+        (cond ((js-imports-looking-at "*")
+               (let (beg end renamed-name)
+                 (setq beg (point))
+                 (forward-char)
+                 (skip-chars-forward "\s\t")
+                 (setq end (point))
+                 (when (js-imports-looking-at "as")
+                   (skip-chars-forward "as")
+                   (setq end (point))
+                   (skip-chars-forward "\s\t")
+                   (setq renamed-name (js-imports-which-word))
+                   (if (or (js-imports-reserved-word-p renamed-name)
+                           (js-imports-invalid-name-p renamed-name))
+                       (setq renamed-name "")
+                     (skip-chars-forward js-imports-regexp-name)))
+                 (setq end (point))
+                 (push (js-imports-make-item
+                        (format "%s" (buffer-substring-no-properties beg end))
+                        :type 16
+                        :real-name "*"
+                        :as-name renamed-name
+                        :pos beg)
+                       imports)))
+              ((js-imports-get-word-if-valid)
+               (when-let ((name (js-imports-get-word-if-valid)))
+                 (push (js-imports-make-item
+                        name
+                        :type 1
+                        :real-name name
+                        :as-name name
+                        :pos (point))
+                       imports)
+                 (skip-chars-forward name)
+                 (js-imports-skip-whitespace-forward)
+                 (skip-chars-forward ",")
+                 (js-imports-skip-whitespace-forward))))
+        (when (looking-at-p "{")
+          (let ((map-func (lambda (item) (js-imports-propertize
+                                     item
+                                     :type 4
+                                     :pos
+                                     (js-imports-get-prop item :start))))
+                (named-items (js-imports-extract-esm-braced-symbols
+                              js-imports-name-as--re)))
+            (setq named-items (mapcar map-func named-items))
+            (setq imports (append imports named-items))))
+        (unless (looking-at-p "[\"']")
+          (js-imports-re-search-forward js-imports-from-keyword--re nil t 1)
+          (js-imports-skip-whitespace-forward)
+          (when (looking-at-p "[\"']")
+            (save-excursion
+              (forward-char 1)
+              (setq display-path (js-imports-get-path-at-point)))
+            (setq imports (mapcar (lambda (it)
+                                    (js-imports-propertize it
+                                                           :display-path
+                                                           display-path
+                                                           :real-path
+                                                           real-path
+                                                           :import t))
+                                  imports))
+            (setq symbols (append symbols imports))))))
+    symbols))
+
 (defun js-imports-extract-es-imports (real-path)
   (js-imports-with-buffer-or-file-content real-path
-      (goto-char 0)
-    (let (symbols)
-      (while (js-imports-re-search-forward
-              js-imports-regexp-import-keyword nil t 1)
-        (js-imports-skip-whitespace-forward)
-        (let (display-path imports)
-          (cond ((js-imports-looking-at "*")
-                 (let (beg end renamed-name)
-                   (setq beg (point))
-                   (forward-char)
-                   (skip-chars-forward "\s\t")
-                   (setq end (point))
-                   (when (js-imports-looking-at "as")
-                     (skip-chars-forward "as")
-                     (setq end (point))
-                     (skip-chars-forward "\s\t")
-                     (setq renamed-name (js-imports-which-word))
-                     (if (or (js-imports-reserved-word-p renamed-name)
-                             (js-imports-invalid-name-p renamed-name))
-                         (setq renamed-name "")
-                       (skip-chars-forward js-imports-regexp-name)))
-                   (setq end (point))
-                   (push (js-imports-make-item
-                          (format "%s" (buffer-substring-no-properties beg end))
-                          :type 16
-                          :real-name "*"
-                          :as-name renamed-name
-                          :pos beg)
-                         imports)))
-                ((js-imports-get-word-if-valid)
-                 (when-let ((name (js-imports-get-word-if-valid)))
-                   (push (js-imports-make-item
-                          name
-                          :type 1
-                          :real-name name
-                          :as-name name
-                          :pos (point))
-                         imports)
-                   (skip-chars-forward name)
-                   (js-imports-skip-whitespace-forward)
-                   (skip-chars-forward ",")
-                   (js-imports-skip-whitespace-forward))))
-          (when (looking-at-p "{")
-            (let ((map-func (lambda (item) (js-imports-propertize
-                                            item
-                                            :type 4
-                                            :pos
-                                            (js-imports-get-prop item :start))))
-                  (named-items (js-imports-extract-esm-braced-symbols
-                                js-imports-name-as--re)))
-              (setq named-items (mapcar map-func named-items))
-              (setq imports (append imports named-items))))
-          (unless (looking-at-p "[\"']")
-            (js-imports-re-search-forward js-imports-from-keyword--re nil t 1)
-            (js-imports-skip-whitespace-forward)
-            (when (looking-at-p "[\"']")
-              (save-excursion
-                (forward-char 1)
-                (setq display-path (js-imports-get-path-at-point)))
-              (setq imports (mapcar (lambda (it)
-                                      (js-imports-propertize it
-                                                             :display-path
-                                                             display-path
-                                                             :real-path
-                                                             real-path
-                                                             :import t))
-                                    imports))
-              (setq symbols (append symbols imports))))))
-      symbols)))
+      (js-imports-parse-es-imports)))
 
 (defun js-imports-extract-esm-braced-symbols (&optional re)
   (save-excursion
@@ -1484,7 +1487,7 @@ File is specified in the variable `js-imports-current-export-path.'."
     (let (alist)
       (while (js-imports-re-search-forward
               js-imports-regexp-import-keyword nil t)
-        (let ((beg (match-beginning 0))
+        (let ((beg (- (point) (length "import")))
               (end))
           (js-imports-skip-whitespace-forward)
           (unless (looking-at-p "[\"']")
@@ -1979,8 +1982,6 @@ Result depends on syntax table's string quote character."
                                      :type 4))
                                   children))))
               children))))))))
-
-(js-imports-propertize (js-imports-make-item "dfsffd" :pos (point)) :var-type "const")
 
 (defun js-imports-extract-definitions (&optional path position)
   "Extract visible on POSITION declarations in PATH.
