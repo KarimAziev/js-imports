@@ -1100,7 +1100,7 @@ PROJECT-ROOT."
 
 (defun js-imports-extract-es-imports (real-path)
   (js-imports-with-buffer-or-file-content real-path
-      (js-imports-parse-es-imports)))
+      (js-imports-parse-es-imports real-path)))
 
 (defun js-imports-extract-esm-braced-symbols (&optional re)
   (save-excursion
