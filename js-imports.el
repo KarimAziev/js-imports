@@ -77,11 +77,10 @@
 (defcustom js-imports-helm-dependencies-number-limit 400
   "The limit for number of dependencies to display in `helm' sources."
   :group 'js-imports
-
   :type 'number)
 
 (defcustom js-imports-package-json-sections
-  '("dependencies" "devDependencies")
+  '("dependencies" "devDependencies" "peerDependencies")
   "Package-json sections to retrieve candidates from node_modules."
   :group 'js-imports
   :type '(repeat string))
@@ -98,7 +97,7 @@
   :type 'string)
 
 (defcustom js-imports-preffered-extensions
-  '("d.ts" "ts" "tsx" "jsx" "mjs" "js" "cjs")
+  '("ts" "tsx" "jsx" "es6" "es" "mjs" "js" "cjs" "ls" "sjs" "iced" "liticed")
   "Preffered suffixes for files with different extension."
   :group 'js-imports
   :type '(repeat string))
@@ -203,7 +202,8 @@ relative to BASE-URL if provided or project directory."
                 (lambda (it)
                   (let ((alias (js-imports-slash
                                 (string-join
-                                 (split-string (format "%s" (car it)) "*"))))
+                                 (split-string (format "%s" (car it))
+                                               "\\*"))))
                         (alias-paths (cond
                                       ((vectorp (cdr it))
                                        (append (cdr it) nil))
@@ -212,7 +212,8 @@ relative to BASE-URL if provided or project directory."
                                       (t `(,(cdr it))))))
                     (setq alias-paths (mapcar
                                        (lambda (p)
-                                         (setq p (replace-regexp-in-string "*" "" p))
+                                         (setq p (replace-regexp-in-string
+                                                  "\\*" "" p))
                                          (js-imports-expand-alias-path
                                           p base-url))
                                        alias-paths))
@@ -243,7 +244,10 @@ relative to BASE-URL if provided or project directory."
   "A list of aliases to use in projects.")
 
 (defconst js-imports-file-ext-regexp
-  (concat "[\\.]" (regexp-opt js-imports-preffered-extensions) "$")
+  (eval-when-compile
+    (concat "[\\.]"
+            (regexp-opt js-imports-preffered-extensions)
+            "$"))
   "Regexp matching js, jsx and ts extensions files.")
 
 (defvar js-imports-file-index-regexp
@@ -254,29 +258,37 @@ relative to BASE-URL if provided or project directory."
 (defconst js-imports-var-keywords '("const" "var" "let"))
 
 (defconst js-imports-expression-keywords
-  (append js-imports-var-keywords
-          '("interface" "type" "class" "enum")))
+  (eval-when-compile
+    (append js-imports-var-keywords
+            '("interface" "type" "class" "enum"))))
 
 (defconst js-imports-vars-keywords--re
-  (js-imports-make-opt-symbol-regexp js-imports-var-keywords))
+  (eval-when-compile
+    (js-imports-make-opt-symbol-regexp js-imports-var-keywords)))
 
 (defconst js-imports-expression-keywords--re
-  (js-imports-make-opt-symbol-regexp js-imports-expression-keywords))
+  (eval-when-compile
+    (js-imports-make-opt-symbol-regexp js-imports-expression-keywords)))
 
 (defconst js-imports-from-keyword--re
-  (js-imports-make-opt-symbol-regexp "from"))
+  (eval-when-compile
+    (js-imports-make-opt-symbol-regexp "from")))
 
 (defconst js-imports-delcaration-keywords
-  (append '("function" "function*") js-imports-expression-keywords))
+  (eval-when-compile
+    (append '("function" "function*") js-imports-expression-keywords)))
 
 (defvar js-imports-node-starts-keywords
-  (append '("export" "import") js-imports-delcaration-keywords))
+  (eval-when-compile
+    (append '("export" "import") js-imports-delcaration-keywords)))
 
 (defvar js-imports-node-starts-re
-  (concat "\\_<" (regexp-opt js-imports-node-starts-keywords t) "\\_>"))
+  (eval-when-compile
+    (concat "\\_<" (regexp-opt js-imports-node-starts-keywords t) "\\_>")))
 
 (defconst js-imports-delcaration-keywords--re
-  (concat "\\_<" (regexp-opt js-imports-delcaration-keywords t) "\\_>"))
+  (eval-when-compile
+    (concat "\\_<" (regexp-opt js-imports-delcaration-keywords t) "\\_>")))
 
 (defconst js-imports-regexp-name
   "_$A-Za-z0-9"
@@ -732,10 +744,7 @@ If PATH is a relative file, it will be returned without changes."
           (t (js-imports-alias-path-to-real path)))))
 
 (defun js-imports-get-ext (str)
-  (when-let ((ext-pos (string-match
-                       "\\.\\(\\(d\\.\\)?[a-zZ-A0-9]+\\)$"
-                       str)))
-    (substring str (1+ ext-pos))))
+  (and str (file-name-extension str)))
 
 (defun js-imports-sort-by-exts (files &optional extensions)
   (setq extensions (or extensions js-imports-preffered-extensions))
@@ -1577,20 +1586,20 @@ File is specified in the variable `js-imports-current-export-path.'."
     (t (format "%s" x))))
 
 (defun js-imports-skip-whitespace-forward ()
-  (skip-chars-forward "[\s\t\n]")
+  (skip-chars-forward "\s\t\n")
   (when (and (looking-at "\\(//\\)\\|\\(/[*]\\)")
              (js-imports-re-search-forward "." nil t 1))
     (unless (>= (point-min) (point))
       (backward-char 1))
-    (skip-chars-forward "[\s\t\n]")))
+    (skip-chars-forward "\s\t\n")))
 
 (defun js-imports-skip-whitespace-backward ()
-  (skip-chars-backward "[\s\t\n]")
+  (skip-chars-backward "\s\t\n")
   (when (and (looking-back "\\(//\\)\\|\\(/[*]\\)" 1)
              (js-imports-re-search-backward "." nil t 1))
     (unless (>= (point-min) (point))
       (forward-char 1))
-    (skip-chars-backward "[\s\t\n]")))
+    (skip-chars-backward "\s\t\n")))
 
 (defun js-imports-get-word-if-valid ()
   "Return word at point if it is valid and not reservered, otherwise nil."
@@ -1734,6 +1743,7 @@ Result depends on syntax table's string quote character."
                                                    (backward-char 1)
                                                    (js-imports-get-word-if-valid)))
                                  :parent parent
+                                 :var-type (or parent "argument")
                                  :as-name valid-id)
       (skip-chars-backward "\s\t\n"))))
 
@@ -2578,7 +2588,7 @@ in a buffer local variable `js-imports-cached-imports-in-buffer'.
             (insert default-name))
           (when (or (looking-at-p js-imports-regexp-name-set)
                     default-name)
-            (skip-chars-forward js-imports-regexp-name-set)
+            (skip-chars-forward js-imports-regexp-name)
             (js-imports-skip-whitespace-forward)
             (unless (looking-at-p ",")
               (js-imports-re-search-backward js-imports-regexp-name-set nil t 1)
@@ -3132,14 +3142,14 @@ CANDIDATE should be propertizied with property `display-path'."
   (save-excursion
     (js-imports-skip-whitespace-backward)
     (when (looking-back re 0)
-      (skip-chars-backward js-imports-regexp-name-set)
+      (skip-chars-backward js-imports-regexp-name)
       (point))))
 
 (defun js-imports-goto-start-of-node ()
   (let ((beg))
     (save-excursion
       (skip-chars-backward
-       js-imports-regexp-name-set)
+       js-imports-regexp-name)
       (unless (looking-at js-imports-node-starts-re)
         (js-imports-re-search-backward
          js-imports-node-starts-re
