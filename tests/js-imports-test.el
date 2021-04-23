@@ -65,11 +65,10 @@
   (should (equal (js-imports-is-index-file-p "/index$") nil))
   (should (equal (js-imports-is-index-file-p "/iindex.js") nil)))
 
-
-(ert-deftest js-imports-test-remove-ext()
+(ert-deftest js-imports-test-remove-ext ()
   "Test to remove extension"
   (should (equal (js-imports-remove-ext "./index.jsx") "./index"))
-  (should (equal (js-imports-remove-ext "index.d.tsx") "index.d"))
+  (should (equal (js-imports-remove-ext "index.d.tsx") "index"))
   (should (equal (js-imports-remove-ext "index.d.ts") "index"))
   (should (equal (js-imports-remove-ext "/home/user/repos/App.ts") "/home/user/repos/App"))
   (should (equal (js-imports-remove-ext "indd.ex.ts") "indd.ex"))

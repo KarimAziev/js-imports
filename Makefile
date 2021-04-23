@@ -7,7 +7,6 @@ BATCHFLAGS = -batch -Q
 
 all:
 	${MAKE} clean
-	${MAKE} test
 	${MAKE} compile
 	${MAKE} test
 	${MAKE} clean

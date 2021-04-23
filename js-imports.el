@@ -244,51 +244,42 @@ relative to BASE-URL if provided or project directory."
   "A list of aliases to use in projects.")
 
 (defconst js-imports-file-ext-regexp
-  (eval-when-compile
-    (concat "[\\.]"
-            (regexp-opt js-imports-preffered-extensions)
-            "$"))
+  (concat "[\\.]"
+          (regexp-opt js-imports-preffered-extensions)
+          "$")
   "Regexp matching js, jsx and ts extensions files.")
 
 (defvar js-imports-file-index-regexp
-  (concat "\\(/\\|^\\)index" "\\($\\|" js-imports-file-ext-regexp "\\)"))
+(concat "\\(/\\|^\\)index" "\\($\\|\\(\\.d\\)?" js-imports-file-ext-regexp "\\)"))
 
 (defconst js-imports-string-re "[\"'][^\"']+[\"']")
 
 (defconst js-imports-var-keywords '("const" "var" "let"))
 
 (defconst js-imports-expression-keywords
-  (eval-when-compile
-    (append js-imports-var-keywords
-            '("interface" "type" "class" "enum"))))
+  (append js-imports-var-keywords
+            '("interface" "type" "class" "enum")))
 
 (defconst js-imports-vars-keywords--re
-  (eval-when-compile
-    (js-imports-make-opt-symbol-regexp js-imports-var-keywords)))
+  (js-imports-make-opt-symbol-regexp js-imports-var-keywords))
 
 (defconst js-imports-expression-keywords--re
-  (eval-when-compile
-    (js-imports-make-opt-symbol-regexp js-imports-expression-keywords)))
+  (js-imports-make-opt-symbol-regexp js-imports-expression-keywords))
 
 (defconst js-imports-from-keyword--re
-  (eval-when-compile
-    (js-imports-make-opt-symbol-regexp "from")))
+  (js-imports-make-opt-symbol-regexp "from"))
 
 (defconst js-imports-delcaration-keywords
-  (eval-when-compile
-    (append '("function" "function*") js-imports-expression-keywords)))
+  (append '("function" "function*") js-imports-expression-keywords))
 
 (defvar js-imports-node-starts-keywords
-  (eval-when-compile
-    (append '("export" "import") js-imports-delcaration-keywords)))
+  (append '("export" "import") js-imports-delcaration-keywords))
 
 (defvar js-imports-node-starts-re
-  (eval-when-compile
-    (concat "\\_<" (regexp-opt js-imports-node-starts-keywords t) "\\_>")))
+  (concat "\\_<" (regexp-opt js-imports-node-starts-keywords t) "\\_>"))
 
 (defconst js-imports-delcaration-keywords--re
-  (eval-when-compile
-    (concat "\\_<" (regexp-opt js-imports-delcaration-keywords t) "\\_>")))
+  (concat "\\_<" (regexp-opt js-imports-delcaration-keywords t) "\\_>"))
 
 (defconst js-imports-regexp-name
   "_$A-Za-z0-9"
@@ -302,12 +293,12 @@ relative to BASE-URL if provided or project directory."
   "Regexp set matching the start of a js identifier.")
 
 (defconst js-imports-regexp-import-keyword
-  (eval-when-compile
+  (eval-and-compile
     (concat "\\_<" (regexp-opt `(,"import") t) "\\_>"))
   "Regexp matching keyword import.")
 
 (defconst js-imports-esm-export-keyword--re
-  (eval-when-compile
+  (eval-and-compile
     (concat "\\_<" (regexp-opt `(,"export") t) "\\_>"))
   "Regexp matching keyword export.")
 
@@ -709,9 +700,10 @@ If PATH is a relative file, it will be returned without changes."
   (replace-regexp-in-string "//"  "/" path))
 
 (defun js-imports-maybe-remove-path-index (path)
-  (if (js-imports-index-trimmable-p path)
-      (replace-regexp-in-string js-imports-file-index-regexp "" path)
-    path))
+  (replace-regexp-in-string
+   "/index$"
+   ""
+   (js-imports-remove-ext path)))
 
 (defun js-imports-index-trimmable-p (path)
   "Check if PATH index can be trimmed."
@@ -721,7 +713,10 @@ If PATH is a relative file, it will be returned without changes."
     (js-imports-is-index-file-p path)))
 
 (defun js-imports-remove-ext (path)
-  (replace-regexp-in-string js-imports-file-ext-regexp "" path))
+  (replace-regexp-in-string
+   "\\(\\.d\\)?[\\.]\\(?:cjs\\|es6?\\|iced\\|jsx?\\|l\\(?:iticed\\|s\\)\\|mjs\\|sjs\\|ts\\|tsx\\)$"
+   ""
+   path))
 
 (defun js-imports-is-index-file-p (path)
   (js-imports-string-match-p js-imports-file-index-regexp path))
