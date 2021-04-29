@@ -768,14 +768,15 @@ If PATH is a relative file, it will be returned without changes."
                                    non-dir)
                                   t)))
          (found (car files))
-         (result (and found (expand-file-name found parent))))
+         (result (and found
+                      (expand-file-name found parent))))
     (cond ((and (null ext)
                 result
                 (file-directory-p result))
            (when-let ((index
                        (car
                         (directory-files
-                         result nil "^index\\(\\.[a-zZ-A0-9]+\\)+$"))))
+                         result nil js-imports-file-index-regexp))))
              (expand-file-name index result)))
           (t result))))
 
