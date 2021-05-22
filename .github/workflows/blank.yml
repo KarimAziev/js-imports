@@ -1,46 +1,67 @@
-# This is a basic workflow to help you get started with Actions
-
-name: CI
+name: test
 
 on:
   pull_request:
   push:
-    paths-ignore:
-    - '**.md'
-    - 'tools/*'
+    branches:
+      - master
+      - 'releases/*'
 
 jobs:
-  build:
+  test-mixed:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         emacs_version:
-          - 24.1
-          - 24.2
-          - 24.3
-          - 24.4
-          - 24.5
-          - 25.1
-          - 25.2
-          - 25.3
           - 26.1
           - 26.2
           - 26.3
           - 27.1
-          - 27.2
           - snapshot
+        ignore_warnings:
+          - true
+        check:
+          - melpa
+          - package-lint
         include:
-          - emacs_version: 24.1
-            lint_ignore: 1
-          - emacs_version: 24.2
-            lint_ignore: 1
-    env:
-      EMACS_LINT_IGNORE: ${{ matrix.lint_ignore }}
+          - emacs_version: snapshot
+            check: melpa
+            ignore_warnings: false
     steps:
+    - uses: actions/checkout@v2
     - uses: purcell/setup-emacs@master
       with:
         version: ${{ matrix.emacs_version }}
-
+    - uses: ./
+      with:
+        file: elisp-check.el
+        check: ${{ matrix.check }}
+        ignore_warnings: ${{ matrix.ignore_warnings }}
+  test-builtin:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs_version:
+          - 26.1
+          - 26.2
+          - 26.3
+          - 27.1
+          - snapshot
+        ignore_warnings:
+          - true
+        check:
+          - load-file
+          - byte-compile
+          - checkdoc
+    steps:
     - uses: actions/checkout@v2
-    - name: Run tests
-      run: './run-tests.sh'
+    - uses: purcell/setup-emacs@master
+      with:
+        version: ${{ matrix.emacs_version }}
+    - uses: ./
+      with:
+        file: js-imports.el
+        check: ${{ matrix.check }}
+        ignore_warnings: ${{ matrix.ignore_warnings }}
