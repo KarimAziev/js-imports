@@ -1734,10 +1734,11 @@ Result depends on syntax table's string quote character."
     (skip-chars-backward valid-id)
     (prog1 (js-imports-make-item valid-id
                                  :pos (point)
-                                 :real-name (and (looking-back ":" 0)
-                                                 (save-excursion
-                                                   (backward-char 1)
-                                                   (js-imports-get-word-if-valid)))
+                                 :real-name
+                                 (and (looking-back ":" 0)
+                                      (save-excursion
+                                        (backward-char 1)
+                                        (js-imports-get-word-if-valid)))
                                  :parent parent
                                  :var-type (or parent "argument")
                                  :as-name valid-id)
@@ -2324,10 +2325,10 @@ in a buffer local variable `js-imports-cached-imports-in-buffer'.
                (setq count (1- count)))))))
   (point))
 
-(defun js-imports-re-search-backward (regexp &optional bound noerror count)
-  "Search backward from point for REGEXP ignoring strings and comments."
+(defun js-imports-re-search-backward (re &optional bound noerror count)
+  "Search backward from point for RE ignoring strings and comments."
   (let ((case-fold-search nil))
-    (js-imports-re-search-forward regexp bound noerror (if count (- count) -1))))
+    (js-imports-re-search-forward re bound noerror (if count (- count) -1))))
 
 (defun js-imports-remove-comments (&optional buffer-start buffer-end)
   "Replaces comments in buffer beetween START and END with empty lines."
@@ -2705,9 +2706,13 @@ CANDIDATE should be propertizied with property `display-path'."
      :initial-input input
      :keymap js-imports-files-map
      :action (lambda (it) (if (and (boundp 'ivy-exit)
-                                   ivy-exit)
-                              (funcall-interactively 'js-imports-from-path it)
-                            (js-imports-find-file it))))))
+                              ivy-exit)
+                         (funcall-interactively 'js-imports-from-path it)
+                       (js-imports-find-file it))))))
+
+(defvar ivy-last)
+
+(defvar ivy-exit)
 
 (defvar ivy-last)
 
