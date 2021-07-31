@@ -1901,7 +1901,7 @@ File is specified in the variable `js-imports-current-export-path.'."
         (nil item)))
 
 (defun js-imports-stringify (x)
-  "Convert any object to string."
+  "Convert X to string."
   (cl-typecase x
     (string x)
     (symbol (symbol-name x))
@@ -1910,6 +1910,9 @@ File is specified in the variable `js-imports-current-export-path.'."
     (t (format "%s" x))))
 
 (defun js-imports-skip-whitespace-forward ()
+  "Move point forward accross whitespace and comments.
+
+Returns the distance traveled, either zero or positive."
   (let ((curr)
         (total (skip-chars-forward "\s\t\n"))
         (max (1- (point-max))))
@@ -1926,10 +1929,14 @@ File is specified in the variable `js-imports-current-export-path.'."
     total))
 
 (defun js-imports-skip-whitespace-backward ()
+  "Move point backward accross whitespace and comments.
+
+Returns the distance traveled, either zero or positive."
   (let ((total (skip-chars-backward "\s\t\n"))
         (min (1+ (point-min))))
     (while (and (> (point) min)
-                (js-imports-inside-comment-p))
+                (or (js-imports-inside-comment-p)
+                    (looking-back "*/" 0)))
       (js-imports-re-search-backward "\\(//\\)\\|\\(/[*]\\)" nil t 1)
       (setq total (+ total (skip-chars-backward "\s\t\n"))))
     total))
