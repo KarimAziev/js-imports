@@ -1573,7 +1573,7 @@ File is specified in the variable `js-imports-current-export-path.'."
         (nil item)))
 
 (defun js-imports-stringify (x)
-  "Convert any object to string."
+  "Convert X to string."
   (cl-typecase x
     (string x)
     (symbol (symbol-name x))
@@ -1582,20 +1582,36 @@ File is specified in the variable `js-imports-current-export-path.'."
     (t (format "%s" x))))
 
 (defun js-imports-skip-whitespace-forward ()
-  (skip-chars-forward "\s\t\n")
-  (when (and (looking-at "\\(//\\)\\|\\(/[*]\\)")
-             (js-imports-re-search-forward "." nil t 1))
-    (unless (>= (point-min) (point))
-      (backward-char 1))
-    (skip-chars-forward "\s\t\n")))
+  "Move point forward accross whitespace and comments.
+
+Returns the distance traveled, either zero or positive."
+  (let ((curr)
+        (total (skip-chars-forward "\s\t\n"))
+        (max (1- (point-max))))
+    (while (and (> max (point))
+                (setq curr (member (buffer-substring-no-properties
+                                    (point)
+                                    (+ 2 (point))) '("/*" "//"))))
+      (cond ((string= "//" (car curr))
+             (forward-line 1)
+             (setq total (+ total (skip-chars-forward "\s\t\n"))))
+            ((string= "/*" (car curr))
+             (js-imports-re-search-forward "\\([*]/\\)" nil t 1)
+             (setq total (+ total (skip-chars-forward "\s\t\n"))))))
+    total))
 
 (defun js-imports-skip-whitespace-backward ()
-  (skip-chars-backward "\s\t\n")
-  (when (and (looking-back "\\(//\\)\\|\\(/[*]\\)" 1)
-             (js-imports-re-search-backward "." nil t 1))
-    (unless (>= (point-min) (point))
-      (forward-char 1))
-    (skip-chars-backward "\s\t\n")))
+  "Move point backward accross whitespace and comments.
+
+Returns the distance traveled, either zero or positive."
+  (let ((total (skip-chars-backward "\s\t\n"))
+        (min (1+ (point-min))))
+    (while (and (> (point) min)
+                (or (js-imports-inside-comment-p)
+                    (looking-back "*/" 0)))
+      (js-imports-re-search-backward "\\(//\\)\\|\\(/[*]\\)" nil t 1)
+      (setq total (+ total (skip-chars-backward "\s\t\n"))))
+    total))
 
 (defun js-imports-get-word-if-valid ()
   "Return word at point if it is valid and not reservered, otherwise nil."
