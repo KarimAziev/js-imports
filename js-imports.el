@@ -97,7 +97,8 @@
   :type 'string)
 
 (defcustom js-imports-preffered-extensions
-  '("ts" "tsx" "jsx" "es6" "es" "mjs" "js" "cjs" "ls" "sjs" "iced" "liticed")
+  '("ts" "tsx" "jsx" "es6" "es" "mjs" "js" "cjs" "ls" "sjs" "iced" "liticed"
+    "json")
   "Preffered suffixes for files with different extension."
   :group 'js-imports
   :type '(repeat string))
@@ -244,13 +245,19 @@ relative to BASE-URL if provided or project directory."
   "A list of aliases to use in projects.")
 
 (defconst js-imports-file-ext-regexp
-  (concat "[\\.]"
-          (regexp-opt js-imports-preffered-extensions)
-          "$")
+  (concat "\\.\\("
+          (string-join
+           '("\\(d\\.\\)?tsx?"
+             "jsx" "es6" "es"
+             "mjs" "js" "cjs" "ls"
+             "sjs" "iced" "liticed" "json")
+           "\\|")
+          "\\)$")
   "Regexp matching js, jsx and ts extensions files.")
 
 (defvar js-imports-file-index-regexp
-(concat "\\(/\\|^\\)index" "\\($\\|\\(\\.d\\)?" js-imports-file-ext-regexp "\\)"))
+  (concat "\\(/\\|^\\)" "index"
+          (concat "\\($\\|" js-imports-file-ext-regexp "\\)")))
 
 (defconst js-imports-string-re "[\"'][^\"']+[\"']")
 
@@ -336,9 +343,10 @@ relative to BASE-URL if provided or project directory."
   :type '(repeat (choice symbol))
   :group 'js-imports)
 
-(defcustom js-imports-helm-symbol-sources '(js-imports-imported-symbols-source
-                                            js-imports-exports-source
-                                            js-imports-definitions-source)
+(defcustom js-imports-helm-symbol-sources
+  '(js-imports-imported-symbols-source
+    js-imports-exports-source
+    js-imports-definitions-source)
   "Helm sources for symbols for command `js-imports-symbols-menu'."
   :type '(repeat (choice symbol))
   :group 'js-imports)
@@ -529,7 +537,6 @@ Default section is `dependencies'"
                            default-directory))
       (let ((files)
             (processed-dirs)
-            (re (concat ".+" js-imports-file-ext-regexp))
             (node-modules (js-imports-find-node-modules))
             (dir (replace-regexp-in-string "/$" "" default-directory))
             (proj-root (replace-regexp-in-string
@@ -542,7 +549,7 @@ Default section is `dependencies'"
                               (reverse
                                (directory-files-recursively
                                 dir
-                                re
+                                js-imports-file-ext-regexp
                                 nil
                                 (lambda (it)
                                   (not (or
@@ -705,13 +712,6 @@ If PATH is a relative file, it will be returned without changes."
    ""
    (js-imports-remove-ext path)))
 
-(defun js-imports-index-trimmable-p (path)
-  "Check if PATH index can be trimmed."
-  (if (js-imports-relative-p path)
-      (and (js-imports-is-index-file-p path)
-           (< 1 (js-imports-count-matches "/" path)))
-    (js-imports-is-index-file-p path)))
-
 (defun js-imports-remove-ext (path)
   (replace-regexp-in-string
    "\\(\\.d\\)?[\\.]\\(?:cjs\\|es6?\\|iced\\|jsx?\\|l\\(?:iticed\\|s\\)\\|mjs\\|sjs\\|ts\\|tsx\\)$"
@@ -722,21 +722,31 @@ If PATH is a relative file, it will be returned without changes."
   (js-imports-string-match-p js-imports-file-index-regexp path))
 
 (defun js-imports-relative-p (path)
-  (js-imports-string-match-p "^\\.+/" path))
+  "Return t if PATH is relative, nil otherwise."
+  (js-imports-string-match-p "^\\(\\(\\.\\)?[\\.]\\)\\(/\\|$\\)"
+                             path))
+
+(defun js-imports-dependency-p (module &optional project-root)
+  "Check if MODULE is dependency in PROJECT-ROOT.
+Dependencies are recognized by `package.json' or `node_modules' of
+PROJECT-ROOT."
+  (or (member module (js-imports-node-modules-candidates project-root))
+      (let ((node-dir (js-imports-find-node-modules project-root)))
+        (and node-dir
+             (file-exists-p
+              (expand-file-name (car (split-string module "/"))
+                                node-dir))))))
 
 (defun js-imports-path-to-real (path &optional dir)
   (when (and path (stringp path))
     (setq path (js-imports-strip-text-props path))
-    (cond ((and (js-imports-string-match-p
-                 js-imports-file-ext-regexp path)
-                (file-exists-p path)
-                (not (js-imports-relative-p path)))
-           path)
+    (cond ((file-name-absolute-p path)
+           (car (js-imports-resolve-paths path)))
           ((js-imports-relative-p path)
-           (js-imports-relative-to-real path dir))
+           (car (js-imports-resolve-paths path dir)))
           ((js-imports-dependency-p path (js-imports-find-project-root))
            (js-imports-node-module-to-real path))
-          (t (js-imports-alias-path-to-real path)))))
+          (t (car (js-imports-alias-path-to-real path))))))
 
 (defun js-imports-get-ext (str)
   (and str (file-name-extension str)))
@@ -750,65 +760,46 @@ If PATH is a relative file, it will be returned without changes."
                #'>
                files))
 
-(defun js-imports-relative-to-real (path &optional dir)
-  (when (or (string= path ".")
-            (string= path ".."))
-    (setq path (js-imports-slash path)))
-  (let* ((base (file-name-base path))
-         (non-dir (file-name-nondirectory path))
-         (ext (js-imports-get-ext path))
-         (up (if (string-empty-p base)
-                 path
-               (replace-regexp-in-string
-                (format "/%s\\(\\.[a-zZ-A0-9]+\\)*$" base) "" path)))
-         (parent (expand-file-name up (or dir default-directory)))
-         (files (js-imports-sort-by-exts
-                 (directory-files parent nil
-                                  (js-imports-make-file-base-re
-                                   non-dir)
-                                  t)))
-         (found (car files))
-         (result (and found
-                      (expand-file-name found parent))))
-    (cond ((and (null ext)
-                result
-                (file-directory-p result))
-           (when-let ((index
-                       (car
-                        (directory-files
-                         result nil js-imports-file-index-regexp))))
-             (expand-file-name index result)))
-          (t result))))
+(defun js-imports-get-path-ext-candidates (fullpath)
+  (let ((parts (reverse (split-string fullpath "/")))
+        (module-re)
+        (parent-dir))
+    (setq module-re (concat "\\(/\\|^\\)" (pop parts)
+                            js-imports-file-ext-regexp))
+    (setq parent-dir (concat (or (string-join
+                                  (reverse parts) "/") "") "/"))
+    (directory-files parent-dir t module-re)))
+
+(defun js-imports-resolve-paths (path &optional dir)
+  (let ((fullpath (expand-file-name path dir)))
+    (js-imports-sort-by-exts
+     (if (file-exists-p fullpath)
+         (if (not (file-directory-p fullpath))
+             (list fullpath)
+           (or (js-imports-get-path-ext-candidates
+                fullpath)
+               (js-imports-get-path-ext-candidates
+                (expand-file-name "index"
+                                  fullpath))))
+       (js-imports-get-path-ext-candidates fullpath)))))
 
 (defun js-imports-alias-path-to-real (path)
   "Convert aliased PATH to absolute file name."
-  (let (aliases alias-cell alias-paths alias alias-regexp real-path)
-    (setq aliases (js-imports-get-aliases))
-    (while (setq alias (pop aliases))
-      (setq alias-regexp (if (js-imports-string-blank-p alias)
-                             (concat "^" alias)
-                           (concat "^" (js-imports-slash alias))))
-      (setq alias-cell (assoc alias js-imports-project-aliases))
-      (setq alias-paths (cdr alias-cell))
-      (let (alias-path)
-        (while (setq alias-path (pop alias-paths))
-          (let* ((joined-path (js-imports-join-file
-                               alias-path
-                               (replace-regexp-in-string
-                                alias-regexp "" path)))
-                 (found-path (if (and
-                                  joined-path
-                                  (js-imports-get-ext joined-path)
-                                  (file-exists-p joined-path))
-                                 joined-path
-                               (or (js-imports-try-ext joined-path)
-                                   (js-imports-try-ext
-                                    (js-imports-join-file
-                                     joined-path "index"))))))
-            (when (and found-path (file-exists-p found-path))
-              (setq real-path found-path)
-              (setq aliases nil))))))
-    real-path))
+  (when-let ((alias-cell (seq-find (lambda (it)
+                                     (string-match-p
+                                      (concat "^" (car it)) path))
+                                   js-imports-project-aliases)))
+    (let* ((alias (car alias-cell))
+           (paths (cdr alias-cell))
+           (trimmed-path (if (string-empty-p alias)
+                             path
+                           (replace-regexp-in-string
+                            "^/" "" (replace-regexp-in-string
+                                     (concat  "^" alias)
+                                     ""
+                                     path)))))
+      (delete nil (mapcan (lambda (it) (js-imports-resolve-paths trimmed-path it))
+                          paths)))))
 
 (defun js-imports-add-ext (path ext)
   (if (js-imports-string-match-p js-imports-file-ext-regexp path)
@@ -924,18 +915,6 @@ If optional argument DIR is passed, PATH will be firstly expanded as relative."
       (setq real-path (js-imports-try-find-real-path real-path))
       real-path)))
 
-(defun js-imports-dependency-p (module &optional project-root)
-  "Check if DISPLAY-PATH is dependency in PROJECT-ROOT.
-Dependencies are recognized by `package.json' or `node_modules' of
-PROJECT-ROOT."
-  (let ((dependencies (js-imports-node-modules-candidates project-root))
-        (dirname (car (split-string module "/"))))
-    (or (member module dependencies)
-        (member dirname dependencies)
-        (when-let ((node-dir (js-imports-find-node-modules project-root)))
-          (or (js-imports-join-when-exists node-dir module)
-              (js-imports-join-when-exists node-dir dirname))))))
-
 (defun js-imports-try-find-real-path (path)
   (if (or (null path) (and (js-imports-string-match-p
                             js-imports-file-ext-regexp path)
@@ -1008,19 +987,6 @@ PROJECT-ROOT."
           (when-let ((path (js-imports-get-path-at-point)))
             (push path symbols))))
       (cl-remove-duplicates (reverse symbols) :test 'string=))))
-
-(defun js-imports-make-file-base-re (file)
-  (let ((ext (js-imports-get-ext file))
-        (filebase (js-imports-trim-ext file))
-        (ext-re))
-    (setq ext-re (if ext (concat "[\\.]" (regexp-opt (list ext)) "$")
-                   js-imports-file-ext-regexp))
-    (concat "\\(/\\|^\\)" filebase "\\($\\|" ext-re "\\)")))
-
-(defun js-imports-trim-ext (file)
-  (if-let ((ext (js-imports-get-ext file)))
-      (replace-regexp-in-string (concat "\\." ext "$") "" file)
-    file))
 
 (defun js-imports-preselect-file ()
   "Preselect function for file sources."
@@ -1573,7 +1539,7 @@ File is specified in the variable `js-imports-current-export-path.'."
         (nil item)))
 
 (defun js-imports-stringify (x)
-  "Convert any object to string."
+  "Convert X to string."
   (cl-typecase x
     (string x)
     (symbol (symbol-name x))
@@ -1582,20 +1548,36 @@ File is specified in the variable `js-imports-current-export-path.'."
     (t (format "%s" x))))
 
 (defun js-imports-skip-whitespace-forward ()
-  (skip-chars-forward "\s\t\n")
-  (when (and (looking-at "\\(//\\)\\|\\(/[*]\\)")
-             (js-imports-re-search-forward "." nil t 1))
-    (unless (>= (point-min) (point))
-      (backward-char 1))
-    (skip-chars-forward "\s\t\n")))
+  "Move point forward accross whitespace and comments.
+
+Returns the distance traveled, either zero or positive."
+  (let ((curr)
+        (total (skip-chars-forward "\s\t\n"))
+        (max (1- (point-max))))
+    (while (and (> max (point))
+                (setq curr (member (buffer-substring-no-properties
+                                    (point)
+                                    (+ 2 (point))) '("/*" "//"))))
+      (cond ((string= "//" (car curr))
+             (forward-line 1)
+             (setq total (+ total (skip-chars-forward "\s\t\n"))))
+            ((string= "/*" (car curr))
+             (js-imports-re-search-forward "\\([*]/\\)" nil t 1)
+             (setq total (+ total (skip-chars-forward "\s\t\n"))))))
+    total))
 
 (defun js-imports-skip-whitespace-backward ()
-  (skip-chars-backward "\s\t\n")
-  (when (and (looking-back "\\(//\\)\\|\\(/[*]\\)" 1)
-             (js-imports-re-search-backward "." nil t 1))
-    (unless (>= (point-min) (point))
-      (forward-char 1))
-    (skip-chars-backward "\s\t\n")))
+  "Move point backward accross whitespace and comments.
+
+Returns the distance traveled, either zero or positive."
+  (let ((total (skip-chars-backward "\s\t\n"))
+        (min (1+ (point-min))))
+    (while (and (> (point) min)
+                (or (js-imports-inside-comment-p)
+                    (looking-back "*/" 0)))
+      (js-imports-re-search-backward "\\(//\\)\\|\\(/[*]\\)" nil t 1)
+      (setq total (+ total (skip-chars-backward "\s\t\n"))))
+    total))
 
 (defun js-imports-get-word-if-valid ()
   "Return word at point if it is valid and not reservered, otherwise nil."
@@ -1664,10 +1646,6 @@ File is specified in the variable `js-imports-current-export-path.'."
 If IGNORE-CASE is non-nil, the comparison will ignore case differences."
   (let ((case-fold-search ignore-case))
     (not (null (string-match-p (regexp-quote needle) str)))))
-
-(defun js-imports-string-blank-p (str)
-  "Return t if STR is nil or empty, otherwise return nil."
-  (or (null str) (string= "" str)))
 
 (defun js-imports-count-matches (regexp str &optional start end)
   "Count occurrences of REGEXP in STR."
