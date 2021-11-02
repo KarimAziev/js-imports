@@ -3004,7 +3004,7 @@ CANDIDATE should be propertizied with property `display-path'."
                        'js-imports-rename-import))))
     map))
 
-(defun js-imports-set-completion (var value &optional &rest _ignored)
+(defun js-imports-set-completion (var value &rest _ignored)
   "Set VAR to VALUE."
   (pcase value
     ('ivy-read (funcall 'js-imports-ivy-setup))
