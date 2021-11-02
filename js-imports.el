@@ -222,7 +222,7 @@ relative to BASE-URL if provided or project directory."
                 paths)))
     (seq-sort-by (lambda (it) (length (car it))) #'> alist)))
 
-(defun js-imports-set-alias (var value &optional &rest _ignored)
+(defun js-imports-set-alias (var value &rest _ignored)
   "Set VAR (`js-imports-project-aliases') to VALUE."
   (let ((aliases (js-imports-normalize-aliases value)))
     (set var aliases)))
