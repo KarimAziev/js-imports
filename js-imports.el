@@ -2738,16 +2738,20 @@ CANDIDATE should be propertizied with property `display-path'."
 (defun js-imports-ivy-preview-file ()
   (interactive)
   (require 'ivy)
-  (let ((cand (ivy-state-current ivy-last)))
-    (with-current-buffer js-imports-current-buffer
-      (js-imports-view-file cand))))
+  (let ((cand (js-imports-path-to-real (ivy-state-current ivy-last)))
+        (exports))
+    (setq exports (js-imports-extract-all-exports cand))
+    (js-imports-with-popup "*js-imports*"
+                           (dolist (it exports)
+                             (insert "\n"
+                                     (js-imports-transform-symbol it))))))
 
 (defun js-imports-ivy-setup ()
   (require 'ivy)
   (define-key js-imports-files-map (kbd "C-c M-o")
-    #'js-imports-ivy-find-file-other-window)
+    'js-imports-ivy-find-file-other-window)
   (define-key js-imports-files-map (kbd "C-j")
-    #'js-imports-ivy-preview-file)
+    'js-imports-ivy-preview-file)
   (ivy-set-actions
    'js-imports
    '(("f" js-imports-find-file "find file")
@@ -2994,16 +2998,13 @@ CANDIDATE should be propertizied with property `display-path'."
 
 (defun js-imports-set-completion (var value &rest _ignored)
   "Set VAR to VALUE."
-  (js-imports-helm-reset-sources)
   (pcase value
-    ('ivy-read (funcall 'js-imports-ivy-setup))
-    ('helm (funcall 'js-imports-helm-setup))
+    ('ivy-completing-read (funcall 'js-imports-ivy-setup))
+    ('helm-completing-read (funcall 'js-imports-helm-setup))
     (_ (funcall 'js-imports-helm-reset-sources)))
   (set var value))
 
-(defcustom js-imports-completion-system
-  (or completing-read-function
-      'ido-completing-read)
+(defcustom js-imports-completion-system 'ido-completing-read
   "Which completion system to use."
   :group 'js-imports
   :set 'js-imports-set-completion
