@@ -33,7 +33,7 @@
 
 (require 'cl-lib)
 (require 'json)
-(require 'ido)
+
 (eval-and-compile
   (require 'cc-mode))
 
