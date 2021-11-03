@@ -40,22 +40,6 @@
 (eval-when-compile
   (require 'subr-x))
 
-(declare-function ivy-read "ivy")
-(declare-function ivy-exit-with-action "ivy")
-(declare-function ivy-set-actions "ivy")
-(declare-function ivy-state-current "ivy")
-(declare-function ivy-set-display-transformer "ivy")
-(declare-function helm-refresh "helm")
-(declare-function helm-execute-persistent-action "helm")
-(declare-function helm-attrset "helm")
-(declare-function helm-get-selection "helm")
-(declare-function helm-run-after-exit "helm")
-(declare-function helm-make-source "helm")
-(declare-function helm "helm")
-(declare-function helm-get-selection "helm")
-(declare-function helm-make-source "helm")
-(declare-function helm-run-after-exit "helm")
-
 (defgroup js-imports nil
   "Minor mode providing JavaScript import."
   :link '(url-link :tag "Repository"
@@ -2734,12 +2718,14 @@ CANDIDATE should be propertizied with property `display-path'."
 (defun js-imports-ivy-find-file-other-window ()
   (interactive)
   (require 'ivy)
-  (ivy-exit-with-action 'js-imports-find-file-other-window))
+  (when (fboundp 'ivy-exit-with-action)
+    (ivy-exit-with-action 'js-imports-find-file-other-window)))
 
 (defun js-imports-ivy-preview-file ()
   (interactive)
   (require 'ivy)
-  (let ((cand (js-imports-path-to-real (ivy-state-current ivy-last)))
+  (let ((cand (js-imports-path-to-real (when (fboundp 'ivy-state-current)
+                                         (ivy-state-current ivy-last))))
         (exports))
     (setq exports (js-imports-extract-all-exports cand))
     (js-imports-with-popup "*js-imports-file*"
@@ -2752,29 +2738,36 @@ CANDIDATE should be propertizied with property `display-path'."
   (define-key js-imports-files-map (kbd "C-c M-o")
     'js-imports-ivy-find-file-other-window)
   (define-key js-imports-files-map (kbd "C-j") 'js-imports-ivy-preview-file)
-  (ivy-set-actions
-   'js-imports
-   '(("f" js-imports-find-file "find file")
-     ("j" js-imports-find-file-other-window "find file other window")))
-  (ivy-set-display-transformer
-   'js-imports-symbols-menu
-   'js-imports-transform-symbol))
+  (when (fboundp 'ivy-set-actions)
+    (ivy-set-actions
+     'js-imports
+     '(("f" js-imports-find-file "find file")
+       ("j" js-imports-find-file-other-window "find file other window"))))
+  (when (fboundp 'ivy-set-display-transformer)
+    (ivy-set-display-transformer
+     'js-imports-symbols-menu
+     'js-imports-transform-symbol)))
 
 (defvar helm-map)
 (defun js-imports-helm-find-file ()
   (require 'helm)
-  (helm-run-after-exit
-   'js-imports-find-file
-   (helm-get-selection)))
+  (when (fboundp 'helm-run-after-exit)
+    (helm-run-after-exit
+     'js-imports-find-file
+     (when (fboundp 'helm-get-selection)
+       (helm-get-selection)))))
 (defun js-imports-helm-find-file-other-window ()
   (require 'helm)
-  (helm-run-after-exit
-   'js-imports-find-file-other-window
-   (helm-get-selection)))
+  (when (fboundp 'helm-run-after-exit)
+    (helm-run-after-exit
+     'js-imports-find-file-other-window
+     (when (fboundp 'helm-get-selection)
+       (helm-get-selection)))))
 (defun js-imports-helm-setup ()
   (require 'helm)
   (js-imports-helm-reset-sources)
-  (setq js-imports-switch-alias-post-command #'helm-refresh)
+  (setq js-imports-switch-alias-post-command (and (fboundp 'helm-refresh)
+                                                  'helm-refresh))
   (set-keymap-parent js-imports-files-map helm-map)
   (define-key js-imports-files-map (kbd "C-c M-o") #'js-imports-helm-find-file)
   (define-key js-imports-files-map
@@ -2790,78 +2783,78 @@ CANDIDATE should be propertizied with property `display-path'."
     (when (fboundp 'helm-candidate-buffer)
       (setq js-imports-buffer-files-source
             (helm-make-source
-                "Imported files"
-                'helm-source-in-buffer
-              :init
-              (lambda ()
-                (with-current-buffer
-                    (helm-candidate-buffer 'global)
-                  (let ((items (with-current-buffer
-                                   js-imports-current-buffer
-                                 (js-imports-find-imported-files))))
-                    (mapc (lambda (it) (insert it)
-                            (newline-and-indent))
-                          items))
-                  (goto-char (point-min))))
-              :get-line #'buffer-substring-no-properties
-              :action 'js-imports-helm-file-actions
-              :keymap js-imports-files-map
-              :group 'js-imports
-              :persistent-action #'js-imports-view-file
-              :mode-line (list "Imports"))))
+             "Imported files"
+             'helm-source-in-buffer
+             :init
+             (lambda ()
+               (with-current-buffer
+                   (helm-candidate-buffer 'global)
+                 (let ((items (with-current-buffer
+                                  js-imports-current-buffer
+                                (js-imports-find-imported-files))))
+                   (mapc (lambda (it) (insert it)
+                           (newline-and-indent))
+                         items))
+                 (goto-char (point-min))))
+             :get-line #'buffer-substring-no-properties
+             :action 'js-imports-helm-file-actions
+             :keymap js-imports-files-map
+             :group 'js-imports
+             :persistent-action #'js-imports-view-file
+             :mode-line (list "Imports"))))
     (setq js-imports-project-files-source
           (helm-make-source
-              "Project files"
-              'helm-source-sync
-            :group 'js-imports
-            :mode-line (list "File(s)")
-            :candidate-number-limit js-imports-helm-files-number-limit
-            :action 'js-imports-helm-file-actions
-            :persistent-action #'js-imports-view-file
-            :keymap js-imports-files-map
-            :candidates #'js-imports-find-project-files
-            :filtered-candidate-transformer
-            #'js-imports-project-files-transformer))
+           "Project files"
+           'helm-source-sync
+           :group 'js-imports
+           :mode-line (list "File(s)")
+           :candidate-number-limit js-imports-helm-files-number-limit
+           :action 'js-imports-helm-file-actions
+           :persistent-action #'js-imports-view-file
+           :keymap js-imports-files-map
+           :candidates #'js-imports-find-project-files
+           :filtered-candidate-transformer
+           #'js-imports-project-files-transformer))
     (setq js-imports-node-modules-source
           (helm-make-source
-              "Node Modules" 'helm-source-sync
-            :candidates #'js-imports-node-modules-candidates
-            :candidate-number-limit js-imports-helm-dependencies-number-limit
-            :action 'js-imports-helm-file-actions
-            :mode-line (list "Dependencies")
-            :keymap js-imports-files-map
-            :persistent-action #'js-imports-view-file
-            :group 'js-imports)))
+           "Node Modules" 'helm-source-sync
+           :candidates #'js-imports-node-modules-candidates
+           :candidate-number-limit js-imports-helm-dependencies-number-limit
+           :action 'js-imports-helm-file-actions
+           :mode-line (list "Dependencies")
+           :keymap js-imports-files-map
+           :persistent-action #'js-imports-view-file
+           :group 'js-imports)))
   (when (and (boundp 'helm-map)
              (fboundp 'helm-make-source))
     (setq js-imports-imported-symbols-source
           (helm-make-source
-              "Imported"
-              'helm-source-sync
-            :candidates 'js-imports-imported-candidates-in-buffer
-            :candidate-transformer
-            (lambda (candidates)
-              (with-current-buffer js-imports-current-buffer
-                (when js-imports-current-export-path
-                  (setq candidates
-                        (js-imports-filter-with-prop
-                         :display-path
-                         js-imports-current-export-path
-                         candidates))))
-              candidates)
-            :action '(("Jump" . js-imports-jump-to-item-in-buffer)
-                      ("Rename" . js-imports-rename-import)
-                      ("Quick delete" . js-imports-delete-import-item)
-                      ("Delete whole import" .
-                       js-imports-delete-import-statetement))
-            :persistent-action (lambda (it)
-                                 (js-imports-jump-to-item-in-buffer
-                                  (js-imports-display-to-real-imports it)))
-            :keymap js-imports-helm-imported-symbols-map
-            :volatile t
-            :display-to-real #'js-imports-display-to-real-imports
-            :persistent-help "Show symbol"
-            :marked-with-props 'withprop))
+           "Imported"
+           'helm-source-sync
+           :candidates 'js-imports-imported-candidates-in-buffer
+           :candidate-transformer
+           (lambda (candidates)
+             (with-current-buffer js-imports-current-buffer
+               (when js-imports-current-export-path
+                 (setq candidates
+                       (js-imports-filter-with-prop
+                        :display-path
+                        js-imports-current-export-path
+                        candidates))))
+             candidates)
+           :action '(("Jump" . js-imports-jump-to-item-in-buffer)
+                     ("Rename" . js-imports-rename-import)
+                     ("Quick delete" . js-imports-delete-import-item)
+                     ("Delete whole import" .
+                      js-imports-delete-import-statetement))
+           :persistent-action (lambda (it)
+                                (js-imports-jump-to-item-in-buffer
+                                 (js-imports-display-to-real-imports it)))
+           :keymap js-imports-helm-imported-symbols-map
+           :volatile t
+           :display-to-real #'js-imports-display-to-real-imports
+           :persistent-help "Show symbol"
+           :marked-with-props 'withprop))
     (setq js-imports-exports-source
           (helm-make-source
            "Exports" 'helm-source-sync
@@ -2904,18 +2897,18 @@ CANDIDATE should be propertizied with property `display-path'."
                  (js-imports-highlight-word))))))
     (setq js-imports-definitions-source
           (helm-make-source
-              "Definitions" 'helm-source-sync
-            :candidates (lambda () (with-current-buffer js-imports-current-buffer
-                                (js-imports-extract-definitions
-                                 buffer-file-name (point))))
-            :marked-with-props 'withprop
-            :volatile t
-            :action '(("Jump" .
-                       (lambda (_it)
-                         (when (fboundp 'helm-get-selection)
-                           (js-imports-jump-to-item-in-buffer
-                            (helm-get-selection nil
-                                                'withprop))))))))))
+           "Definitions" 'helm-source-sync
+           :candidates (lambda () (with-current-buffer js-imports-current-buffer
+                                    (js-imports-extract-definitions
+                                     buffer-file-name (point))))
+           :marked-with-props 'withprop
+           :volatile t
+           :action '(("Jump" .
+                      (lambda (_it)
+                        (when (fboundp 'helm-get-selection)
+                          (js-imports-jump-to-item-in-buffer
+                           (helm-get-selection nil
+                                               'withprop))))))))))
 
 (defun js-imports-view-file (candidate)
   (if-let ((file (js-imports-path-to-real candidate)))
@@ -3345,17 +3338,18 @@ Add selected choices to existing or new import statement."
                       (js-imports-extract-definitions
                        buffer-file-name (point)))
                      (js-imports-extract-all-exports buffer-file-name))))
-       (ivy-read "Jump to\s"
-                 choices
-                 :preselect (js-imports-preselect-symbol)
-                 :caller 'js-imports-symbols-menu
-                 :action (lambda (it)
-                           (if (and (boundp 'ivy-exit)
-                                    ivy-exit)
-                               (js-imports-jump-to-symbol-action it)
-                             (js-imports-jump-to-item-in-buffer
-                              it
-                              js-imports-current-buffer))))))
+       (when (fboundp 'ivy-read)
+         (ivy-read "Jump to\s"
+                   choices
+                   :preselect (js-imports-preselect-symbol)
+                   :caller 'js-imports-symbols-menu
+                   :action (lambda (it)
+                             (if (and (boundp 'ivy-exit)
+                                      ivy-exit)
+                                 (js-imports-jump-to-symbol-action it)
+                               (js-imports-jump-to-item-in-buffer
+                                it
+                                js-imports-current-buffer)))))))
     (_ (when-let* ((choices (append (js-imports-extract-all-exports
                                      buffer-file-name)
                                     (js-imports-extract-es-imports
