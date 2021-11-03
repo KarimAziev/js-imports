@@ -2680,7 +2680,6 @@ CANDIDATE should be propertizied with property `display-path'."
     (exit-minibuffer)))
 
 (defun js-imports-read-project-files (&optional caller)
-  (require 'js-imports)
   (minibuffer-with-setup-hook
       (lambda ()
         (use-local-map
