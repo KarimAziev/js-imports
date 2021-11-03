@@ -33,27 +33,28 @@
 
 (require 'cl-lib)
 (require 'json)
+(require 'ido)
 (eval-and-compile
   (require 'cc-mode))
 
 (eval-when-compile
   (require 'subr-x))
 
-(declare-function ivy-read "ext:ivy")
-(declare-function ivy-exit-with-action "ext:ivy")
-(declare-function ivy-set-actions "ext:ivy")
-(declare-function ivy-state-current "ext:ivy")
-(declare-function ivy-set-display-transformer "ext:ivy")
-(declare-function helm-refresh "ext:helm")
-(declare-function helm-execute-persistent-action "ext:helm")
-(declare-function helm-attrset "ext:helm")
-(declare-function helm-get-selection "ext:helm")
-(declare-function helm-run-after-exit "ext:helm")
-(declare-function helm-make-source "ext:helm")
-(declare-function helm "ext:helm")
-(declare-function helm-get-selection "ext:helm")
-(declare-function helm-make-source "ext:helm")
-(declare-function helm-run-after-exit "ext:helm")
+(declare-function ivy-read "ivy")
+(declare-function ivy-exit-with-action "ivy")
+(declare-function ivy-set-actions "ivy")
+(declare-function ivy-state-current "ivy")
+(declare-function ivy-set-display-transformer "ivy")
+(declare-function helm-refresh "helm")
+(declare-function helm-execute-persistent-action "helm")
+(declare-function helm-attrset "helm")
+(declare-function helm-get-selection "helm")
+(declare-function helm-run-after-exit "helm")
+(declare-function helm-make-source "helm")
+(declare-function helm "helm")
+(declare-function helm-get-selection "helm")
+(declare-function helm-make-source "helm")
+(declare-function helm-run-after-exit "helm")
 
 (defgroup js-imports nil
   "Minor mode providing JavaScript import."
@@ -313,7 +314,7 @@ Supposed to use as argument of `skip-chars-forward'.")
   "\\([a-zA-Z_$]\\(?:\\s_\\|\\sw\\)*\\)\\([\s\t\n]+as[\s\t\n]+\\([_$A-Za-z0-9]+\\)\\)?")
 
 (defconst js-imports-regexp-name-set
-  (concat "[" js-imports-regexp-name "]")
+  "[_$A-Za-z0-9]"
   "Regexp matching the start of an identifier.")
 
 (defconst js-imports-regexp-import-keyword
@@ -1731,31 +1732,31 @@ Result depends on syntax table's string quote character."
                                  :as-name valid-id)
       (skip-chars-backward "\s\t\n"))))
 
-(cl-defun js-imports-highlight-word (&key pos limit buffer face secs jump)
+(cl-defun js-imports-highlight-word (&key start limit buffer face secs jump)
   "Jumps to BEG and highlight word at point."
   (unless buffer (setq buffer (current-buffer)))
   (setq buffer (get-buffer-create buffer))
-  (unless pos (setq pos (point)))
-  (when (and jump (not (= pos (point))))
-    (goto-char pos))
+  (unless start (setq start (point)))
+  (when (and jump (not (= start (point))))
+    (goto-char start))
   (unless face (setq face 'js-imports-highlight-face))
   (with-current-buffer buffer
     (let* ((buffer-name (if (bufferp buffer) (intern (buffer-name buffer))
                           (intern buffer)))
-           (end (+ pos (or limit (length (js-imports-which-word)))))
+           (end (+ start (or limit (length (js-imports-which-word)))))
            (overlay (get buffer-name 'overlay)))
       (when overlay
         (delete-overlay overlay))
-      (setq overlay (make-overlay pos end buffer))
+      (setq overlay (make-overlay start end buffer))
       (put buffer-name 'overlay overlay)
       (overlay-put overlay 'face face)
       (unwind-protect
           (progn
             (when (and overlay (overlayp overlay))
-              (move-overlay overlay pos end)))
+              (move-overlay overlay start end)))
         (run-with-timer (or 1 secs) nil (lambda (o) (when (and (not (null o))
-                                                               (overlayp o))
-                                                      (delete-overlay o)))
+                                                          (overlayp o))
+                                                 (delete-overlay o)))
                         overlay)))))
 
 (defun js-imports-extract-parent-arguments (&optional parens-positions)
@@ -2741,7 +2742,7 @@ CANDIDATE should be propertizied with property `display-path'."
   (let ((cand (js-imports-path-to-real (ivy-state-current ivy-last)))
         (exports))
     (setq exports (js-imports-extract-all-exports cand))
-    (js-imports-with-popup "*js-imports*"
+    (js-imports-with-popup "*js-imports-file*"
                            (dolist (it exports)
                              (insert "\n"
                                      (js-imports-transform-symbol it))))))
@@ -2750,8 +2751,7 @@ CANDIDATE should be propertizied with property `display-path'."
   (require 'ivy)
   (define-key js-imports-files-map (kbd "C-c M-o")
     'js-imports-ivy-find-file-other-window)
-  (define-key js-imports-files-map (kbd "C-j")
-    'js-imports-ivy-preview-file)
+  (define-key js-imports-files-map (kbd "C-j") 'js-imports-ivy-preview-file)
   (ivy-set-actions
    'js-imports
    '(("f" js-imports-find-file "find file")
@@ -2998,20 +2998,22 @@ CANDIDATE should be propertizied with property `display-path'."
 
 (defun js-imports-set-completion (var value &rest _ignored)
   "Set VAR to VALUE."
-  (pcase value
-    ('ivy-completing-read (funcall 'js-imports-ivy-setup))
-    ('helm-completing-read (funcall 'js-imports-helm-setup))
-    (_ (funcall 'js-imports-helm-reset-sources)))
+  (cond ((eq value 'ivy-completing-read)
+         (funcall 'js-imports-ivy-setup))
+        ((eq value 'helm-completing-read)
+         (funcall 'js-imports-helm-setup)))
   (set var value))
 
 (defcustom js-imports-completion-system 'ido-completing-read
   "Which completion system to use."
   :group 'js-imports
   :set 'js-imports-set-completion
-  :type '(choice (const :tag "Helm" helm-completing-read)
-                 (const :tag "Ivy" ivy-completing-read)
-                 (const :tag "Ido" ido-completing-read)
-                 (const :tag "Default" completion-read-function)))
+  :type '(radio
+          (const :tag "Ido" ido-completing-read)
+          (const :tag "Helm" helm-completing-read)
+          (const :tag "Ivy" ivy-completing-read)
+          (const :tag "Default" completing-read-default)
+          (function :tag "Custom function")))
 
 (add-variable-watcher 'js-imports-completion-system
                       'js-imports-set-completion)
