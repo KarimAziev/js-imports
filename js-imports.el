@@ -792,20 +792,12 @@ Optional argument DIR is used as default directory."
   (when (and path (stringp path))
     (setq path (js-imports-strip-text-props path))
     (cond ((file-name-absolute-p path)
-           (message "|	Path  |	%s"
-                    path)
            (car (js-imports-resolve-paths path)))
           ((js-imports-relative-p path)
-           (message "|	relative  |	%s"
-                    path)
            (car (js-imports-resolve-paths path dir)))
           ((js-imports-dependency-p path (js-imports-find-project-root))
-           (message "|	depened   |	%s"
-                    path)
            (js-imports-node-module-to-real path))
           (t
-           (message "|	alias   |	%s"
-                    path)
            (car (js-imports-alias-path-to-real path))))))
 
 (defun js-imports-sort-by-exts (files &optional extensions)
