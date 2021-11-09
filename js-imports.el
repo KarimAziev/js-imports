@@ -354,6 +354,7 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
   :group 'js-imports)
 
 (defun js-imports-syntax-propertize-regexp (end)
+  "Propertize regexp syntax and goto END position."
   (let ((ppss (syntax-ppss)))
     (when (eq (nth 3 ppss) ?/)
       (goto-char (nth 8 ppss))
@@ -366,6 +367,7 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
         (goto-char end)))))
 
 (defun js-imports-syntax-propertize (start end)
+  "Propertize text beetween START and END."
   (goto-char start)
   (js-imports-syntax-propertize-regexp end)
   (funcall
@@ -386,6 +388,7 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
    (point) end))
 
 (defmacro js-imports-with-temp-buffer (&rest body)
+  "Setup temp buffer and execute BODY."
   `(with-temp-buffer
      (erase-buffer)
      (progn
@@ -789,12 +792,21 @@ Optional argument DIR is used as default directory."
   (when (and path (stringp path))
     (setq path (js-imports-strip-text-props path))
     (cond ((file-name-absolute-p path)
+           (message "|	Path  |	%s"
+                    path)
            (car (js-imports-resolve-paths path)))
           ((js-imports-relative-p path)
+           (message "|	relative  |	%s"
+                    path)
            (car (js-imports-resolve-paths path dir)))
           ((js-imports-dependency-p path (js-imports-find-project-root))
+           (message "|	depened   |	%s"
+                    path)
            (js-imports-node-module-to-real path))
-          (t (car (js-imports-alias-path-to-real path))))))
+          (t
+           (message "|	alias   |	%s"
+                    path)
+           (car (js-imports-alias-path-to-real path))))))
 
 (defun js-imports-sort-by-exts (files &optional extensions)
   "Sort FILES by optional argument EXTENSIONS.
@@ -907,14 +919,33 @@ If DIRECTION is a negative return previuos or last element."
                             (hash-table-keys hash)))
                         js-imports-package-json-sections))))
 
+(defun js-imports-extract-subpackages (path)
+  "Return directories in PATH with package.json."
+  (let ((dirs (and path
+                   (file-directory-p path)
+                   (file-exists-p (expand-file-name "package.json" path))
+                   (seq-filter (lambda (it)
+                                 (when (and (file-directory-p it)
+                                            (file-exists-p
+                                             (expand-file-name "package.json" it)))
+                                   it))
+                               (mapcar (lambda (it) (expand-file-name it path))
+                                       (delete ".." (delete "." (directory-files path nil))))))))
+    (append dirs (mapcan 'js-imports-extract-subpackages dirs))))
+
 (defun js-imports-find-node-modules-submodules (node-modules-path modules)
-  (let ((submodules))
+  "Extract nested packages from MODULES.
+Every element in MODULES should be listed in packages.json.
+NODE-MODULES-PATH is used to expand path of MODULES."
+  (let ((submodules)
+        (prefix-regexp (concat "^" (js-imports-slash node-modules-path))))
     (dolist (element modules)
-      (unless (js-imports-string-contains-p "/" element)
-        (setq submodules (append submodules
-                                 (js-imports-find-interfaces
-                                  element
-                                  node-modules-path)))))
+      (let ((path (expand-file-name element node-modules-path))
+            (dirs))
+        (setq dirs (mapcar (lambda (it) (replace-regexp-in-string prefix-regexp ""
+                                                             it))
+                           (js-imports-extract-subpackages path)))
+        (setq submodules (append dirs submodules))))
     submodules))
 
 (defun js-imports-node-modules-candidates (&optional project-root)
@@ -934,20 +965,6 @@ If DIRECTION is a negative return previuos or last element."
                                 modules)))))
         (append modules submodules)
       modules)))
-
-(defun js-imports-find-interfaces (module directory)
-  "Expand MODULE to DIRECTORY and return files with typescript declarations."
-  (when-let* ((real-path (js-imports-join-when-exists directory module))
-              (files (seq-remove 'js-imports-is-index-file-p
-                                 (js-imports-directory-files
-                                  real-path nil "\\.d.ts$"))))
-    (mapcar (lambda (it) (js-imports-join-file
-                     module
-                     (js-imports-compose-from it
-                                              'file-name-nondirectory
-                                              'directory-file-name
-                                              'js-imports-remove-ext)))
-            files)))
 
 (defun js-imports-find-node-modules (&optional project-dir)
   "Return the path to node-modules for PROJECT-DIR."
@@ -993,6 +1010,7 @@ If DIRECTION is a negative return previuos or last element."
                                js-imports-file-index-regexp
                                it))
                       files)))
+        (car (js-imports-resolve-paths path))
         (js-imports-try-ext path)
         (js-imports-try-ext (js-imports-join-file path "index"))
         (when-let* ((package-json (js-imports-join-when-exists
@@ -1053,6 +1071,7 @@ If DIRECTION is a negative return previuos or last element."
     ""))
 
 (defun js-imports-parse-es-imports (&optional real-path)
+  "Extract imported symbols in REAL-PATH."
   (goto-char 0)
   (let (symbols)
     (while (js-imports-re-search-forward
@@ -1124,10 +1143,12 @@ If DIRECTION is a negative return previuos or last element."
     symbols))
 
 (defun js-imports-extract-es-imports (real-path)
+  "Return imported with ES syntax symbols in REAL-PATH."
   (js-imports-with-buffer-or-file-content real-path
       (js-imports-parse-es-imports real-path)))
 
-(defun js-imports-extract-esm-braced-symbols (&optional re)
+(defun js-imports-extract-esm-braced-symbols (&optional regexp)
+  "At start of braces extract items matching REGEXP."
   (save-excursion
     (when-let* ((brace-start (when (looking-at-p "{") (point)))
                 (brace-end (save-excursion (forward-list) (point))))
@@ -1135,7 +1156,7 @@ If DIRECTION is a negative return previuos or last element."
         (save-restriction
           (narrow-to-region brace-start brace-end)
           (js-imports-remove-comments)
-          (while (js-imports-re-search-forward re nil t 1)
+          (while (js-imports-re-search-forward regexp nil t 1)
             (when-let* ((start (match-beginning 0))
                         (end (match-end 0))
                         (parts (split-string (buffer-substring-no-properties
@@ -1159,7 +1180,7 @@ File is specified in the variable `js-imports-current-export-path.'."
     js-imports-export-candidates-in-path))
 
 (defun js-imports-extract-all-exports (&optional init-path)
-  "Return exports in PATH defined with CommonJs syntax."
+  "Return all found exports in INIT-PATH and reexported modules."
   (let* ((esm-exports)
          (cjs-exports)
          (external-paths)
@@ -1456,7 +1477,7 @@ File is specified in the variable `js-imports-current-export-path.'."
             (when (looking-at "}")
               (forward-char 1)
               (backward-list 1))
-            (skip-chars-backward (js-imports-which-word))
+            (skip-chars-backward js-imports-regexp-name)
             (push (js-imports-maybe-make-child-at-point parent) children))
           (seq-remove 'null children))))))
 
@@ -1583,8 +1604,8 @@ File is specified in the variable `js-imports-current-export-path.'."
 
 (defun js-imports-strip-text-props (item)
   "If ITEM is string, return it without text properties.
-   If ITEM is symbol, return it is `symbol-name.'
-   Otherwise return nil."
+If ITEM is symbol, return it is `symbol-name.'
+Otherwise return nil."
   (cond ((stringp item)
          (set-text-properties 0 (length item) nil item)
          item)
@@ -1602,12 +1623,15 @@ File is specified in the variable `js-imports-current-export-path.'."
     (t (format "%s" x))))
 
 (defun js-imports-looking-at-comment-p (&optional max)
+  "Return if point located at the start of comment.
+Optional argument MAX defines a limit."
   (and (> (or max (1- (point-max))) (point))
        (car (member (buffer-substring-no-properties
                      (point)
                      (+ 2 (point))) '("/*" "//")))))
 
 (defun js-imports-get-prev-char ()
+  "Return previous char at point."
   (when (> (point) (point-min))
     (buffer-substring-no-properties
      (1- (point)) (point))))
@@ -1634,13 +1658,17 @@ Returns the distance traveled, either zero or positive."
 
 Returns the distance traveled, either zero or positive."
   (let ((total (skip-chars-backward "\s\t\n"))
-        (min (1+ (point-min))))
+        (min (1+ (point-min)))
+        (pos))
     (while (and (> (point) min)
                 (or (js-imports-inside-comment-p)
                     (equal (js-imports-get-prev-char) "/")))
-      (when (js-imports-re-search-backward "[^\s\t\n]" nil t 1)
-        (forward-char 1))
+      (setq pos (js-imports-re-search-backward "[^\s\t\n]" nil t 1))
       (setq total (+ total (skip-chars-backward "\s\t\n"))))
+    (when pos
+      (goto-char pos)
+      (unless (looking-at "//\\|/[*]")
+        (forward-char 1)))
     total))
 
 (defun js-imports-get-word-if-valid ()
@@ -1761,12 +1789,13 @@ Result depends on syntax table's string quote character."
                              'js-imports-remove-ext)))
 
 (defun js-imports-compose-from (arg &rest functions)
-  "Performs right-to-left unary composition from FUNCTIONS."
+  "Performs right-to-left unary composition from FUNCTIONS with ARG."
   (seq-reduce (lambda (xs fn)
                 (funcall fn xs))
               (reverse functions) arg))
 
 (defun js-imports-maybe-make-child-at-point (&optional parent)
+  "Parse argument at point of PARENT."
   (when-let ((valid-id (js-imports-get-word-if-valid)))
     (skip-chars-backward valid-id)
     (prog1 (js-imports-make-item valid-id
@@ -2700,37 +2729,6 @@ CANDIDATE should be propertizied with property `display-path'."
                 (delete-region p1 p2)))))
       (remove-overlays beg end))))
 
-(cl-defun js-imports-completing-read (prompt
-                                      collection
-                                      &key
-                                      action
-                                      history
-                                      require-match)
-  (interactive)
-  (let* ((minibuffer-completion-table collection)
-         (minibuffer-completion-confirm (unless (eq require-match t)
-                                          require-match))
-         (base-keymap (if require-match
-                          minibuffer-local-must-match-map
-                        minibuffer-local-completion-map))
-         (keymap (make-composed-keymap
-                  minibuffer-local-must-match-map base-keymap))
-         (preselect (car minibuffer-completion-table))
-         (prompt (if (string-empty-p (format "%s" preselect))
-                     prompt
-                   (concat prompt "\s" (format "(default %s)" preselect))))
-         (result))
-    (setq result (read-from-minibuffer
-                  prompt
-                  nil
-                  keymap
-                  t
-                  history
-                  preselect))
-    (when action
-      (funcall action result))
-    result))
-
 (defun js-imports-select-next-alias ()
   "Select next alias and exit minibuffer."
   (interactive)
@@ -2743,13 +2741,13 @@ CANDIDATE should be propertizied with property `display-path'."
   (exit-minibuffer))
 
 (defvar js-imports-file-completions-maps
-  '((ivy-completing-read . (let ((map (make-sparse-keymap)))
-                             (define-key map (kbd "C-j")
-                               'js-imports-ivy-preview-file-exports)
-                             (define-key map
-                               (kbd "C-c M-o")
-                               'js-imports-ivy-find-file-other-window)
-                             map))))
+  `((ivy-completing-read . ,(let ((map (make-sparse-keymap)))
+                              (define-key map (kbd "C-j")
+                                'js-imports-ivy-preview-file-exports)
+                              (define-key map
+                                (kbd "C-c M-o")
+                                'js-imports-ivy-find-file-other-window)
+                              map))))
 
 (defun js-imports-setup-minibuffer-files ()
   "Setup minibuffer for reading files."
