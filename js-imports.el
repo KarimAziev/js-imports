@@ -1,10 +1,10 @@
-;;; js-imports.el --- Import for JavaScript files easily -*- lexical-binding: t -*-
+;;; js-imports.el --- Import JavaScript files easily -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020 Karim Aziiev <karim.aziiev@gmail.com>
 
 ;; Author: Karim Aziiev <karim.aziiev@gmail.com>
 ;; URL: https://github.com/KarimAziev/js-imports
-;; Keywords: convenience, matching, languages
+;; Keywords: convenience, tools
 ;; Version: 0.1.1
 ;; Package-Requires: ((emacs "26.1"))
 
@@ -27,7 +27,7 @@
 
 ;;; Commentary:
 
-;; This library provides easy importing and navigation for JavaScript files.
+;; This library provides importing and navigation for JavaScript files.
 
 ;;; Code:
 
@@ -45,7 +45,7 @@
   :link '(url-link :tag "Repository"
                    "https://github.com/KarimAziev/js-imports")
   :prefix 'js-imports
-  :group 'languages)
+  :group 'convenience)
 
 (defvar js-imports-current-alias nil)
 
@@ -854,7 +854,8 @@ PATH should be an absolute filename without extension."
                                      (concat  "^" alias)
                                      ""
                                      path)))))
-      (delete nil (mapcan (lambda (it) (js-imports-resolve-paths trimmed-path it))
+      (delete nil (mapcan (lambda (it)
+                            (js-imports-resolve-paths trimmed-path it))
                           paths)))))
 
 (defun js-imports-add-ext-if-not (file extension)
@@ -1439,24 +1440,24 @@ Return propertized string where PATH is added as :display-path"
               (setq delimiter (char-before))
               (save-excursion
                 (backward-char)
-                (skip-chars-backward "\s\t\n")
+                (skip-chars-backward "\s\t\n\r\f\v")
                 (setq prop (js-imports-which-word))
                 (when prop
                   (skip-chars-backward prop)
                   (push (cons prop (point)) children)))
               (cond ((char-equal delimiter ?:)
-                     (skip-chars-forward "\s\t\n")
+                     (skip-chars-forward "\s\t\n\r\f\v")
                      (when (looking-at-p js-imports-regexp-name-set)
                        (skip-chars-forward js-imports-regexp-name)
                        (skip-chars-forward "\s\t\n."))
                      (when (looking-at-p "=>")
                        (forward-char 2)
-                       (skip-chars-forward "\s\t\n"))
+                       (skip-chars-forward "\s\t\n\r\f\v"))
                      (if (looking-at-p "[({[]")
                          (progn
                            (while (looking-at-p "[({[]")
                              (forward-list)
-                             (skip-chars-forward "\s\t\n")
+                             (skip-chars-forward "\s\t\n\r\f\v")
                              (when (looking-at-p "=>")
                                (forward-char 2))
                              (skip-chars-forward "\s\t\n.")
@@ -1465,17 +1466,17 @@ Return propertized string where PATH is added as :display-path"
                     ((char-equal delimiter ?\()
                      (backward-char)
                      (forward-list)
-                     (skip-chars-forward "\s\t\n")
+                     (skip-chars-forward "\s\t\n\r\f\v")
                      (forward-list)
                      (forward-char))
                     ((char-equal delimiter ?,)
                      (progn
                        (save-excursion
-                         (skip-chars-forward "\s\t\n")
+                         (skip-chars-forward "\s\t\n\r\f\v")
                          (when-let ((word (js-imports-which-word))
                                     (pos (point)))
                            (skip-chars-forward word)
-                           (skip-chars-forward "\s\t\n")
+                           (skip-chars-forward "\s\t\n\r\f\v")
                            (push (cons word pos) children))))))))))
       (when children
         (seq-uniq (cl-remove 'null children))))))
@@ -1525,7 +1526,7 @@ Default value for SEPARATORS is whitespaces and * char."
 
 (defun js-imports-join-imports-names (default-name names)
   "Concatenates DEFAULT-NAME with NAMES."
-  (when (listp names)
+  (when (and names (listp names))
     (setq names (string-join names ", ")))
   (mapconcat 'string-trim
              (delete
@@ -1655,29 +1656,29 @@ Optional argument MAX defines a limit."
   "Move point forward across white space and comments.
 Return the distance traveled, either zero or positive."
   (let ((curr)
-        (total (skip-chars-forward "\s\t\n"))
+        (total (skip-chars-forward "\s\t\n\r\f\v"))
         (max (1- (point-max))))
     (while (and (>= max (point))
                 (setq curr (js-imports-looking-at-comment-p max)))
       (cond ((string= "//" curr)
              (forward-line 1)
-             (setq total (+ total (skip-chars-forward "\s\t\n"))))
+             (setq total (+ total (skip-chars-forward "\s\t\n\r\f\v"))))
             ((string= "/*" curr)
              (js-imports-re-search-forward "\\([*]/\\)" nil t 1)
-             (setq total (+ total (skip-chars-forward "\s\t\n"))))))
+             (setq total (+ total (skip-chars-forward "\s\t\n\r\f\v"))))))
     total))
 
 (defun js-imports-skip-whitespace-backward ()
   "Move point backward across whitespace and comments.
 Return the distance traveled, either zero or positive."
-  (let ((total (skip-chars-backward "\s\t\n"))
+  (let ((total (skip-chars-backward "\s\t\n\r\f\v"))
         (min (1+ (point-min)))
         (pos))
     (while (and (> (point) min)
                 (or (js-imports-inside-comment-p)
                     (equal (js-imports-get-prev-char) "/")))
-      (setq pos (js-imports-re-search-backward "[^\s\t\n]" nil t 1))
-      (setq total (+ total (skip-chars-backward "\s\t\n"))))
+      (setq pos (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1))
+      (setq total (+ total (skip-chars-backward "\s\t\n\r\f\v"))))
     (when pos
       (goto-char pos)
       (unless (looking-at "//\\|/[*]")
@@ -1809,7 +1810,7 @@ Result depends on syntax table's string quote character."
                                  :parent parent
                                  :var-type (or parent "argument")
                                  :as-name valid-id)
-      (skip-chars-backward "\s\t\n"))))
+      (skip-chars-backward "\s\t\n\r\f\v"))))
 
 (defun js-imports-highlight-word (&optional start buffer)
   "Jumps to START in BUFFER and highlight word at point."
@@ -1847,7 +1848,7 @@ Result depends on syntax table's string quote character."
                 (parent)
                 (items))
             (goto-char paren-pos)
-            (skip-chars-backward "\s\t\n")
+            (skip-chars-backward "\s\t\n\r\f\v")
             (setq parent
                   (save-excursion
                     (js-imports-re-search-backward
@@ -1859,7 +1860,7 @@ Result depends on syntax table's string quote character."
             (when parent
               (when (looking-back "=>" 1)
                 (backward-char 2)
-                (skip-chars-backward "\s\t\n")
+                (skip-chars-backward "\s\t\n\r\f\v")
                 (when-let ((child
                             (js-imports-maybe-make-child-at-point parent)))
                   (push child items)))
@@ -1868,7 +1869,7 @@ Result depends on syntax table's string quote character."
                                     (point)))
                          (start (progn (backward-list 1) (point))))
                 (forward-char)
-                (skip-chars-forward "\s\t\n")
+                (skip-chars-forward "\s\t\n\r\f\v")
                 (cond ((looking-at "{")
                        (setq items (append
                                     items
@@ -1881,13 +1882,13 @@ Result depends on syntax table's string quote character."
                                    (not (looking-at "(")))
                          (if (looking-at ",")
                              (skip-chars-backward "\s\t\n,")
-                           (skip-chars-backward "\s\t\n"))
+                           (skip-chars-backward "\s\t\n\r\f\v"))
                          (let ((child
                                 (js-imports-maybe-make-child-at-point
                                  parent)))
                            (push child items)
                            (skip-chars-backward child)
-                           (skip-chars-backward "\s\t\n"))
+                           (skip-chars-backward "\s\t\n\r\f\v"))
                          (unless
                              (js-imports-re-search-backward
                               "," start t 1)
@@ -2519,9 +2520,9 @@ Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-back
       (skip-chars-forward real-name)
       (if as-word
           (progn
-            (skip-chars-forward "\s\t\n")
+            (skip-chars-forward "\s\t\n\r\f\v")
             (skip-chars-forward "as")
-            (skip-chars-forward "\s\t\n")
+            (skip-chars-forward "\s\t\n\r\f\v")
             (when (and renamed-name
                        (string= renamed-name (js-imports-which-word)))
               (query-replace-regexp (concat "\\_<" renamed-name "\\_>")
@@ -2534,7 +2535,7 @@ Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-back
 (defun js-imports-ivy-insert-or-view-export (item)
   "Add ITEM into existing or new import statement."
   (if-let* ((exit (and (boundp 'ivy-exit)
-                       (not ivy-exit)))
+                       (null ivy-exit)))
             (real (js-imports-display-to-real-exports item))
             (definition (js-imports-find-definition real)))
       (progn (view-file-other-window
@@ -2594,9 +2595,11 @@ Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-back
                                         default))
                              default))))
                   (list default-fullname named)))))
-    (apply 'js-imports-insert-exports (append
-                                       args
-                                       (list js-imports-last-export-path)))))
+    (save-excursion
+      (apply
+       'js-imports-insert-exports (append
+                                   args
+                                   (list js-imports-last-export-path))))))
 
 (defvar js-imports-defaults-history (make-hash-table :test 'equal))
 
@@ -2764,12 +2767,12 @@ CANDIDATE should be propertizied with property `display-path'."
               (when (looking-at-p "}")
                 (setq p2 (point))
                 (goto-char p1)
-                (skip-chars-backward "\s\t\n")
+                (skip-chars-backward "\s\t\n\r\f\v")
                 (backward-char)
                 (when (looking-at-p "{")
                   (setq p2 (1+ p2))
                   (setq p1 (point))
-                  (skip-chars-backward  "\s\t\n")
+                  (skip-chars-backward  "\s\t\n\r\f\v")
                   (backward-char))
                 (when (looking-at-p ",")
                   (setq p1 (point))))
@@ -3213,7 +3216,7 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
         (cond ((and (null next-node)
                     (null brackets))
                (goto-char (point-max))
-               (skip-chars-backward "\s\t\n")
+               (skip-chars-backward "\s\t\n\r\f\v")
                (js-imports-skip-whitespace-backward))
               ((and (null brackets)
                     next-node)
@@ -3603,7 +3606,7 @@ For example `import someExport from '../enums' transforms to
 
 ;;;###autoload
 (defun js-imports-reset-cache ()
-  "Remove cache from variables `js-imports-files-cache' and `js-imports-json-hash'."
+  "Flush cache."
   (interactive)
   (setq js-imports-project-aliases nil)
   (maphash (lambda (key _value)
