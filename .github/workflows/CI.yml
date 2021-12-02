@@ -5,8 +5,6 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.emacs_version == 'snapshot' }}
-
     strategy:
       fail-fast: false
       matrix:
@@ -26,8 +24,8 @@ jobs:
       - uses: purcell/setup-emacs@master
         with:
           version: ${{ matrix.emacs_version }}
-      - run: make all
-
+      - uses: actions/checkout@v2
+      - run: make
   check:
     runs-on: ubuntu-latest
     strategy:
