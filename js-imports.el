@@ -1074,7 +1074,7 @@ NODE-MODULES-PATH is used to expand path of MODULES."
   (let (symbols)
     (while (js-imports-re-search-forward
             js-imports-regexp-import-keyword nil t 1)
-      (js-imports-skip-whitespace-forward)
+      (js-imports-forward-whitespace)
       (let (display-path imports)
         (cond ((js-imports-looking-at "*")
                (let (beg end renamed-name)
@@ -1108,9 +1108,9 @@ NODE-MODULES-PATH is used to expand path of MODULES."
                         :start (point))
                        imports)
                  (skip-chars-forward name)
-                 (js-imports-skip-whitespace-forward)
+                 (js-imports-forward-whitespace)
                  (skip-chars-forward ",")
-                 (js-imports-skip-whitespace-forward))))
+                 (js-imports-forward-whitespace))))
         (when (looking-at-p "{")
           (let ((map-func (lambda (item) (js-imports-propertize
                                      item
@@ -1123,7 +1123,7 @@ NODE-MODULES-PATH is used to expand path of MODULES."
             (setq imports (append imports named-items))))
         (unless (looking-at-p "[\"']")
           (js-imports-re-search-forward js-imports-from-keyword--re nil t 1)
-          (js-imports-skip-whitespace-forward)
+          (js-imports-forward-whitespace)
           (when (looking-at-p "[\"']")
             (save-excursion
               (forward-char 1)
@@ -1240,7 +1240,7 @@ File is specified in the variable `js-imports-current-export-path.'."
                           (unless (<= (point) (point-min))
                             (backward-char 1)
                             (not (looking-at "[\s\t\n;/*]")))))
-              (js-imports-skip-whitespace-forward)
+              (js-imports-forward-whitespace)
               (when-let ((result (js-imports-make-esm-export-at-point
                                   buffer-file-name)))
                 (funcall map-result result))))
@@ -1254,7 +1254,7 @@ File is specified in the variable `js-imports-current-export-path.'."
                             (> export-depth depth))
                     (setq export-depth depth)
                     (setq cjs-locals nil))
-                  (js-imports-skip-whitespace-forward)
+                  (js-imports-forward-whitespace)
                   (when-let ((result (js-imports-extract-cjs-exports
                                       buffer-file-name)))
                     (cond ((listp result)
@@ -1286,10 +1286,10 @@ File is specified in the variable `js-imports-current-export-path.'."
                (full-name)
                (end))
            (forward-char 1)
-           (js-imports-skip-whitespace-forward)
+           (js-imports-forward-whitespace)
            (pcase (js-imports-which-word)
              ("as" (progn (re-search-forward "as" nil t 1)
-                          (js-imports-skip-whitespace-forward)
+                          (js-imports-forward-whitespace)
                           (setq as-name (js-imports-get-word-if-valid))
                           (skip-chars-forward as-name)
                           (setq end (point))
@@ -1326,10 +1326,10 @@ File is specified in the variable `js-imports-current-export-path.'."
                                                       :start pos))))
                (from-path (progn
                             (forward-list)
-                            (js-imports-skip-whitespace-forward)
+                            (js-imports-forward-whitespace)
                             (when (js-imports-looking-at "from")
                               (skip-chars-forward "from")
-                              (js-imports-skip-whitespace-forward)
+                              (js-imports-forward-whitespace)
                               (forward-char 1)
                               (js-imports-get-path-at-point)))))
            (setq symbols (if from-path
@@ -1371,7 +1371,7 @@ File is specified in the variable `js-imports-current-export-path.'."
 Return propertized string where PATH is added as :display-path"
   (cond ((looking-at-p "=\\([\s\t\n]+?\\)require[ \t('\"]")
          (js-imports-re-search-forward "require" nil t 1)
-         (js-imports-skip-whitespace-forward)
+         (js-imports-forward-whitespace)
          (when (looking-at "([\"']")
            (re-search-forward "([\"']"))
          (when-let ((from (js-imports-get-path-at-point)))
@@ -1384,7 +1384,7 @@ Return propertized string where PATH is added as :display-path"
                                  :start (point))))
         ((looking-at-p "=\\([\s\t]+?\\){")
          (js-imports-re-search-forward "=" nil t 1)
-         (js-imports-skip-whitespace-forward)
+         (js-imports-forward-whitespace)
          (when-let* ((items (js-imports-parse-object-keys)))
            (when (looking-at-p "{")
              (forward-list))
@@ -1400,7 +1400,7 @@ Return propertized string where PATH is added as :display-path"
                    items)))
         ((looking-at-p "=[^=]")
          (forward-char 1)
-         (js-imports-skip-whitespace-forward)
+         (js-imports-forward-whitespace)
          (when-let ((real-name (js-imports-get-word-if-valid)))
            (js-imports-make-item
             real-name
@@ -1418,7 +1418,7 @@ Return propertized string where PATH is added as :display-path"
             :as-name as-name
             :real-name (progn
                          (js-imports-re-search-forward "=" nil t 1)
-                         (js-imports-skip-whitespace-forward)
+                         (js-imports-forward-whitespace)
                          (or (js-imports-get-word-if-valid)
                              as-name))
             :real-path path
@@ -1517,7 +1517,7 @@ Default value for SEPARATORS is whitespaces and * char."
             (js-imports-reserved-word-p (setq word (js-imports-which-word))))
       (setq prev (point))
       (skip-chars-forward word)
-      (js-imports-skip-whitespace-forward)
+      (js-imports-forward-whitespace)
       (skip-chars-forward separators)
       (push (cons word prev) stack))
     (when-let ((id (js-imports-which-word)))
@@ -1556,14 +1556,14 @@ Default value for SEPARATORS is whitespaces and * char."
               js-imports-regexp-import-keyword nil t)
         (let ((beg (- (point) (length "import")))
               (end))
-          (js-imports-skip-whitespace-forward)
+          (js-imports-forward-whitespace)
           (unless (looking-at-p "[\"']")
             (js-imports-re-search-forward js-imports-from-keyword--re nil t 1)
-            (js-imports-skip-whitespace-forward))
+            (js-imports-forward-whitespace))
           (when (looking-at-p "[\"']")
             (forward-sexp 1)
             (setq end (point))
-            (js-imports-skip-whitespace-forward)
+            (js-imports-forward-whitespace)
             (when (looking-at ";")
               (setq end (1+ (point))))
             (push (cons beg end)
@@ -1586,7 +1586,7 @@ Default value for SEPARATORS is whitespaces and * char."
     (save-excursion
       (goto-char end)
       (skip-chars-backward ";\s\t\n")
-      (js-imports-skip-whitespace-backward)
+      (js-imports-backward-whitespace)
       (when (looking-back "[\"']" 1)
         (let ((p2 (1- (point)))
               (p1))
@@ -1652,33 +1652,31 @@ Optional argument MAX defines a limit."
                      (point)
                      (+ 2 (point))) '("/*" "//")))))
 
-(defun js-imports-skip-whitespace-forward ()
-  "Move point forward across white space and comments.
-Return the distance traveled, either zero or positive."
-  (let ((curr)
-        (total (skip-chars-forward "\s\t\n\r\f\v"))
+(defun js-imports-forward-whitespace (&optional skip-chars)
+  "Move point forward accross SKIP-CHARS and comments.
+Returns the distance traveled, either zero or positive."
+  (unless skip-chars (setq skip-chars "\s\t\n\r\f\v"))
+  (let ((total (skip-chars-forward skip-chars))
         (max (1- (point-max))))
     (while (and (>= max (point))
-                (setq curr (js-imports-looking-at-comment-p max)))
-      (cond ((string= "//" curr)
-             (forward-line 1)
-             (setq total (+ total (skip-chars-forward "\s\t\n\r\f\v"))))
-            ((string= "/*" curr)
-             (js-imports-re-search-forward "\\([*]/\\)" nil t 1)
-             (setq total (+ total (skip-chars-forward "\s\t\n\r\f\v"))))))
+                (pcase (js-imports-looking-at-comment-p max)
+                  ("//" (forward-line 1) t)
+                  ("/*" (js-imports-re-search-forward "\\([*]/\\)" nil t 1))))
+      (setq total (+ total (skip-chars-forward skip-chars))))
     total))
 
-(defun js-imports-skip-whitespace-backward ()
-  "Move point backward across whitespace and comments.
-Return the distance traveled, either zero or positive."
-  (let ((total (skip-chars-backward "\s\t\n\r\f\v"))
+(defun js-imports-backward-whitespace (&optional skip-chars)
+  "Move point backward accross SKIP-CHARS and comments.
+Returns the distance traveled, either zero or positive."
+  (unless skip-chars (setq skip-chars "\s\t\n\r\f\v"))
+  (let ((total (skip-chars-backward skip-chars))
         (min (1+ (point-min)))
         (pos))
     (while (and (> (point) min)
                 (or (js-imports-inside-comment-p)
                     (equal (js-imports-get-prev-char) "/")))
       (setq pos (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1))
-      (setq total (+ total (skip-chars-backward "\s\t\n\r\f\v"))))
+      (setq total (+ total (skip-chars-backward skip-chars))))
     (when pos
       (goto-char pos)
       (unless (looking-at "//\\|/[*]")
@@ -1923,13 +1921,13 @@ Result depends on syntax table's string quote character."
                     (1+ (point))
                   (point)))
           (progn (goto-char scope-start)
-                 (js-imports-skip-whitespace-backward)
+                 (js-imports-backward-whitespace)
                  (and (char-equal (char-before (point)) ?>)
                       (char-equal (char-before (1- (point))) ?=)
                       (js-imports-re-search-backward
                        js-imports-expression-keywords--re nil t 1))
                  (forward-word)
-                 (js-imports-skip-whitespace-forward)
+                 (js-imports-forward-whitespace)
                  (when (js-imports-valid-identifier-p (js-imports-which-word))
                    (setq scope-start (point)))))))
     (save-excursion
@@ -2001,7 +1999,7 @@ Result depends on syntax table's string quote character."
   (and (js-imports-looking-at "function")
        (< (point-min) (point))
        (save-excursion
-         (js-imports-skip-whitespace-backward)
+         (js-imports-backward-whitespace)
          (let ((c (char-before (point))))
            (or (char-equal c ?=)
                (char-equal c ?|)
@@ -2017,10 +2015,10 @@ Result depends on syntax table's string quote character."
         (js-imports-re-search-forward var-type nil t 1)
         (when (looking-at "\\*")
           (forward-char 1))
-        (js-imports-skip-whitespace-forward)
+        (js-imports-forward-whitespace)
         (when (looking-at "\\*")
           (forward-char 1)
-          (js-imports-skip-whitespace-forward))
+          (js-imports-forward-whitespace))
         (if-let* ((word (js-imports-get-word-if-valid)))
             (js-imports-make-item word
                                   :start (point)
@@ -2033,10 +2031,10 @@ Result depends on syntax table's string quote character."
               (when (looking-at-p "{")
                 (save-excursion
                   (forward-list)
-                  (js-imports-skip-whitespace-forward)
+                  (js-imports-forward-whitespace)
                   (when (looking-at-p "=[^=]")
                     (forward-char 1)
-                    (js-imports-skip-whitespace-forward)
+                    (js-imports-forward-whitespace)
                     (setq parent (js-imports-which-word))
                     (setq display-path
                           (and (string= parent "require")
@@ -2692,7 +2690,7 @@ Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-back
         (goto-char start)
         (narrow-to-region start end)
         (forward-word)
-        (js-imports-skip-whitespace-forward)
+        (js-imports-forward-whitespace)
         (if (looking-at-p "\\*")
             (progn
               (goto-char end)
@@ -2708,18 +2706,18 @@ Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-back
           (when (or (looking-at-p js-imports-regexp-name-set)
                     default-name)
             (skip-chars-forward js-imports-regexp-name)
-            (js-imports-skip-whitespace-forward)
+            (js-imports-forward-whitespace)
             (unless (looking-at-p ",")
               (js-imports-re-search-backward js-imports-regexp-name-set nil t 1)
               (forward-char 1)
               (insert ", "))
             (skip-chars-forward ",")
-            (js-imports-skip-whitespace-forward))
+            (js-imports-forward-whitespace))
           (when names
             (if (looking-at-p "{")
                 (progn (js-imports-re-search-forward "}" nil t 1)
                        (backward-char 1)
-                       (js-imports-skip-whitespace-backward)
+                       (js-imports-backward-whitespace)
                        (let ((separator (if (save-excursion (backward-char 1)
                                                             (looking-at-p ","))
                                             " "
@@ -3174,7 +3172,7 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
   (let ((p (if (looking-at ";")
                (1+ (point))
              (or (save-excursion
-                   (js-imports-skip-whitespace-forward)
+                   (js-imports-forward-whitespace)
                    (when (looking-at ";")
                      (1+ (point))))
                  (point)))))
@@ -3191,11 +3189,11 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
         (let ((w (js-imports-which-word)))
           (push w words)
           (skip-chars-forward w))
-        (js-imports-skip-whitespace-forward)
+        (js-imports-forward-whitespace)
         (when (looking-at "{")
           (forward-list 1)
-          (js-imports-skip-whitespace-forward)))
-      (js-imports-skip-whitespace-forward)
+          (js-imports-forward-whitespace)))
+      (js-imports-forward-whitespace)
       (setq beg (point))
       (let* ((depth (nth 0 (syntax-ppss (point))))
              (next-node
@@ -3217,17 +3215,17 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
                     (null brackets))
                (goto-char (point-max))
                (skip-chars-backward "\s\t\n\r\f\v")
-               (js-imports-skip-whitespace-backward))
+               (js-imports-backward-whitespace))
               ((and (null brackets)
                     next-node)
                (goto-char next-node)
                (skip-chars-backward "a-z")
-               (js-imports-skip-whitespace-backward))
+               (js-imports-backward-whitespace))
               ((and next-node brackets
                     (> brackets next-node))
                (goto-char next-node)
                (skip-chars-backward "a-z")
-               (js-imports-skip-whitespace-backward))
+               (js-imports-backward-whitespace))
               (t
                (progn (js-imports-re-search-forward "[<(;{]" nil t 1)
                       (when (looking-back "<" 0)
@@ -3254,7 +3252,7 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
 (defun js-imports-get-prev-node-start-if-matches (regexp)
   "Get position of previous word matched REGEXP or nil."
   (save-excursion
-    (js-imports-skip-whitespace-backward)
+    (js-imports-backward-whitespace)
     (when (looking-back regexp 0)
       (skip-chars-backward js-imports-regexp-name)
       (point))))
@@ -3413,21 +3411,21 @@ Add selected choices to existing or new import statement."
       (let (real-name as-name)
         (save-excursion (skip-chars-backward name)
                         (if (save-excursion
-                              (js-imports-skip-whitespace-backward)
+                              (js-imports-backward-whitespace)
                               (js-imports-looking-at "as"))
                             (progn
                               (setq as-name name)
                               (js-imports-re-search-backward "as" nil t 1)
-                              (js-imports-skip-whitespace-backward)
+                              (js-imports-backward-whitespace)
                               (setq real-name (js-imports-get-word-if-valid)))
                           (progn
                             (setq real-name name)
                             (js-imports-re-search-forward real-name)
-                            (js-imports-skip-whitespace-forward)
+                            (js-imports-forward-whitespace)
                             (if (not (js-imports-looking-at "as"))
                                 (setq as-name real-name)
                               (js-imports-re-search-forward "as" nil t 1)
-                              (js-imports-skip-whitespace-forward)
+                              (js-imports-forward-whitespace)
                               (setq as-name (js-imports-get-word-if-valid))))))
         (when-let ((item (and (or real-name as-name)
                               (or (js-imports-find-by-prop
