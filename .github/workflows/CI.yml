@@ -36,7 +36,7 @@ jobs:
         with:
           version: snapshot
       - run: echo "$HOME/.cask/bin" >> $GITHUB_PATH
-      - run: make
+      - run: make test
   check:
     runs-on: ubuntu-latest
     strategy:
@@ -62,6 +62,3 @@ jobs:
       with:
         file: js-imports.el
         ignore_warnings: ${{ matrix.ignore_warnings }}
-
-    - name: Run tests
-      run: make test
