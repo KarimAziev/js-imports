@@ -31,7 +31,7 @@
 
 ;;; Code:
 
-(require 'cl-lib)
+
 (require 'json)
 
 (eval-and-compile
@@ -1050,13 +1050,13 @@ NODE-MODULES-PATH is used to expand path of MODULES."
   "Return list of with imported imported paths in current buffer."
   (save-excursion
     (goto-char (point-min))
-    (let (symbols)
+    (let (imported-files)
       (with-syntax-table js-imports-mode-syntax-table
         (while (js-imports-re-search-forward
                 js-imports-regexp-import-keyword nil t 1)
           (when-let ((path (js-imports-get-path-at-point)))
-            (push path symbols))))
-      (cl-remove-duplicates (reverse symbols) :test 'string=))))
+            (push path imported-files))))
+      (reverse imported-files))))
 
 (defun js-imports-preselect-file ()
   "Preselect function for file sources."
@@ -1479,7 +1479,7 @@ Return propertized string where PATH is added as :display-path"
                            (skip-chars-forward "\s\t\n\r\f\v")
                            (push (cons word pos) children))))))))))
       (when children
-        (seq-uniq (cl-remove 'null children))))))
+        (seq-uniq (delete nil children))))))
 
 (defun js-imports-parse-destructive ()
   "Return object values."
@@ -1607,17 +1607,21 @@ Default value for SEPARATORS is whitespaces and * char."
       (cons pos1 pos2))))
 
 (defun js-imports-make-item (candidate &rest plist)
-  "Propertize CANDIDATE with PLIST."
-  (apply 'js-imports-propertize candidate plist))
+  "Propertize CANDIDATE with filtered PLIST."
+  (let ((pl plist)
+        (key)
+        (filtered-pl))
+    (while (setq key (pop pl))
+      (when-let ((val (pop pl)))
+        (push val filtered-pl)
+        (push key filtered-pl)))
+    (apply 'js-imports-propertize candidate filtered-pl)))
 
-(defun js-imports-propertize (item &rest properties)
-  "Stringify and `propertize' ITEM with PROPERTIES."
-  (cl-loop for (k v) on properties by 'cddr
-           if v append (list k v) into props
-           finally return
-           (apply 'propertize
-                  (js-imports-stringify item)
-                  props)))
+(defun js-imports-propertize (item &rest props)
+  "Stringify and `propertize' ITEM with PROPS."
+  (apply 'propertize
+         (js-imports-stringify item)
+         props))
 
 (defun js-imports-get-prop (str property)
   "Return the value of zero position's PROPERTY in STR."
@@ -1629,20 +1633,23 @@ Default value for SEPARATORS is whitespaces and * char."
 If ITEM is symbol, return it is `symbol-name.'
 Otherwise return nil."
   (cond ((stringp item)
-         (set-text-properties 0 (length item) nil item)
-         item)
+         (let ((str (seq-copy item)))
+           (set-text-properties 0 (length str) nil str)
+           str))
         ((and item (symbolp item))
          (symbol-name item))
         (nil item)))
 
 (defun js-imports-stringify (x)
   "Convert X to string."
-  (cl-typecase x
-    (string x)
-    (symbol (symbol-name x))
-    (integer (number-to-string x))
-    (float (number-to-string x))
-    (t (format "%s" x))))
+  (cond
+   ((stringp x)
+    x)
+   ((stringp x)
+    (symbol-name x))
+   ((numberp x)
+    (number-to-string x))
+   (t (format "%s" x))))
 
 (defun js-imports-looking-at-comment-p (&optional max)
   "Return if point located at the start of comment.
@@ -2280,7 +2287,7 @@ Cache are invalidated when `buffer-modified-tick' is changed."
               js-imports-current-buffer)))
       (setq exports (if imports (js-imports-filter-exports candidates imports)
                       candidates))
-      (setq exports (cl-remove-duplicates exports))
+      (setq exports (seq-uniq exports))
       (setq exports (mapcar (lambda (c) (js-imports-propertize
                                     c :display-path
                                     js-imports-current-export-path))
