@@ -62,3 +62,6 @@ jobs:
       with:
         file: js-imports.el
         ignore_warnings: ${{ matrix.ignore_warnings }}
+
+    - name: Run tests
+      run: make test
