@@ -320,7 +320,7 @@ Supposed to use as argument of `skip-chars-forward'.")
   "Regexp matching path with node_modules.")
 
 (defconst js-imports-reserved-js-words
-  '("abstract" "any" "as" "async" "await" "boolean" "bigint"
+  '("abstract" "any" "as" "async" "async*" "await" "boolean" "bigint"
     "break" "case" "catch" "class" "const" "constructor" "continue"
     "declare" "default" "delete" "do" "else" "enum" "export" "exports"
     "extends" "extern" "false" "finally" "for" "function" "function*"
