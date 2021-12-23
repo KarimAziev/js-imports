@@ -750,10 +750,8 @@ If PATH is a relative file, it will be returned without changes."
 
 (defun js-imports-normalize-path (path)
   "Applies functions from `js-imports-normalize-paths-functions' to PATH."
-  (apply 'js-imports-compose-from
-         (append
-          (list path)
-          js-imports-normalize-paths-functions)))
+  (funcall (apply 'js-imports-compose js-imports-normalize-paths-functions)
+           path))
 
 (defun js-imports-maybe-remove-path-index (path)
   "Trim index with extension from PATH."
@@ -793,14 +791,18 @@ PROJECT-ROOT."
 Optional argument DIR is used as default directory."
   (when (and path (stringp path))
     (setq path (js-imports-strip-text-props path))
-    (cond ((file-name-absolute-p path)
-           (car (js-imports-resolve-paths path)))
-          ((js-imports-relative-p path)
-           (car (js-imports-resolve-paths path dir)))
-          ((js-imports-dependency-p path (js-imports-find-project-root))
-           (js-imports-node-module-to-real path))
-          (t
-           (car (js-imports-alias-path-to-real path))))))
+    (when-let ((result (cond ((file-name-absolute-p path)
+                              (car (js-imports-resolve-paths path)))
+                             ((js-imports-relative-p path)
+                              (car (js-imports-resolve-paths path dir)))
+                             ((js-imports-dependency-p path (js-imports-find-project-root))
+                              (js-imports-node-module-to-real path))
+                             (t
+                              (car (js-imports-alias-path-to-real path))))))
+      (if (and (file-exists-p result)
+               (not (file-directory-p result)))
+          result
+        nil))))
 
 (defun js-imports-sort-by-exts (files &optional extensions)
   "Sort FILES by optional argument EXTENSIONS.
@@ -1657,7 +1659,7 @@ Optional argument MAX defines a limit."
   (and (> (or max (1- (point-max))) (point))
        (car (member (buffer-substring-no-properties
                      (point)
-                     (+ 2 (point))) '("/*" "//")))))
+                     (+ 2 (point))) '("#!" "/*" "//")))))
 
 (defun js-imports-forward-whitespace (&optional skip-chars)
   "Move point forward accross SKIP-CHARS and comments.
@@ -1668,7 +1670,9 @@ Returns the distance traveled, either zero or positive."
     (while (and (>= max (point))
                 (pcase (js-imports-looking-at-comment-p max)
                   ("//" (forward-line 1) t)
-                  ("/*" (js-imports-re-search-forward "\\([*]/\\)" nil t 1))))
+                  ("/*" (js-imports-re-search-forward "\\([*]/\\)" nil t 1))
+                  ("#!" (when (js-imports-re-search-forward "." nil t 1)
+                          (forward-char -1)))))
       (setq total (+ total (skip-chars-forward skip-chars))))
     total))
 
@@ -1681,12 +1685,12 @@ Returns the distance traveled, either zero or positive."
         (pos))
     (while (and (> (point) min)
                 (or (js-imports-inside-comment-p)
-                    (equal (js-imports-get-prev-char) "/")))
-      (setq pos (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1))
+                    (equal (js-imports-get-prev-char) "/"))
+                (setq pos (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1)))
       (setq total (+ total (skip-chars-backward skip-chars))))
     (when pos
       (goto-char pos)
-      (unless (looking-at "//\\|/[*]")
+      (unless (looking-at "//\\|/[*]\\|#!")
         (forward-char 1)))
     total))
 
@@ -1782,24 +1786,31 @@ Result depends on syntax table's string quote character."
 
 (defun js-imports-generate-name-from-path (path)
   "Generate name for default or module import from PATH."
-  (let* ((split-path (lambda (str) (split-string str "[ \f\t\n\r\v/.-]")))
-         (map-capitalize (lambda (p) (mapcar 'capitalize p)))
-         (take-two (lambda (parts) (seq-take parts 2))))
-    (js-imports-compose-from path
-                             'string-join
-                             take-two
-                             'reverse
-                             map-capitalize
-                             'seq-uniq
-                             split-path
-                             'js-imports-maybe-remove-path-index
-                             'js-imports-remove-ext)))
+  (funcall
+   (js-imports-compose 'string-join
+                       (js-imports-flip 'seq-take 2)
+                       'reverse
+                       (apply-partially 'mapcar 'capitalize)
+                       'seq-uniq
+                       (js-imports-flip 'split-string "[ \f\t\n\r\v/.-]")
+                       'js-imports-maybe-remove-path-index
+                       'js-imports-remove-ext)
+   path))
 
-(defun js-imports-compose-from (arg &rest functions)
-  "Perform right-to-left unary composition from FUNCTIONS with ARG."
-  (seq-reduce (lambda (xs fn)
-                (funcall fn xs))
-              (reverse functions) arg))
+(defun js-imports-compose (&rest functions)
+  "Performs right-to-left composition from FUNCTIONS."
+  (lambda (&rest args)
+    (car (seq-reduce (lambda (xs fn) (list (apply fn xs)))
+                     (reverse functions) args))))
+
+(defun js-imports-flip (func &optional arg-b)
+  "Swap the order of first two arguments for FUNC.
+Second argument ARG-B is optional and can be passed later."
+  (if arg-b
+      (apply-partially (lambda (a b &rest others) (apply func (append
+                                                          `(,b ,a) others)))
+                       arg-b)
+    (lambda (a b &rest others) (apply func (append `(,b ,a) others)))))
 
 (defun js-imports-maybe-make-child-at-point (&optional parent)
   "Parse argument at point of PARENT."
@@ -2248,9 +2259,9 @@ With optional MARGIN adds indent."
     (let ((stack (js-imports-get-prop item :stack)))
       (when stack
         (push item stack)
-        (setq stack (js-imports-compose-from stack
-                                             'js-imports-map-stack
-                                             'reverse))
+        (setq stack (funcall (js-imports-compose 'js-imports-map-stack
+                                                 'reverse)
+                             stack))
         (setq item
               (completing-read "Jump:\s" stack nil t))))
     (when-let ((pos (and item (js-imports-get-prop
@@ -2792,12 +2803,17 @@ CANDIDATE should be propertizied with property `display-path'."
   "Select next alias and exit minibuffer."
   (interactive)
   (js-imports-next-or-prev-alias 1)
-  (exit-minibuffer))
+  (if (active-minibuffer-window)
+      (exit-minibuffer)
+    (funcall-interactively 'js-imports)))
+
 (defun js-imports-select-prev-alias ()
   "Select previous alias and exit minibuffer."
   (interactive)
   (js-imports-next-or-prev-alias -1)
-  (exit-minibuffer))
+  (if (active-minibuffer-window)
+      (exit-minibuffer)
+    (js-imports)))
 
 (defvar js-imports-file-completions-maps
   `((ivy-completing-read . ,(let ((map (make-sparse-keymap)))
