@@ -178,21 +178,22 @@
   "Convert PATH to absolute filename and append slash to PATH.
 Without BASE-URL resolve PATH as relative to project directory,
 otherwise firstly expand BASE-URL to project directory."
-  (setq path (replace-regexp-in-string "\\*[^$]+" "" path))
-  (cond
-   ((and
-     (file-name-absolute-p path)
-     (file-exists-p path))
-    (js-imports-slash (expand-file-name path)))
-   (t
-    (if-let* ((root (or js-imports-current-project-root
-                        (js-imports-find-project-root)))
-              (file (expand-file-name path
-                                      (if base-url
-                                          (expand-file-name base-url root)
-                                        root))))
-        (js-imports-slash file)
-      path))))
+  (when-let ((filepath (when path (replace-regexp-in-string "\\*[^$]+" "" path))))
+    (cond
+     ((and (file-name-absolute-p filepath)
+           (file-exists-p filepath))
+      (if (file-directory-p filepath)
+          (js-imports-slash filepath)
+        filepath))
+     (t
+      (if-let* ((root (or js-imports-current-project-root
+                          (js-imports-find-project-root)))
+                (file (expand-file-name filepath
+                                        (if base-url
+                                            (expand-file-name base-url root)
+                                          root))))
+          (js-imports-slash file)
+        filepath)))))
 
 (defun js-imports-normalize-aliases (paths &optional base-url)
   "Convert and sort alist of PATHS to absolute filenames.
@@ -1736,18 +1737,16 @@ Returns the distance traveled, either zero or positive."
           (search-forward-regexp "['\"]" nil t 1)
         (search-forward-regexp "[\s\t\n]+from[\s\t\n]+['\"]" nil t 1)))
     (when (js-imports-inside-string-p)
-      (if (use-region-p)
-          (buffer-substring-no-properties (region-beginning) (region-end))
-        (let (p0 p1 p2 stops)
-          (setq stops "^ \t\n\"`'‘’“”|[]{}·")
-          (setq p0 (point))
-          (skip-chars-backward stops)
-          (setq p1 (point))
-          (goto-char p0)
-          (skip-chars-forward stops)
-          (setq p2 (point))
-          (goto-char p0)
-          (buffer-substring-no-properties p1 p2))))))
+      (let (p0 p1 p2 stops)
+        (setq stops "^ \t\n\"`'‘’“”|[]{}·")
+        (setq p0 (point))
+        (skip-chars-backward stops)
+        (setq p1 (point))
+        (goto-char p0)
+        (skip-chars-forward stops)
+        (setq p2 (point))
+        (goto-char p0)
+        (buffer-substring-no-properties p1 p2)))))
 
 (defun js-imports-string-match-p (regexp str &optional start)
   "Return t if STR matches REGEXP, otherwise return nil."
