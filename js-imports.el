@@ -178,7 +178,8 @@
   "Convert PATH to absolute filename and append slash to PATH.
 Without BASE-URL resolve PATH as relative to project directory,
 otherwise firstly expand BASE-URL to project directory."
-  (when-let ((filepath (when path (replace-regexp-in-string "\\*[^$]+" "" path))))
+  (when-let ((filepath
+              (when path (replace-regexp-in-string "\\*[^$]+" "" path))))
     (cond
      ((and (file-name-absolute-p filepath)
            (file-exists-p filepath))
@@ -393,7 +394,6 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
   `(with-temp-buffer
      (erase-buffer)
      (progn
-       (prog-mode)
        (set-syntax-table js-imports-mode-syntax-table)
        (setq-local open-paren-in-column-0-is-defun-start nil)
        (setq-local syntax-propertize-function #'js-imports-syntax-propertize)
@@ -421,7 +421,11 @@ It is also bind `default-directory' into FILENAME's directory."
                                     (insert-file-contents ,filename))
                                   (buffer-string)))))
       (let ((buffer-file-name ,filename)
-            (default-directory (js-imports-dirname ,filename)))
+            (default-directory (funcall
+                                (js-imports-compose
+                                 #'js-imports-slash
+                                 #'js-imports-dirname)
+                                ,filename)))
         ,@body))))
 
 (defmacro js-imports-with-popup (buffer &rest body)
@@ -921,19 +925,18 @@ If DIRECTION is a negative return previous or last element."
   "Return directories in PATH with package.json."
   (let ((dirs (and path
                    (file-directory-p path)
-                   (file-exists-p (expand-file-name
-                                   "package.json" path))
-                   (seq-filter (lambda (it)
-                                 (when (and (file-directory-p it)
-                                            (file-exists-p
-                                             (expand-file-name
-                                              "package.json" it)))
-                                   it))
-                               (mapcar (lambda (it) (expand-file-name it path))
-                                       (delete ".."
-                                               (delete "."
-                                                       (directory-files
-                                                        path nil))))))))
+                   (seq-filter 'file-directory-p
+                               (mapcar
+                                (js-imports-flip
+                                 'expand-file-name
+                                 path)
+                                (funcall
+                                 (js-imports-compose
+                                  (apply-partially 'delete "node_modules")
+                                  (apply-partially 'delete "..")
+                                  (apply-partially 'delete ".")
+                                  'directory-files)
+                                 path))))))
     (append dirs (mapcan 'js-imports-extract-subpackages dirs))))
 
 (defun js-imports-find-node-modules-submodules (node-modules-path modules)
@@ -1786,14 +1789,14 @@ Result depends on syntax table's string quote character."
 (defun js-imports-generate-name-from-path (path)
   "Generate name for default or module import from PATH."
   (funcall
-   (js-imports-compose 'string-join
+   (js-imports-compose #'string-join
                        (js-imports-flip 'seq-take 2)
-                       'reverse
+                       #'reverse
                        (apply-partially 'mapcar 'capitalize)
-                       'seq-uniq
+                       #'seq-uniq
                        (js-imports-flip 'split-string "[ \f\t\n\r\v/.-]")
-                       'js-imports-maybe-remove-path-index
-                       'js-imports-remove-ext)
+                       #'js-imports-maybe-remove-path-index
+                       #'js-imports-remove-ext)
    path))
 
 (defun js-imports-compose (&rest functions)
@@ -2258,8 +2261,8 @@ With optional MARGIN adds indent."
     (let ((stack (js-imports-get-prop item :stack)))
       (when stack
         (push item stack)
-        (setq stack (funcall (js-imports-compose 'js-imports-map-stack
-                                                 'reverse)
+        (setq stack (funcall (js-imports-compose #'js-imports-map-stack
+                                                 #'reverse)
                              stack))
         (setq item
               (completing-read "Jump:\s" stack nil t))))
@@ -3026,7 +3029,7 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
                               (format "Exports in %s"
                                       (or js-imports-current-export-path
                                           buffer-file-name))))
-             :candidates 'js-imports-init-exports-candidates
+             :candidates #'js-imports-init-exports-candidates
              :candidate-transformer 'js-imports-exported-candidates-transformer
              :filtered-candidate-transformer
              #'js-imports-export-filtered-candidate-transformer
@@ -3612,7 +3615,7 @@ For example `import someExport from '../enums' transforms to
                            (cdr path-bounds)))
                     (variants (and (js-imports-relative-p path)
                                    (string-match-p "\\.\\./" path)
-                                   (seq-remove 'js-imports-relative-p
+                                   (seq-remove #'js-imports-relative-p
                                                (js-imports-get-file-variants
                                                 path default-directory))))
                     (choice (if (> (length variants) 1)
