@@ -18,6 +18,8 @@ jobs:
           - 26.2
           - 26.3
           - 27.1
+          - 27.2
+          - snapshot
         ignore_warnings:
           - true
         include:
