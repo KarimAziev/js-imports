@@ -21,7 +21,7 @@ jobs:
           - 27.2
           - snapshot
         ignore_warnings:
-          - true
+          - false
         include:
           - emacs_version: snapshot
             check: melpa
