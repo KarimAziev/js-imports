@@ -803,14 +803,16 @@ PROJECT-ROOT."
 Optional argument DIR is used as default directory."
   (when (and path (stringp path))
     (setq path (js-imports-strip-text-props path))
-    (when-let ((result (cond ((file-name-absolute-p path)
-                              (car (js-imports-resolve-paths path)))
-                             ((js-imports-relative-p path)
-                              (car (js-imports-resolve-paths path dir)))
-                             ((js-imports-dependency-p path (js-imports-find-project-root))
-                              (js-imports-node-module-to-real path))
-                             (t
-                              (car (js-imports-alias-path-to-real path))))))
+    (when-let ((result
+                (cond ((file-name-absolute-p path)
+                       (car (js-imports-resolve-paths path)))
+                      ((js-imports-relative-p path)
+                       (car (js-imports-resolve-paths path dir)))
+                      ((js-imports-dependency-p path
+                                                (js-imports-find-project-root))
+                       (js-imports-node-module-to-real path))
+                      (t
+                       (car (js-imports-alias-path-to-real path))))))
       (if (and (file-exists-p result)
                (not (file-directory-p result)))
           result
@@ -1697,7 +1699,8 @@ Returns the distance traveled, either zero or positive."
     (while (and (> (point) min)
                 (or (js-imports-inside-comment-p)
                     (equal (js-imports-get-prev-char) "/"))
-                (setq pos (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1)))
+                (setq pos
+                      (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1)))
       (setq total (+ total (skip-chars-backward skip-chars))))
     (when pos
       (goto-char pos)
