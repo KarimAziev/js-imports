@@ -174,6 +174,13 @@
 
 (defvar js-imports-definitions-source nil)
 
+(declare-function helm-make-source "helm")
+(declare-function helm-run-after-exit "helm")
+(declare-function helm-get-selection "helm")
+(declare-function helm-attrset "helm")
+(declare-function helm-refresh "helm")
+(declare-function helm-execute-persistent-action "helm")
+
 (defun js-imports-expand-alias-path (path &optional base-url)
   "Convert PATH to absolute filename and append slash to PATH.
 Without BASE-URL resolve PATH as relative to project directory,
@@ -754,7 +761,7 @@ If PATH is a relative file, it will be returned without changes."
            (concat str "/")))))
 
 (defun js-imports-normalize-path (path)
-  "Applies functions from `js-imports-normalize-paths-functions' to PATH."
+  "Apply functions from `js-imports-normalize-paths-functions' to PATH."
   (funcall (apply 'js-imports-compose js-imports-normalize-paths-functions)
            path))
 
@@ -796,14 +803,16 @@ PROJECT-ROOT."
 Optional argument DIR is used as default directory."
   (when (and path (stringp path))
     (setq path (js-imports-strip-text-props path))
-    (when-let ((result (cond ((file-name-absolute-p path)
-                              (car (js-imports-resolve-paths path)))
-                             ((js-imports-relative-p path)
-                              (car (js-imports-resolve-paths path dir)))
-                             ((js-imports-dependency-p path (js-imports-find-project-root))
-                              (js-imports-node-module-to-real path))
-                             (t
-                              (car (js-imports-alias-path-to-real path))))))
+    (when-let ((result
+                (cond ((file-name-absolute-p path)
+                       (car (js-imports-resolve-paths path)))
+                      ((js-imports-relative-p path)
+                       (car (js-imports-resolve-paths path dir)))
+                      ((js-imports-dependency-p path
+                                                (js-imports-find-project-root))
+                       (js-imports-node-module-to-real path))
+                      (t
+                       (car (js-imports-alias-path-to-real path))))))
       (if (and (file-exists-p result)
                (not (file-directory-p result)))
           result
@@ -1690,7 +1699,8 @@ Returns the distance traveled, either zero or positive."
     (while (and (> (point) min)
                 (or (js-imports-inside-comment-p)
                     (equal (js-imports-get-prev-char) "/"))
-                (setq pos (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1)))
+                (setq pos
+                      (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1)))
       (setq total (+ total (skip-chars-backward skip-chars))))
     (when pos
       (goto-char pos)
@@ -1752,7 +1762,7 @@ Returns the distance traveled, either zero or positive."
         (buffer-substring-no-properties p1 p2)))))
 
 (defun js-imports-string-match-p (regexp str &optional start)
-  "Return t if STR matches REGEXP, otherwise return nil."
+  "Check STR for a match with REGEXP and return t or nil whether it exists."
   (when (and (not (null str)) (stringp str))
     (not (null (string-match-p regexp str start)))))
 
@@ -1800,7 +1810,7 @@ Result depends on syntax table's string quote character."
    path))
 
 (defun js-imports-compose (&rest functions)
-  "Performs right-to-left composition from FUNCTIONS."
+  "Return right-to-left composition from FUNCTIONS."
   (lambda (&rest args)
     (car (seq-reduce (lambda (xs fn) (list (apply fn xs)))
                      (reverse functions) args))))
@@ -2436,7 +2446,7 @@ Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-back
     (js-imports-re-search-forward re bound noerror (if count (- count) -1))))
 
 (defun js-imports-remove-comments ()
-  "Replaces comments in buffer with empty lines."
+  "Replace comments in buffer with empty lines."
   (let ((comments (js-imports-get-comments-bounds))
         (cell))
     (save-excursion

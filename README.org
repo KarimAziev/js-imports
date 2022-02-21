@@ -125,4 +125,4 @@ You can specify aliases as [[https://www.gnu.org/software/emacs/manual/html_node
 
 Copyright © 2020 Karim Aziiev.
 
-Distributed under the [[http://www.gnu.org/licenses/gpl-3.0.txt][GNU General Public License, version 3]]
+Distributed under the [[./LICENSE][GNU General Public License, version 3]]

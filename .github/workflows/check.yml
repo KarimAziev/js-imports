@@ -18,12 +18,9 @@ jobs:
           - 26.2
           - 26.3
           - 27.1
+          - 27.2
         ignore_warnings:
-          - true
-        include:
-          - emacs_version: snapshot
-            check: melpa
-            ignore_warnings: false
+          - false
     steps:
     - uses: actions/checkout@v2
     - uses: purcell/setup-emacs@master
