@@ -14,6 +14,10 @@ An example of installation and configuration with package managers [[https://git
 #+BEGIN_SRC elisp :eval never-export
 
 (use-package js-imports
+  :init
+  (setq-default js-imports-completion-system 'ivy-completing-read)
+  (setq-default js-imports-modules-default-names '(("ramda" . "R")
+                                                   ("react" . "React")))
   :straight (js-imports
              :type git
              :host github

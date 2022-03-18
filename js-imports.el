@@ -126,7 +126,7 @@
   "Alist mapping module path to default and namespace import name."
   :type '(alist
           :key-type (string :tag "Module path")
-          :value-type (repeat :tag "Default import name" directory))
+          :value-type (string :tag "Default import name"))
   :group 'js-imports)
 
 (defvar js-imports-mode-syntax-table
