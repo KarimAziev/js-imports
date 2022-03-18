@@ -122,6 +122,13 @@
   :type '(repeat string)
   :group 'js-imports)
 
+(defcustom js-imports-modules-default-names nil
+  "Alist mapping module path to default and namespace import name."
+  :type '(alist
+          :key-type (string :tag "Module path")
+          :value-type (repeat :tag "Default import name" directory))
+  :group 'js-imports)
+
 (defvar js-imports-mode-syntax-table
   (let ((table (make-syntax-table)))
     (c-populate-syntax-table table)
@@ -1700,7 +1707,8 @@ Returns the distance traveled, either zero or positive."
                 (or (js-imports-inside-comment-p)
                     (equal (js-imports-get-prev-char) "/"))
                 (setq pos
-                      (js-imports-re-search-backward "[^\s\t\n\r\f\v]" nil t 1)))
+                      (js-imports-re-search-backward
+                       "[^\s\t\n\r\f\v]" nil t 1)))
       (setq total (+ total (skip-chars-backward skip-chars))))
     (when pos
       (goto-char pos)
@@ -2633,9 +2641,15 @@ Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-back
 
 (defun js-imports-read-default-import-name (path &optional prompt)
   "Read string with PROMPT and generated from PATH default import name."
-  (let ((value (if-let ((generated (gethash path js-imports-defaults-history
-                                            (js-imports-generate-name-from-path
-                                             path))))
+  (let ((value (if-let ((generated
+                         (or
+                          (cdr
+                           (assoc path
+                                  js-imports-modules-default-names))
+                          (gethash path
+                                   js-imports-defaults-history
+                                   (js-imports-generate-name-from-path
+                                    path)))))
                    (read-string (format (concat
                                          (string-join
                                           (delete
@@ -2653,7 +2667,8 @@ Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-back
   "Check CANDIDATE is namespace and prompt for local name."
   (when-let ((pos (string-match-p "\\*" candidate)))
     (let ((parts (split-string (substring-no-properties candidate
-                                                        (1+ pos)) nil t))
+                                                        (1+ pos))
+                               nil t))
           (as-name))
       (setq as-name
             (when (equal (car parts) "as")
@@ -3074,9 +3089,10 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
       (setq js-imports-definitions-source
             (helm-make-source
              "Definitions" 'helm-source-sync
-             :candidates (lambda () (with-current-buffer js-imports-current-buffer
-                                 (js-imports-extract-definitions
-                                  buffer-file-name (point))))
+             :candidates
+             (lambda () (with-current-buffer js-imports-current-buffer
+                     (js-imports-extract-definitions
+                      buffer-file-name (point))))
              :marked-with-props 'withprop
              :volatile t
              :action '(("Jump" .
