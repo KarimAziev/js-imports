@@ -1,36 +1,78 @@
-;;; js-imports.el --- Import JavaScript files easily -*- lexical-binding: t -*-
+;;; js-imports.el --- Import JavaScript files -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020 Karim Aziiev <karim.aziiev@gmail.com>
 
 ;; Author: Karim Aziiev <karim.aziiev@gmail.com>
 ;; URL: https://github.com/KarimAziev/js-imports
-;; Keywords: convenience, tools
+;; Keywords: languages
 ;; Version: 0.1.1
 ;; Package-Requires: ((emacs "26.1"))
 
-;; This file is NOT part of GNU Emacs.
+;; URL: https://github.com:KarimAziev/js-imports.git
 
-;;; License:
+;; This file is NOT part of GNU Emacs.
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation, either version 3 of the License, or
-;; (at your option) any later version.
-
+;; the Free Software Foundation; either version 3, or (at your option)
+;; any later version.
+;;
 ;; This program is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;; GNU General Public License for more details.
-
+;;
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 ;;; Commentary:
 
-;; This library provides importing and navigation for JavaScript files.
+;; Provide importing and navigation for JavaScript files.
+
+;; Commands
+
+;; M-x `js-imports'
+;;      Read a filename to extract exports and add selected ones in current buffer.
+;;      Addional actions to open or preview are configured for `helm' and `ivy'.
+
+;; M-x `js-imports-transform-relative-imports-to-aliases'
+;;      Replace relative paths in import statements to aliased ones.
+;;      An exception is made for paths from current buffer directory.
+;;
+;;      For example `import someExport from '../enums' transforms to
+;;      `import someExport from '@/enums', but keeps `import someExport from './enums'.
+
+;; M-x `js-imports-transform-import-path-at-point'
+;;      Replace path of import statement at point to aliased one or relative.
+;;      Inside import statement generates completions with available replacements, e.g:
+;;      `import someExport from '../../enums' to `import someExport from '@/enums''.'
+
+;; M-x `js-imports-change-completion'
+;;      Customize or temporarily set one of available completions systems:
+;;      `helm' `ivy' or default.
+
+;; M-x `js-imports-symbols-menu'
+;;      Jump or refactor to exported, imported and definitions in current buffer.
+
+;; M-x `js-imports-find-file-at-point'
+;;      Find a file when cursor are placed under stringified path.
+
+;; M-x `js-imports-jump-to-definition'
+;;      Deep jump to a definition of symbol at point through re-exports and renamings.
+
+;; M-x `js-imports-from-path' (&optional path)
+;;      Make completions with exports from PATH.
+;;      Add selected choices to existing or new import statement.
+
+;; M-x `js-imports-mark-it'
+;;      Mark node at point.
+
+;; M-x `js-imports-select-prev-alias'
+;;      Select previous alias and exit minibuffer.
+
+;; M-x `js-imports-select-next-alias'
+;;      Select next alias and exit minibuffer.
 
 ;;; Code:
-
 
 (require 'json)
 
@@ -161,6 +203,7 @@
 
 (defvar-local js-imports-buffer-tick nil
   "Buffer modified tick.")
+
 (defvar-local js-imports-current-export-path nil)
 (defvar-local js-imports-last-export-path nil)
 (defvar-local js-imports-export-candidates-in-path nil)
@@ -493,8 +536,8 @@ CACHE-KEY should be a filename due to invalidation which uses modification time.
 JSON-TYPE must be one of `alist', `plist', or `hash-table'."
   (condition-case nil
       (let* ((json-object-type (or json-type 'plist))
-             (cache (gethash (format "%s:%s" file json-object-type)
-                             js-imports-json-hash))
+             (cache-key (format "%s:%s" file json-object-type))
+             (cache (gethash cache-key js-imports-json-hash))
              (cache-tick (and cache (plist-get cache :tick)))
              (tick (file-attribute-modification-time (file-attributes
                                                       file
@@ -512,9 +555,10 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
                     (json-read-from-string str))))
           (setq cache (list :tick tick
                             :json content-json))
-          (puthash file cache js-imports-json-hash))
+          (puthash cache-key cache js-imports-json-hash))
         (plist-get cache :json))
-    (error (message "Cannot read %s" file))))
+    (error (message "Cannot read %s" file)
+           nil)))
 
 (defun js-imports-read-tsconfig (&optional project-root tsconfig-name)
   "Expand TSCONFIG-NAME to PROJECT-ROOT and return alist of aliases and paths."
@@ -524,16 +568,15 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
         (compiler-options)
         (found)
         (base-url)
-        (extends (if tsconfig-name
-                     (and project-root (expand-file-name tsconfig-name
-                                                         project-root))
-                   (seq-find 'file-exists-p
-                             (and project-root
-                                  (list
-                                   (expand-file-name "tsconfig.json"
-                                                     project-root)
-                                   (expand-file-name "jsconfig.json"
-                                                     project-root)))))))
+        (extends (seq-find 'file-exists-p
+                           (and project-root
+                                (delete nil
+                                        (list
+                                         tsconfig-name
+                                         (expand-file-name "tsconfig.json"
+                                                           project-root)
+                                         (expand-file-name "jsconfig.json"
+                                                           project-root)))))))
     (while (and (not found)
                 extends
                 (file-exists-p extends))
@@ -589,6 +632,9 @@ Default section is `dependencies'"
     (when js-imports-current-alias
       (unless (member js-imports-current-alias js-imports-aliases)
         (setq js-imports-current-alias nil)))
+    (unless js-imports-current-project-root
+      (setq js-imports-current-project-root
+            default-directory))
     (setq js-imports-project-files
           (js-imports-find-project-files
            js-imports-current-project-root))))
@@ -603,7 +649,7 @@ Default section is `dependencies'"
                            default-directory))
       (let ((files)
             (processed-dirs)
-            (node-modules (js-imports-find-node-modules))
+            (node-modules (js-imports-find-node-modules project-root))
             (dir (replace-regexp-in-string "/$" "" default-directory))
             (proj-root (replace-regexp-in-string
                         "/$"
@@ -2405,7 +2451,8 @@ The optional argument COUNT is a number that indicates the
 
 (defun js-imports-re-search-forward (regexp &optional bound noerror count)
   "Search forward from point for REGEXP ignoring comments and strings.
-Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-forward'."
+Optional arguments BOUND, NOERROR, COUNT has the same meaning
+as for `re-search-forward'."
   (let ((case-fold-search nil))
     (unless count (setq count 1))
     (let ((init-point (point))
@@ -2449,7 +2496,8 @@ The optional argument COUNT is a number that indicates the
 
 (defun js-imports-re-search-backward (re &optional bound noerror count)
   "Search backward from point for RE ignoring strings and comments.
-Optional arguments BOUND, NOERROR, COUNT has the same meaning as `re-search-backward'."
+Optional arguments BOUND, NOERROR, COUNT has the same meaning
+as `re-search-backward'."
   (let ((case-fold-search nil))
     (js-imports-re-search-forward re bound noerror (if count (- count) -1))))
 
@@ -3212,9 +3260,12 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
   "Generate prompt for read file functions."
   (unless js-imports-current-project-root
     (js-imports-init-project))
-  (let ((project-name (car (reverse (split-string
-                                     (directory-file-name
-                                      js-imports-current-project-root) "/")))))
+  (let ((project-name (if js-imports-current-project-root
+                          (car (reverse (split-string
+                                         (directory-file-name
+                                          js-imports-current-project-root)
+                                         "/")))
+                        default-directory)))
     (concat project-name "\s" "files" "\s" (or js-imports-current-alias
                                                "./"))))
 
@@ -3655,7 +3706,7 @@ For example `import someExport from '../enums' transforms to
 
 ;;;###autoload
 (defun js-imports-reset-cache ()
-  "Flush cache."
+  "Purge project cache."
   (interactive)
   (setq js-imports-project-aliases nil)
   (maphash (lambda (key _value)
@@ -3711,16 +3762,17 @@ If called interactively also show the version in echo area."
                 js-imports-last-export-path
                 js-imports-export-candidates-in-path
                 js-imports-cached-imports-in-buffer)))
-    (js-imports-with-popup "*js-imports*"
-                           (dolist (v vars)
-                             (let ((val (js-imports-stringify
-                                         (symbol-value v))))
-                               (insert (propertize
-                                        (js-imports-stringify v)
-                                        'face
-                                        'font-lock-variable-name-face)
-                                       ": " val)
-                               (newline-and-indent))))))
+    (js-imports-with-popup
+     "*js-imports*"
+     (dolist (v vars)
+       (let ((val (js-imports-stringify
+                   (symbol-value v))))
+         (insert (propertize
+                  (js-imports-stringify v)
+                  'face
+                  'font-lock-variable-name-face)
+                 ": " val)
+         (newline-and-indent))))))
 
 (defvar js-imports-mode-map
   (let ((map (make-sparse-keymap)))
@@ -3738,7 +3790,7 @@ If called interactively also show the version in echo area."
 
 ;;;###autoload
 (define-minor-mode js-imports-mode
-  "js-imports-mode is a minor mode for importing.
+  "A minor mode for importing in javascript.
 \\{js-imports-mode-map}"
   :lighter " js-imports"
   :group 'js-imports
