@@ -29,6 +29,43 @@
 
 ;; This library provides easy importing and navigation for javascript files.
 
+;;; Commands
+
+;; M-x `js-imports-export-it'
+;; Possible insert export before current node.
+
+;; M-x `js-imports-read-items' (&optional passed-nodes &rest props)
+
+;; M-x `js-imports-ast-mark-it'
+
+;; M-x `js-imports-read-object' (&optional parsed-obj action)
+
+;; M-x `js-imports-beg-of-defun'
+
+;; M-x `js-imports-read-exports' (&optional nodes)
+
+;; M-x `js-imports-print-item-ivy' (&optional str)
+
+;; M-x `js-imports-narrow-to-defun'
+
+;; M-x `js-imports-object-complete' (obj-str)
+
+;; M-x `js-imports-show-definitions'
+
+;; M-x `js-imports-skip-node-at-point'
+
+;; M-x `js-imports-show-node-at-point'
+
+;; M-x `js-imports-read-item-complete' (&optional nodes)
+
+;; M-x `js-imports-ast-exports-reports'
+
+;; M-x `js-imports-read-items-from-file' (&optional file)
+
+;; M-x `js-imports-highlight-node-at-point'
+
+;; M-x `js-imports-print-item-keywords-ivy'
+
 ;;; Code:
 
 (require 'js-imports)
@@ -107,6 +144,7 @@ and props :id, :start and :end."
     (buffer-substring-no-properties beg (point))))
 
 (defun js-imports-skip-to-char-same-scope (&optional stop-chars)
+  "Skip to STOP-CHARS in same scope."
   (unless stop-chars (setq stop-chars "[;]"))
   (let ((open-chars-re "[^]({[;}]+")
         (search-point)
@@ -148,7 +186,7 @@ and props :id, :start and :end."
          (point))))
 
 (defun js-imports-normalize-value (value)
-	"Trim VALUE and if maybe convert it to number."
+  "Trim VALUE and if maybe convert it to number."
   (setq value
         (string-trim value))
   (if (string-match-p "^[0-9]+$" value)
@@ -156,7 +194,7 @@ and props :id, :start and :end."
     value))
 
 (defun js-imports-ensure-semicolon ()
-	"If text after point is semicolon forward it and return point position.
+  "If text after point is semicolon forward it and return point position.
 Whitespace and comments are ignored."
   (let ((pos))
     (setq pos (if (looking-at ";")
@@ -170,7 +208,7 @@ Whitespace and comments are ignored."
       pos)))
 
 (defun js-imports-skip-arrow ()
-	"Forward arrow at point and whitespace after.
+  "Forward arrow at point and whitespace after.
 Return poisiton of arrow's end."
   (when-let ((next (js-imports-get-next-char 2)))
     (when (string= next "=>")
@@ -184,19 +222,19 @@ Return poisiton of arrow's end."
   "List of javascript assignment operators.")
 
 (defun js-imports-get-operator-at-point ()
-	"Forward and return operator at point as string."
+  "Forward and return operator at point as string."
   (let ((start (point)))
     (when (> (skip-chars-forward "!@#%^&*=><~|\\-+/?:") 0)
       (buffer-substring-no-properties start (point)))))
 
 (defun js-imports-get-assigmnent-operator ()
-	"Get assigmnent operator at point or nil."
+  "Get assigmnent operator at point or nil."
   (when-let ((operator (js-imports-get-operator-at-point)))
     (when (member operator js-imports-assignment-operators)
       operator)))
 
 (defun js-imports-parse-funcall-params ()
-	"Parse arguments of non-recoursively."
+  "Parse arguments of non-recoursively."
   (js-imports-parse-arguments nil 'js-imports-parse-object))
 
 (defun js-imports-parse-funcall ()
@@ -276,7 +314,7 @@ Return poisiton of arrow's end."
       (js-imports-get-next-char)))
 
 (defun js-imports-get-prev-token-ignore-whitespace ()
-	"Return string with previous token ignoring comments and whitespace."
+  "Return string with previous token ignoring comments and whitespace."
   (save-excursion
     (js-imports-backward-whitespace)
     (when-let* ((end (point))
@@ -383,6 +421,7 @@ Optional argument ID is will b."
     nil))
 
 (defun js-imports-parse-arrow-function ()
+  "Parse arrow function at point."
   (if-let* ((parent-start (point))
             (args
              (progn
@@ -415,6 +454,8 @@ Optional argument ID is will b."
     nil))
 
 (defun js-imports-trim-length (str &optional max)
+  "If length of STR more that MAX trim it.
+Default value of MAX is 100."
   (setq str (string-join (split-string str) "\s"))
   (unless max (setq max 100))
   (let ((total (length str))
@@ -427,6 +468,7 @@ Optional argument ID is will b."
       str)))
 
 (defun js-imports-parse-es-import-braces ()
+  "Parse es import braces at point."
   (when-let ((obj (js-imports-parse-object t)))
     (mapcar (lambda (cell) (let ((real-name
                              (car cell))
@@ -445,6 +487,7 @@ Optional argument ID is will b."
             obj)))
 
 (defun js-imports-parse-es-import ()
+  "Parse and forward es import at point."
   (when (looking-at "\\_<\\(import\\)\\_>")
     (let ((start (point))
           (end)
@@ -548,37 +591,19 @@ Optional argument ID is will b."
         re))))
 
 (defun js-imports-parse-string ()
+  "Forward and substring js string at point including quotes."
   (when-let ((start (and (looking-at "[`'\"]")
                          (point))))
     (forward-sexp 1)
     (buffer-substring-no-properties start (point))))
 
 (defun js-imports-path-at-point ()
-  (when-let ((start (and (looking-at "[`'\"]")
-                         (point))))
-    (forward-sexp 1)
-    (buffer-substring-no-properties (1+ start) (1- (point)))))
-
-(defun js-imports-parse-call ()
-  (when-let ((key (save-excursion (js-imports-get-obj-key))))
-    (unless (js-imports-reserved-word-p key)
-      (js-imports-get-obj-key)
-      (let ((parts `(,key))
-            (item))
-        (while (setq item
-                     (pcase (js-imports-get-next-char)
-                       ("("
-                        (let ((a (point)))
-                          (forward-sexp 1)
-                          (buffer-substring-no-properties a (point))))
-                       ("\\."
-                        (forward-char 1)
-                        (concat "\\." (js-imports-get-obj-key)))))
-          (push item parts)
-          (js-imports-forward-whitespace))
-        (string-join (reverse parts) "\s")))))
+  "Parse and forward path at point."
+  (when-let ((str (js-imports-parse-string)))
+    (substring str 1 (1- (length str)))))
 
 (defun js-imports-get-require-path ()
+  "If text after point is require call, return it's path."
   (let ((case-fold-search nil))
     (when-let* ((bounds
                  (when (looking-at "\\_<\\(require\\)\\_>")
@@ -594,81 +619,81 @@ Optional argument ID is will b."
       (js-imports-strip-quotes path))))
 
 (defun js-imports-parse-value ()
+  "Forward and parse value and point."
   (let ((start)
         (end)
         (value)
         (count)
-        (obj)
         (nodes))
     (setq start (point))
     (while
         (progn
-          (and (not obj)
-               (setq count (or (and count (1+ count))
-                               0))
-               (setq value
-                     (or
-                      (when-let ((v (or (js-imports-parse-funcall)
-                                        (js-imports-parse-regexp))))
-                        (if (equal (js-imports-get-next-char 1) ".")
-                            (setq v (progn (forward-char 1) (concat v ".")))
-                          v))
-                      (if-let ((operator
-                                (save-excursion
-                                  (js-imports-get-operator-at-point))))
-                          (or
-                           (js-imports-forward-angles)
-                           (progn
-                             (skip-chars-forward operator)
-                             (js-imports-forward-whitespace)
-                             operator))
-                        (pcase (js-imports-get-next-char-or-word)
-                          ((or "export" "const" "module.exports"
-                               "class" "let" "var" "enum" "interface")
-                           nil)
-                          ((or "async" "function" "function*")
-                           (js-imports-parse-function-declaration))
-                          ("as"
-                           (js-imports-get-obj-key)
-                           (js-imports-forward-whitespace)
-                           (js-imports-get-obj-key))
-                          ("{"
-                           (let ((a (point)))
-                             (forward-sexp 1)
-                             (if (= count 0)
-                                 (js-imports-make-item
-                                  (buffer-substring-no-properties a (point))
-                                  :value-type "object")
-                               (buffer-substring-no-properties a (point)))))
-                          ("["
-                           (let ((a (point)))
-                             (forward-sexp 1)
-                             (if (= count 0)
-                                 (js-imports-make-item
-                                  (buffer-substring-no-properties a (point))
-                                  :value-type "array")
-                               (buffer-substring-no-properties a (point)))))
-                          ("<"
-                           (js-imports-forward-angles))
-                          ("("
-                           (let ((a (point)))
-                             (forward-sexp 1)
-                             (if (> count 1)
-                                 (js-imports-make-item
-                                  (buffer-substring-no-properties a (point))
-                                  :value-type "call"
-                                  :args
-                                  (buffer-substring-no-properties a (point)))
-                               (buffer-substring-no-properties a (point)))))
-                          ((or "\"" "'" "`")
-                           (js-imports-make-item
-                            (js-imports-parse-string)
-                            :value-type "string"))
-                          (_ (let ((key (js-imports-get-obj-key)))
-                               (if (looking-at ":")
-                                   (progn (forward-char 1)
-                                          (format "%s:" key))
-                                 key)))))))))
+          (and
+           (setq count (or (and count (1+ count))
+                           0))
+           (setq value
+                 (or
+                  (when-let ((v (or (js-imports-parse-funcall)
+                                    (js-imports-parse-regexp))))
+                    (if (equal (js-imports-get-next-char 1) ".")
+                        (setq v (progn (forward-char 1) (concat v ".")))
+                      v))
+                  (if-let ((operator
+                            (save-excursion
+                              (js-imports-get-operator-at-point))))
+                      (or
+                       (js-imports-forward-angles)
+                       (progn
+                         (skip-chars-forward operator)
+                         (js-imports-forward-whitespace)
+                         operator))
+                    (pcase (js-imports-get-next-char-or-word)
+                      ((or "export" "const" "module.exports"
+                           "class" "let" "var" "enum" "interface")
+                       nil)
+                      ((or "async" "function" "function*")
+                       (js-imports-parse-function-declaration))
+                      ("as"
+                       (js-imports-get-obj-key)
+                       (js-imports-forward-whitespace)
+                       (js-imports-get-obj-key))
+                      ("{"
+                       (let ((a (point)))
+                         (forward-sexp 1)
+                         (if (= count 0)
+                             (js-imports-make-item
+                              (buffer-substring-no-properties a (point))
+                              :value-type "object")
+                           (buffer-substring-no-properties a (point)))))
+                      ("["
+                       (let ((a (point)))
+                         (forward-sexp 1)
+                         (if (= count 0)
+                             (js-imports-make-item
+                              (buffer-substring-no-properties a (point))
+                              :value-type "array")
+                           (buffer-substring-no-properties a (point)))))
+                      ("<"
+                       (js-imports-forward-angles))
+                      ("("
+                       (let ((a (point)))
+                         (forward-sexp 1)
+                         (if (> count 1)
+                             (js-imports-make-item
+                              (buffer-substring-no-properties a (point))
+                              :value-type "call"
+                              :args
+                              (buffer-substring-no-properties a (point)))
+                           (buffer-substring-no-properties a (point)))))
+                      ((or "\"" "'" "`")
+                       (js-imports-make-item
+                        (js-imports-parse-string)
+                        :value-type "string"))
+                      (_ (let ((key (js-imports-get-obj-key)))
+                           (if (looking-at ":")
+                               (progn (forward-char 1)
+                                      (format "%s:" key))
+                             key)))))))))
       (push value nodes)
       (js-imports-forward-whitespace "\s\t")
       (when-let ((func (and (looking-at "{")
@@ -703,6 +728,8 @@ Optional argument ID is will b."
              (format "%s" val) :start start :end end)))))))
 
 (defun js-imports-backward-up-list (&optional arg)
+  "Move backward out of one level of parentheses.
+With ARG, do this that many times."
   (when-let ((str-start (nth 8 (syntax-ppss (point)))))
     (goto-char str-start))
   (let ((pos (point)))
@@ -713,6 +740,7 @@ Optional argument ID is will b."
         end))))
 
 (defun js-imports-backward-list ()
+  "If text before point is close parenthesis move backward one balanced expression."
   (when (looking-back "[)]" 0)
     (forward-sexp -1)
     (point)))
@@ -724,6 +752,8 @@ Case is not ignored."
     (looking-at regexp)))
 
 (defun js-imports-parse-variable (&optional node)
+  "Parse variable at point.
+With optional argument NODE use it's property :parent-start."
   (when (js-imports--looking-at
          "\\_<\\(const\\|let\\|enum\\|var\\|type\\|class\\|interface\\|declare\\|namespace\\)\\_>")
     (let ((start (or (and
@@ -885,17 +915,15 @@ Case is not ignored."
                                  :var-type (format "%s" (or node node-type))
                                  :value (js-imports-parse-object))))))))
 
-(defun js-imports-parse-path ()
-  (when-let ((str (js-imports-parse-string)))
-    (substring str 1 (1- (length str)))))
-
 (defun js-imports-apply-on-one-many (func items)
+  "If ITEMS is list apply FUNC to each element otherwise call FUNC with ITEMS."
   (if (listp items)
       (mapcar (lambda (it) (js-imports-apply-on-one-many func it))
               items)
     (and items (funcall func items))))
 
 (defun js-imports-parse-amd-export ()
+  "Parse amd export at point."
   (when-let* ((define-keyword (and (looking-at "\\_<\\(define\\)\\_>")
                                    (js-imports-get-obj-key)))
               (args (progn
@@ -918,6 +946,7 @@ Case is not ignored."
                           :parent-end (point))))
 
 (defun js-imports-parse-es-export-braces ()
+  "Parse and forward defined with esm syntax braces at point."
   (let ((body (js-imports-parse-object t))
         (parent-end)
         (display-path))
@@ -960,6 +989,7 @@ Case is not ignored."
             body)))
 
 (defun js-imports-parse-export ()
+  "Parse and forward export at point."
   (let ((parent-start (point))
         (result
          (cond
@@ -980,7 +1010,7 @@ Case is not ignored."
                          ((equal as-name-or-from "from")
                           (js-imports-make-item "*"
                                                 :display-path
-                                                (js-imports-parse-path)
+                                                (js-imports-path-at-point)
                                                 :var-type "export"
                                                 :type 16
                                                 :export t))
@@ -998,7 +1028,7 @@ Case is not ignored."
                                (js-imports-get-obj-key)
                                "from")
                               (js-imports-forward-whitespace)
-                              (js-imports-parse-path))
+                              (js-imports-path-at-point))
                              :type 4
                              :export t)))))
                   (js-imports-ensure-semicolon)
@@ -1141,6 +1171,7 @@ Case is not ignored."
     export-node))
 
 (defun js-imports-parse-statement ()
+  "Parse and forward statement at point."
   (when-let ((item (and (js-imports-reserved-word-p (js-imports-which-word))
                         (js-imports-get-obj-key))))
     (js-imports-forward-whitespace)
@@ -1211,6 +1242,7 @@ Case is not ignored."
                                :var-type item))))))
 
 (defun js-imports-parse-iife ()
+  "Parse and forward iife at point."
   (when-let ((children
               (pcase (js-imports-get-next-char)
                 ((or "!" ";")
@@ -1236,6 +1268,8 @@ Case is not ignored."
     children))
 
 (defun js-imports-parse-node-at-point (&optional deep)
+  "Parse node and forward node at point.
+If optional argument DEEP is non nil, parse functions recoursively."
   (let ((node-start)
         (node-end)
         (node))
@@ -1251,7 +1285,6 @@ Case is not ignored."
                 (js-imports-parse-variable)
                 (js-imports-parse-statement)
                 (js-imports-parse-assignment)
-                ;; (js-imports-parse-funcall)
                 (js-imports-parse-value)))
     (unless node
       (setq node-start (point)))
@@ -1265,6 +1298,11 @@ Case is not ignored."
       (js-imports-make-item node :start node-start :end node-end))))
 
 (defun js-imports-parse-scope (&optional start end deep callback)
+  "Parse scope in current buffer.
+Optional argument START is inital point.
+END is max point to parse.
+DEEP is whether to parse recoursive.
+CALLBACK is function to be called with every node."
   (when start (goto-char start))
   (let ((node)
         (prev-pos)
@@ -1284,42 +1322,16 @@ Case is not ignored."
       (js-imports-forward-whitespace "\s\t\n\r\f\v,=?:+#-"))
     (reverse nodes)))
 
-(defun js-imports-traverse-node ()
-  (interactive)
-  (when-let ((node (progn (js-imports-forward-whitespace)
-                          (js-imports-parse-node-at-point))))
-    (prog1 node
-      (js-imports-forward-whitespace))))
-
-(defun js-imports-traverse-all ()
-  (let ((nodes)
-        (node))
-    (while (setq node (js-imports-traverse-node))
-      (push node nodes))
-    nodes))
-
 (defun js-imports-skip-node-at-point ()
+  "Forward whitespace and parse node at point."
   (interactive)
   (js-imports-forward-whitespace)
   (js-imports-parse-node-at-point))
 
-(defun js-imports-get-node-props (node &rest props)
-  "Return list of values "
-  (let ((result))
-    (dolist (prop props)
-      (when-let ((value (js-imports-get-prop node prop)))
-        (push value result)))
-    (reverse result)))
-
-(defun js-imports-get-node-positions (node &rest props)
-  "Return list of values "
-  (let ((result))
-    (dolist (prop props)
-      (when-let ((value (js-imports-get-prop node prop)))
-        (push value result)))
-    (reverse result)))
-
 (defun js-imports-find-by-node-pos (pos node)
+  "Find by node pos.
+at POS
+NODE is ."
   (cond ((consp node)
          (mapcar (apply-partially 'js-imports-find-by-node-pos pos) node))
         ((listp node)
@@ -1407,18 +1419,6 @@ Case is not ignored."
                                         (append scopes top-scope)
                                       top-scope))))
 
-(defmacro js-imports-ast-in-temp-buffer (&rest body)
-  `(let ((left--content (buffer-substring-no-properties
-                         (point-min)
-                         (point)))
-         (right--content (buffer-substring-no-properties
-                          (point)
-                          (point-max))))
-     (js-imports-with-temp-buffer
-      (insert left--content)
-      (save-excursion (insert right--content))
-      ,@body)))
-
 (defun js-imports-parse-context-from-current-buffer (&optional start end)
   (let ((result)
         (content (buffer-substring-no-properties
@@ -1469,7 +1469,7 @@ Case is not ignored."
                              (js-imports-backward-whitespace)
                              (js-imports-backward-list)
                              (skip-chars-backward js-imports-regexp-name-set)
-                             (message "1")
+                             ;; (message "1")
                              (let ((args
                                     (or
                                      (js-imports-parse-arguments)
@@ -1502,40 +1502,6 @@ Case is not ignored."
                 (setq items (append items args))
               (push args items))))))
     items))
-
-;; (when (and (looking-at "{")
-;;                      (save-excursion
-;;                        (js-imports-backward-whitespace)
-;;                        (when (looking-back ")" 0)
-;;                          (backward-sexp 1)
-;;                          (js-imports-backward-whitespace)
-;;                          (equal (js-imports-get-word) "if"))))
-;;             (setq items (append items (save-excursion
-;;                                         (js-imports-parse-scope-inner))))
-;;             (js-imports-backward-whitespace)
-;;             (when-let ((args
-;;                         (cond ((looking-back "=>" 0)
-;;                                (forward-char -2)
-;;                                (js-imports-backward-whitespace)
-;;                                (when-let
-;;                                    ((arg
-;;                                      (or (js-imports-get-word)
-;;                                          (progn (forward-sexp -1)
-;;                                                 (js-imports-parse-arguments)))))
-;;                                  arg))
-;;                               ((looking-back "[)]" 0)
-;;                                (forward-sexp -1)
-;;                                (js-imports-parse-arguments))
-;;                               ((equal "return" (js-imports-which-word))
-;;                                (js-imports-parse-object t))
-;;                               ((and
-;;                                 (looking-at "{")
-;;                                 (looking-back "[(]" 0))
-;;                                (prog1 (js-imports-parse-object t)
-;;                                  (js-imports-backward-up-list))))))
-;;               (if (listp args)
-;;                   (setq items (append items args))
-;;                 (push args items))))
 
 (defun js-imports-show-node-at-point ()
   (interactive)
@@ -1592,17 +1558,6 @@ Case is not ignored."
                  it (concat "\n" (if indent (make-string indent ?\s))))
     it))
 
-(defun js-imports-get-item-keywords (item)
-  (if (and item (listp item))
-      (mapcar 'js-imports-get-item-keywords item)
-    (when-let ((props (and item (stringp item)
-                           (text-properties-at 0 item))))
-      (cons (js-imports-strip-text-props item)
-            (mapcar (lambda (it) (or
-                             (js-imports-get-item-keywords it)
-                             it))
-                    props)))))
-
 (defun js-imports-to-string (object)
   "Return a string containing the pretty-printed representation of OBJECT.
 OBJECT can be any Lisp object.  Quoting characters are used as needed
@@ -1647,6 +1602,7 @@ to make output that `read' can handle, whenever this is possible."
                 content))
       (font-lock-ensure)
       (buffer-string))))
+
 (defvar js-imports-pp-key nil
   "A sequence of keystrokes, a string or vector, read by `js-imports-print'")
 
@@ -1711,7 +1667,9 @@ to make output that `read' can handle, whenever this is possible."
                                                                       :args))))
                                   (format "%s%s" (or value "") value-args))))
         (setq parts (list
-                     (and args (format "%s: " args))
+                     (if args (format "%s: " args)
+                       (when (stringp value)
+                         (js-imports-trim-length value)))
                      (and type (numberp type)
                           (format "%s" type))
                      (if (and type
@@ -1818,33 +1776,6 @@ to make output that `read' can handle, whenever this is possible."
    (when-let ((c (js-imports-get-next-char)))
      (forward-char 1)
      c)))
-
-(defun js-imports-traverse-nodes ()
-  (let ((nodes)
-        (token)
-        (brackets-count 0))
-    (while (setq token (progn
-                         (js-imports-forward-whitespace)
-                         (js-imports-get-token-at-point)))
-      (pcase token
-        ("{"
-         (setq brackets-count (1+ brackets-count)))
-        ("}"
-         (setq brackets-count (1- brackets-count))))
-      (unless (or token
-                  (string-empty-p (string-trim token)))
-        (push token nodes)))
-    (reverse nodes)))
-
-(defun js-imports-merge-item-props (item &rest props)
-  (let ((item-props (if (stringp item)
-                        (text-properties-at 0 item)
-                      item)))
-    (dotimes (idx (length props))
-      (when (eq (logand idx 1) 0)
-        (let ((val (plist-get props (nth idx props))))
-          (plist-put item-props (nth idx props) val))))
-    (apply 'js-imports-make-item item item-props)))
 
 (defun js-imports-merge-plists (item props)
   (let ((item-props (if (stringp item)
@@ -1998,7 +1929,7 @@ to make output that `read' can handle, whenever this is possible."
           (js-imports-strip-object-props obj))))))
 
 (defun js-imports-parse-arguments (&optional deep parse-object-fn)
-	"If text after point is open bracket parse arguments at point.
+  "If text after point is open bracket parse arguments at point.
 With optional argument DEEP functions will be parsed recoursively.
 PARSE-OBJECT-FN specifies how to parse objects."
   (unless parse-object-fn (setq parse-object-fn
@@ -2147,9 +2078,11 @@ PARSE-OBJECT-FN specifies how to parse objects."
                           (prin1-to-string item))))))
 
 (defun js-imports-maybe-strip-quotes (it)
-  (if (and (string-match-p "^[\"']" it)
-           (string-match-p "[\"']$" it)
-           (not (string-match-p "[-/]" it)))
+  (if (and
+       (> 1 (length it))
+       (string-match-p "^[\"']" it)
+       (string-match-p "[\"']$" it)
+       (not (string-match-p "[-/]" it)))
       (substring it 1 (1- (length it)))
     it))
 
@@ -2174,7 +2107,8 @@ PARSE-OBJECT-FN specifies how to parse objects."
              (append object nil))))
     (dolist (item object)
       (if (and (consp item)
-               (car item))
+               (car item)
+               (not (functionp item)))
           (let ((key)
                 (value (cdr (assoc (car item) object)))
                 (vect)
@@ -2202,12 +2136,14 @@ PARSE-OBJECT-FN specifies how to parse objects."
                                             it))
                                     (append value nil)))
                              (js-imports-get-object-keys vect key))
-                            ((listp value)
+                            ((and (listp value)
+                                  (not (functionp value)))
                              (js-imports-get-object-keys value key))))
             (if subitems
                 (setq keys (append `(,key) keys subitems))
               (push (js-imports-make-item key :value value) keys)))
-        (push (car item) keys)))
+        (when (stringp (car item))
+          (push (car item) keys))))
     keys))
 
 (defun js-imports-parse-token-at-point-old ()
@@ -2297,7 +2233,7 @@ PARSE-OBJECT-FN specifies how to parse objects."
                                        it))
                                (append value nil)))
                         (js-imports-parse-object-pattern vect path))
-                       ((and value (listp value)) 
+                       ((and value (listp value))
                         (js-imports-parse-object-pattern value path))
                        ((stringp value)
                         (js-imports-make-item value
@@ -2386,11 +2322,33 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
    ((stringp item)
     (cond ((or (js-imports-get-prop item :args)
                (js-imports-get-deep-prop item :value :args))
-           `((lambda ,(mapcar
-                  (lambda (it) (replace-regexp-in-string
-                           "[\\.][\\.][\\.]" "&rest\s"
-                           (js-imports-strip-text-props it)))
-                  (js-imports-get-prop item :args)))))
+           (let ((args (or (js-imports-get-prop item :args)
+                           (js-imports-get-deep-prop item :value :args))))
+             (cond ((and (= 1 (length args))
+                         (equal "" (car args)))
+                    `((lambda ())))
+                   (t
+                    `((lambda
+                        ,(seq-reduce
+                          (lambda (acc it)
+                            (setq it (js-imports-strip-text-props it))
+                            (let ((value (if (string-empty-p it)
+                                             nil
+                                           (if (string-match-p "^[.]" it)
+                                               (append '(&rest)
+                                                       (list
+                                                        (intern
+                                                         (car
+                                                          (split-string
+                                                           it
+                                                           "[.]"
+                                                           t)))))
+                                             (intern it)))))
+                              (if (listp value)
+                                  (append acc value)
+                                (append acc (list value)))))
+                          args
+                          '())))))))
           (t (pcase item
                ("null" 'null)
                ("true" 't)
@@ -2418,6 +2376,7 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
   (when-let ((bounds (js-imports-get-bounds regexp)))
     (buffer-substring-no-properties (car bounds)
                                     (cdr bounds))))
+
 (defun js-imports-ast-from-file (file)
   (js-imports-with-buffer-or-file-content file
       (let ((items (js-imports-parse-context t)))
@@ -2507,18 +2466,21 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
       nil)))
 
 (defun js-imports-export-it ()
+  "Possible insert export before current node."
   (interactive)
   (save-excursion
     (if (and (= 0 (car (syntax-ppss (point))))
              (looking-at js-imports-delcaration-keywords--re)
-             (null (save-excursion (js-imports-backward-whitespace)
-                                   (js-imports-backward-declaration-keywords))))
+             (null (save-excursion
+                     (js-imports-backward-whitespace)
+                     (js-imports-backward-declaration-keywords))))
         (insert "export\s")
       (when-let ((parent (js-imports-find-parent-node)))
         (unless (js-imports-get-prop parent :export)
           (goto-char (js-imports-get-prop parent :start))
           (insert "export\s")
           (message "exported %s" parent))))))
+
 (defun js-imports-beg-of-defun ()
   (interactive)
   (unless (and (= 0 (car (syntax-ppss (point))))
@@ -2728,13 +2690,100 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
                         (cadr result)))
         (message (cadr result))))))
 
+(defvar js-imports-ast-node-builtins-js-str
+  "
+const annotateFunction = (str) => {
+        let parts = str.split('').reverse();
+        let processed = [];
+        let curr;
+        let bracketsOpen = 0;
+        let bracketsClosed = 0;
+        let openCount = 0;
+        let closedCount = 0;
+        let result;
+
+        while ((curr = !result && parts.pop())) {
+          if (curr === '(') {
+            openCount += 1;
+          } else if (curr === ')') {
+            closedCount += 1;
+          }
+          if (openCount > 0) {
+            processed.push(curr);
+            if (curr === '{') {
+              bracketsOpen += 1;
+            } else if (curr === '}') {
+              bracketsClosed += 1;
+            }
+          }
+          result =
+            result ||
+            (bracketsOpen === bracketsClosed &&
+              openCount === closedCount &&
+              openCount > 0)
+              ? processed.join('')
+              : undefined;
+        }
+
+        return result
+          ? 'function'.concat(result).concat('{}')
+          : result;
+      }
+const mapNodeBuiltins = () => {
+  const annotateFn = (fn) => {
+    const len = fn.length || 0;
+    let idx = 0;
+    let list;
+    list = new Array(len);
+    while (idx < len) {
+      list[idx] = `arg${idx}`;
+      idx += 1;
+    }
+    return `function ${fn.name && fn.name.split(' ')[0]} ${list.join(', ')} {}`;
+  };
+
+  const mapper = (data, depth = 0) => {
+    return Object.keys(data)
+      .filter((k) => !/^_/g.test(k))
+      .reduce((obj, key) => {
+        const v = data[key];
+        const val =
+          v instanceof Function || typeof v === 'function'
+            ? annotateFunction(v
+                .toString()
+                .replace(/\\/\\*[\\s\\S]*?\\*\\/|\\/\\/.*/g, '')
+                .replace(/\\r?\\n/gmi, '')
+                .trim())
+            : Array.isArray(v)
+            ? []
+            : typeof v === 'object' && depth < 3 && v
+            ? mapper(v, depth + 1)
+            : v;
+        obj[key] = val;
+        return obj;
+      }, {});
+  };
+  const obj = require('module')
+    .builtinModules.filter((k) => !/^_/g.test(k))
+    .reduce((acc, moduleName) => {
+      acc[moduleName] = mapper(require(moduleName));
+      return acc;
+    }, {});
+  return obj;
+};
+mapNodeBuiltins();")
+
 (defun js-imports-extract-node-builins ()
-  (let ((modules (append
-                  (js-imports-parse-object-from-string
-                   (shell-command-to-string
-                    (string-join '("node -p" "\"" "require('repl')._builtinLibs.reduce((acc, key) => ({ ...acc, [key]: Object.keys(require(key)).reduce((a, k) => ({ ...a, [k]: k }), {}) }), {});" "\"") "\s")))
-                  nil)))
-    modules))
+  (let ((alist (js-imports-parse-object-from-string
+                (with-temp-buffer
+                  (let ((process-environment (append '("NODE_NO_WARNINGS=1") process-environment)))
+                    (call-process "node" nil (current-buffer) nil "-p" js-imports-ast-node-builtins-js-str)
+                    (let ((res (string-join (split-string (buffer-string) nil t) "\s")))
+                      res))))))
+    (mapcar (lambda (it) (if-let ((value (js-imports-get-prop it :value)))
+                        (js-imports-make-item it :value (js-imports-stringify value))
+                      it))
+            (js-imports-get-object-items alist))))
 
 (defun js-imports-make-builtin-exports ()
   (mapcar (lambda (it) (cons (car it) (append (list
@@ -2771,7 +2820,7 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
 (defun js-imports-insert (item &optional separator)
   (let ((parts))
     (setq parts
-          (if-let ((current-word (js-imports-which-word "-*_~$A-Za-z0-9:#\\+")))
+          (if-let ((current-word (js-imports-which-word "$_~$A-Za-z0-9:\\+.[]")))
               (progn
                 (if (string-prefix-p current-word item)
                     (list (substring-no-properties item (length current-word)))
@@ -2807,12 +2856,6 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
                        (re-search-backward "[)]" nil t 1))
               (insert ", " str))))))
     item))
-
-(defun js-imports-read-item-complete (&optional nodes)
-  (interactive)
-  (let ((item (funcall-interactively
-               'js-imports-read-items nodes :action 'identity)))
-    (js-imports-insert-complete item)))
 
 (defun js-imports-get-failed-files ()
   (js-imports-init-project)
@@ -2898,6 +2941,7 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
     (define-key map (kbd "C-c C-p") 'js-imports-print-item-keywords-ivy)
     map)
   "Keymap for `js-imports-read-items'.")
+
 (ivy-set-actions 'js-imports-read-items
                  '(("h" js-imports-highlight-node "highlight")
                    ("p" js-imports-print "pp")))
@@ -2927,6 +2971,117 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
                       (js-imports-parse-context-from-current-buffer))))
     (funcall-interactively 'js-imports-read-items definitions)))
 
+(defvar js-imports-window-completions nil)
+
+(defun js-imports-obj-completions-from-str (str)
+  (js-imports-with-temp-buffer
+   (insert str)
+   (when (js-imports-re-search-backward "[}]" nil t 1)
+     (forward-char 1)
+     (forward-sexp -1))
+   (when-let ((obj (save-excursion (js-imports-parse-object t))))
+     obj)))
+
+(defvar js-imports-current-completions nil)
+
+(defun js-imports-ast-get-all-completions ()
+  (let ((items (js-imports-parse-context-from-current-buffer)))
+    (delete nil
+            (seq-reduce
+             (lambda (acc it)
+               (when-let ((value (js-imports-get-deep-prop it :value)))
+                 (when (member (js-imports-get-prop value :value-type)
+                               '("object"))
+                   (let ((obj (js-imports-parse-object-from-string value)))
+                     (setq acc (append acc (js-imports-get-object-items
+                                            obj
+                                            it))))))
+               acc)
+             items
+             items))))
+
+(defvar-local js-imports-completions-table (make-hash-table :test 'equal))
+
+(defun js-imports-make-completions-from-modules (&optional modules)
+  (require 'js-imports)
+  (let ((exports))
+    (dotimes (i (length modules))
+      (let* ((item (nth i modules))
+             (module (js-imports-get-prop item :display-path))
+             (prefix (js-imports-get-prop item :as-name))
+             (file (js-imports-path-to-real module))
+             (symbols (or (js-imports-get-file-cache file)
+                          (js-imports-set-file-cache
+                           file
+                           (ignore-errors
+                             (js-imports-extract-all-exports file))))))
+        (setq symbols (mapcar (lambda (it) (concat prefix
+                                              "."
+                                              (js-imports-get-prop
+                                               it :as-name)))
+                              symbols))
+        (setq exports (append exports symbols))))
+    exports))
+
+(defun js-imports-make-declaraions-completions (&optional modules)
+  (require 'js-imports)
+  (dotimes (i (length modules))
+    (let* ((item (nth i modules))
+           (module (js-imports-get-prop item :display-path))
+           (prefix (js-imports-get-prop item :as-name))
+           (file (js-imports-path-to-real module))
+           (symbols (or (js-imports-get-file-cache file)
+                        (js-imports-set-file-cache
+                         file
+                         (ignore-errors
+                           (js-imports-extract-all-exports file))))))
+      (setq symbols (mapcar (lambda (it) (concat prefix
+                                            "."
+                                            (js-imports-get-prop
+                                             it :as-name)))
+                            symbols))
+      (puthash module symbols js-imports-completions-table)))
+  (flatten-list (hash-table-values js-imports-completions-table)))
+
+(defun js-imports-make-completions ()
+  (require 'js-imports)
+  (js-imports-init-project)
+  (let* ((imports (js-imports-imported-candidates-in-buffer
+                   js-imports-current-buffer))
+         (reimports (seq-uniq
+                     (delq nil
+                           (append (js-imports-filter-with-prop
+                                    :type 16 imports)
+                                   (js-imports-filter-with-prop
+                                    :type 1 imports)))))
+         (completions
+          (js-imports-make-completions-from-modules reimports)))
+    completions))
+
+(defun js-imports-read-item-complete (&optional nodes)
+  (interactive)
+  (let* ((items (append
+                 (js-imports-make-completions)
+                 (js-imports-ast-get-all-completions)
+                 (js-imports-extract-node-builins)))
+         (prefix (js-imports-which-word "$_~$A-Za-z0-9:\\+.[]"))
+         (pos (point))
+         (completions (if prefix
+                          (seq-remove (lambda (it) (equal pos
+                                                     (js-imports-get-prop it :end)))
+                                      items)
+                        items)))
+    (when-let ((item (funcall-interactively
+                      'js-imports-read-items
+                      (if prefix
+                          (all-completions prefix completions)
+                        completions)
+                      :action 'identity
+                      :preselect 0)))
+      (insert (if prefix
+                  (substring (format "%s" item) (length prefix))
+                (format "%s" item))))))
+
 (defun js-imports-read-items (&optional passed-nodes &rest props)
   (interactive)
   (unless (memq 'js-imports-read-items ivy--display-transformers-alist)
@@ -2941,7 +3096,7 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
               (js-imports-get-object-items
                (save-excursion (js-imports-parse-object t))
                (js-imports-get-object-parent-name))
-              (js-imports-parse-context-from-current-buffer)))
+              (js-imports-ast-get-all-completions)))
     (setq preselect-idx (js-imports-extract-preselect pos nodes))
     (let ((params (js-imports-merge-plists
                    (list :preselect preselect-idx
@@ -3015,37 +3170,6 @@ JSON-TYPE must be one of `alist', `plist', or `hash-table'."
                            :keymap js-imports-ivy-read-items-map
                            :action 'js-imports-jump-to-node
                            :caller 'js-imports-read-items-from-file))))
-
-(defun js-imports-ast-complete-node-builtins ()
-  (interactive)
-  (unless js-imports-ast-node-builtins-alist
-    (setq js-imports-ast-node-builtins-alist
-          (js-imports-extract-node-builins)))
-  (ivy-set-display-transformer
-   'js-imports-ast-complete-node-builtins
-   'js-imports-node-display-fn)
-  (let ((prefix (js-imports-get-word)))
-    (if-let ((choices
-              (and prefix
-                   (all-completions (js-imports-get-word)
-                                    (js-imports-get-object-keys
-                                     js-imports-ast-node-builtins-alist)))))
-        (ivy-read "Property\s" choices
-                  :caller 'js-imports-ast-complete-node-builtins
-                  :keymap js-imports-ivy-read-items-map
-                  :preselect prefix
-                  :action 'js-imports-insert-complete)
-      (js-imports-insert-complete
-       (js-imports-read-object js-imports-ast-node-builtins-alist)))))
-
-(defun js-imports-ast-complete (obj)
-	"Skip to char same scope.
-OBJ is ."
-  (interactive)
-  (ivy-set-display-transformer
-   'js-imports-ast-complete
-   'js-imports-node-display-fn)
-  (js-imports-read-object obj 'js-imports-insert-complete))
 
 (provide 'js-imports-ast)
 ;;; js-imports-ast.el ends here
