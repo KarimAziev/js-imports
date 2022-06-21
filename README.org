@@ -1,3 +1,4 @@
+
 * js-imports
 
 An Emacs package for importing symbols from JavaScript and TypeScript modules with
@@ -6,10 +7,40 @@ An Emacs package for importing symbols from JavaScript and TypeScript modules wi
 [[./js-imports-demo.gif]]
 
 ** Installation
+*** Manual
 
-*** straight-use-package
+Download the source code and put it wherever you like, and add the
+directory to the load path:
 
-An example of installation and configuration with package managers [[https://github.com/raxod502/straight.el][straight]] and [[https://github.com/jwiegley/use-package][use-package]].
+#+begin_src elisp :eval no
+
+(add-to-list 'load-path "/path/to/js-imports/")
+
+(require 'js-imports)
+
+#+end_src
+
+** [[https://github.com/raxod502/straight.el][straight.el]] or [[https://github.com/jwiegley/use-package][use-package]]
+
+If you are using [[https://github.com/raxod502/straight.el][straight.el]], then you can use a normal recipe to install:
+#+begin_src emacs-lisp :eval never-export
+
+(straight-use-package
+ '(js-imports :type git :host github :repo "KarimAziev/js-imports"))
+#+end_src
+
+You might be using [[https://github.com/jwiegley/use-package][use-package]] with [[https://github.com/raxod502/straight.el][straight.el]], then you can install and enable at the same time:
+
+
+#+begin_src emacs-lisp :eval never-export
+(use-package js-imports
+  :straight (js-imports
+             :type git
+             :host github
+             :repo "KarimAziev/js-imports"))
+#+end_src
+
+An example of configuration with [[https://github.com/raxod502/straight.el][straight]] and [[https://github.com/jwiegley/use-package][use-package]].
 
 #+BEGIN_SRC elisp :eval never-export
 
@@ -32,40 +63,91 @@ An example of installation and configuration with package managers [[https://git
                              'before-save-hook
                              'js-imports-transform-relative-imports-to-aliases
                              nil t))))
-  :bind (:map js-imports-mode-map
-              ("C-c C-i" . js-imports)
-              ("C-c C-j" . js-imports-jump-to-definition)
-              ("C-c C-f" . js-imports-find-file-at-point)
-              ("C-c C-." . js-imports-symbols-menu)
-              ("C->" . js-imports-transform-import-path-at-point)))
+  :bind ((:map js-imports-mode-map
+               ("C-c C-i" . js-imports)
+               ("C-c C-j" . js-imports-jump-to-definition)
+               ("C-c C-f" . js-imports-find-file-at-point)
+               ("C-c C-." . js-imports-symbols-menu)
+               ("C->" . js-imports-transform-import-path-at-point))
+         (:map js-imports-file-map
+               ("C->" . js-imports-select-next-alias)
+               ("C-<" . js-imports-select-prev-alias))))
 
 #+END_SRC
 
-*** quelpa
-You can also install with quelpa or simply by downloading repo.
+*** [[https://github.com/quelpa/quelpa][Quelpa]]
+You can also install it with quelpa.
 
 #+BEGIN_SRC elisp :eval never-export
+
 (quelpa '(js-imports
-        :repo "KarimAziev/js-imports"
-        :fetcher git
-        :url "git@github.com:KarimAziev/js-imports.git"))
+          :repo "KarimAziev/js-imports"
+          :fetcher git
+          :url "git@github.com:KarimAziev/js-imports.git"))
 #+END_SRC
 
-** Commands
+** Usage
 
-+ ~js-imports~ :: Main command. Proposes to select a module, extracts exported symbols and inserts to a new or existing import statement with selected candidates. Switching beetwen relative and aliased filenames is bound to "C->" and "C-<".
+#+begin_example
+M-x js-imports
+#+end_example
 
-+ ~js-imports-mode~ :: Turns on/off minor mode.
+This command read a project file, extract exported symbols from it and ask which to import.
 
-+ ~js-imports-jump-to-definition~ :: Find and jump to a definition of a symbol at point skipping re-exports and renamings.
+During file completion you can cycle beetwen relative and aliased filenames with such commands:
 
-+ ~js-imports-symbols-menu~ :: Imenu like command for jumping and some refactor actions for *ivy* and *helm*.
 
-+ ~js-imports-find-file-at-point~ :: Find a file under cursor.
+  | Command                      | Description                                | Default keybinding |
+  |------------------------------+--------------------------------------------+--------------------|
+  | js-imports-select-next-alias | Toggle forward aliases and relative files  | =C->=              |
+  | js-imports-select-prev-alias | Toggle backward aliases and relative files | =C-<=              |
 
-+ ~js-imports-transform-relative-imports-to-aliases~ :: Replace relative paths in import statemetents to aliased ones. An exception is made for imports from current directory.
+To change keybindings modify ~js-imports-file-map~, e.g:
 
-For example such statements
+#+begin_src emacs-lisp
+
+(require 'js-imports)
+(define-key js-imports-file-map (kbd "C-]") 'js-imports-select-next-alias)
+(define-key js-imports-file-map (kbd "C-[") 'js-imports-select-prev-alias)
+#+end_src
+
+
+*** Ivy specific file commands
+
+To change keybindings modify ~js-imports-ivy-file-map~:
+
+  | Command                               | Description                     | Default keybinding |
+  |---------------------------------------+---------------------------------+--------------------|
+  | js-imports-ivy-preview-file-exports   | Preview expored symbols in file | =C-j=              |
+  | js-imports-ivy-find-file-other-window | Jump to file in other window    | =C-c M-o=          |
+
+
+
+*** Helm specific file commands:
+To change keybindings modify ~js-imports-helm-file-map~:
+
+| Command                                | Description                  | Default keybinding |
+|----------------------------------------+------------------------------+--------------------|
+| js-imports-helm-find-file              | Jump to file                 | =C-c M-o=          |
+| js-imports-helm-find-file-other-window | Jump to file in other window | =C-c C-o=          |
+|                                        |                              |                    |
+
+** Additional commands
+
++ ~js-imports-mode~ :: Toggle minor mode. It is provide such keymap:
+
+  | Command                                          | Description                                     | Default keybinding |
+  |--------------------------------------------------+-------------------------------------------------+--------------------|
+  | js-imports                                       | Add import                                      | =C-c M-i=          |
+  | js-imports-jump-to-definition                    | Jump to a definition of a symbol at the point   | =C-c .=            |
+  | js-imports-symbols-menu                          | Jump to symbol in buffer                        | =C-c M-j=          |
+  | js-imports-find-file-at-point                    | Find a file under the cursor                    |                    |
+  | js-imports-transform-import-path-at-point        | Replace import path with alias or relative      |                    |
+  | js-imports-transform-relative-imports-to-aliases | Replace all import paths with alias or relative |                    |
+
++ ~js-imports-transform-relative-imports-to-aliases~ ::
+
+For example, such statements
 
 #+BEGIN_SRC js :eval never-export
 import { a, b } from '../fileA';
@@ -79,11 +161,10 @@ import { a, b } from '@/fileA';
 import { c, d } from './fileB';
 #+END_SRC
 
-+ ~js-imports-transform-import-path-at-point~ :: Replaces path in import statement at point to aliased one or relative.
-
-+ ~js-imports-change-completion~ :: Customize or temporarily set one of available completions systems:
- - helm
- - ivy
++ ~js-imports-change-completion~ :: Customize which completion system to use:
+ - [[https://github.com/abo-abo/swiper][ivy]]
+ - [[https://github.com/emacs-helm/helm][helm]]
+ - ido
  - default
 
 + ~js-imports-reset-cache~ :: Manually removes cache. It is rarely needed to use, because cache invalidation is managed automatically.
@@ -91,15 +172,14 @@ import { c, d } from './fileB';
 + ~js-imports-helm-reset-sources~ :: Resets file and symbol sources for *helm*. Use it if some error occured.
 
 ** Setup
-
 *** Aliases
 
 There are two ways to configure file aliases:
 - automatically with [[https://www.typescriptlang.org/tsconfig#paths][TSConfig file]] (tsconfig.json or jsconfig.json):
 
-No setup needed if a project root directory contains either tsconfig.json or jsconfig.json (or extended ones from this files) with configured paths and baseUrl in the compilerOptions.
+No setup is needed if a project root directory contains either tsconfig.json or jsconfig.json with configured paths and ~baseUrl~ in the ~compilerOptions.~
 
-For example with such config two aliases will be used: "@" for all files in "./src" directory and "UI" for "./src/components/UI".
+For example, with such config two aliases will be used: ~@~ for all files in ~./src~ directory and ~UI~ for ~./src/components/UI~,
 
 #+BEGIN_SRC json :eval never-export
 {
@@ -113,9 +193,9 @@ For example with such config two aliases will be used: "@" for all files in "./s
 }
 #+END_SRC
 
-- manually by customizing a varible *js-imports-project-aliases*:
+- manually by customizing a variable ~js-imports-project-aliases~:
 
-If no tsconfig.json or jsconfig.json found, a varible *js-imports-project-aliases* will be used, which is alist of paired elements. Each of the pairs should associate an alias as property name with expanded path as value.
+If no tsconfig.json or jsconfig.json is found, the variable ~js-imports-project-aliases~ will be used. It is a list of aliases and associated paths.
 
 You can specify aliases as [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Directory-Variables.html][directory local variable]] to use different settings per project in .dir-locals.el.  For example with such config two aliases will be used: "@" for all files in "./src" directory and "UI" for "./src/components/UI".
 
@@ -124,6 +204,50 @@ You can specify aliases as [[https://www.gnu.org/software/emacs/manual/html_node
       ((js-imports-project-aliases . (("@/" "src/")
                                       ("UI/" "src/components/UI/" "src/components/Layout/"))))))
 #+END_SRC
+
+
+** Customization
++ ~js-imports-completion-system~
+Which completion system to use.
+
++ ~js-imports-project-aliases~
+An associated list of ((ALIAS_A . DIRECTORY_A) (ALIAS_B . DIR_B DIR_C)).
+
++ ~js-imports-tsconfig-filename~
+Name of tsconfig or jsconfig.
+
++ ~js-imports-helm-file-actions~
+Default actions for files.
+
++ ~js-imports-modules-default-names~
+Alist mapping module path to default and namespace import name.
+
++ ~js-imports-root-ignored-directories~
+A list of directories in project root to ignore.
+
++ ~js-imports-normalize-paths-functions~
+List of functions to use in ~js-imports-normalize-path~.
+
++ ~js-imports-preffered-extensions~
+Preferred suffixes for files with different extension.
+
++ ~js-imports-node-modules-dir~
+Relative to project root or absolute path to node_modules directory.
+
++ ~js-imports-node-modules-priority-section-to-read~
+Package-json sections to retrieve candidates from node_modules.
+
++ ~js-imports-package-json-sections~
+Package-json sections to retrieve candidates from node_modules.
+
++ ~js-imports-helm-dependencies-number-limit~
+The limit for number of dependencies to display in ~helm~ sources.
+
++ ~js-imports-helm-files-number-limit~
+The limit for number of project files to display in ~helm~ sources.
+
++ ~js-imports-quote~
+Which quote to use in imports.
 
 ** License
 
