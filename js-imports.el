@@ -3462,11 +3462,11 @@ Addional actions to open or preview are configured for `helm' and `ivy'."
     (_ (let ((module (js-imports-read-file 'js-imports)))
          (when-let ((setup-fn (cdr (assoc js-imports-completion-system
                                           js-imports-setup-functions-alist))))
-           (funcall setup-fn)
-           (when (eq (current-buffer) js-imports-current-buffer)
-             (when (active-minibuffer-window)
-               (exit-minibuffer))
-             (funcall-interactively 'js-imports-from-path module)))))))
+           (funcall setup-fn))
+         (when (eq (current-buffer) js-imports-current-buffer)
+           (when (active-minibuffer-window)
+             (exit-minibuffer))
+           (funcall-interactively 'js-imports-from-path module))))))
 
 ;;;###autoload
 (defun js-imports-from-path (&optional path)
