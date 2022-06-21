@@ -171,17 +171,6 @@
   "Face used to highlight symbol."
   :group 'js-imports)
 
-(defcustom js-imports-completion-system 'ido-completing-read
-  "Which completion system to use."
-  :group 'js-imports
-  :set 'js-imports-set-completion
-  :type '(radio
-          (const :tag "Ido" ido-completing-read)
-          (const :tag "Helm" helm-comp-read)
-          (const :tag "Ivy" ivy-completing-read)
-          (const :tag "Default" completing-read-default)
-          (function :tag "Custom function")))
-
 (defcustom js-imports-normalize-paths-functions
   '(js-imports-remove-ext
     js-imports-maybe-remove-path-index)
@@ -2907,6 +2896,30 @@ CANDIDATE should be propertizied with property `display-path'."
                 (delete-region p1 p2)))))
       (remove-overlays beg end))))
 
+(defvar js-imports-setup-functions-alist
+  '((ivy-completing-read . js-imports-ivy-setup)
+    (helm-comp-read . js-imports-helm-setup)))
+
+(defun js-imports-set-completion (var value &rest _ignored)
+  "Set VAR to VALUE."
+  (when-let ((func (assq value js-imports-setup-functions-alist)))
+    (funcall (cdr func)))
+  (set var value))
+
+(defcustom js-imports-completion-system 'ido-completing-read
+  "Which completion system to use."
+  :group 'js-imports
+  :set 'js-imports-set-completion
+  :type '(radio
+          (const :tag "Ido" ido-completing-read)
+          (const :tag "Helm" helm-comp-read)
+          (const :tag "Ivy" ivy-completing-read)
+          (const :tag "Default" completing-read-default)
+          (function :tag "Custom function")))
+
+(add-variable-watcher 'js-imports-completion-system
+                      'js-imports-set-completion)
+
 (defun js-imports-switch-alias-hook ()
   "Function to call after switch alias."
   (if (active-minibuffer-window)
@@ -3012,16 +3025,6 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
 (defvar js-imports-ivy-file-actions
   '(("f" js-imports-find-file "find file")
     ("j" js-imports-find-file-other-window "find file other window")))
-
-(defun js-imports-ivy-setup ()
-  "Setup sources and keymaps for ivy completion."
-  (require 'ivy)
-  (when (fboundp 'ivy-set-actions)
-    (ivy-set-actions 'js-imports js-imports-ivy-file-actions))
-  (when (fboundp 'ivy-set-display-transformer)
-    (ivy-set-display-transformer
-     'js-imports-symbols-menu
-     'js-imports-transform-symbol)))
 
 (defvar helm-map)
 (defun js-imports-helm-find-file ()
@@ -3268,19 +3271,6 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
                       (helm-exit-and-execute-action
                        'js-imports-rename-import))))
     map))
-
-(defvar js-imports-setup-functions-alist
-  '((ivy-completing-read . js-imports-ivy-setup)
-    (helm-comp-read . js-imports-helm-setup)))
-
-(defun js-imports-set-completion (var value &rest _ignored)
-  "Set VAR to VALUE."
-  (when-let ((func (assq value js-imports-setup-functions-alist)))
-    (funcall (cdr func)))
-  (set var value))
-
-(add-variable-watcher 'js-imports-completion-system
-                      'js-imports-set-completion)
 
 (defun js-imports-make-files-prompt ()
   "Generate prompt for read file functions."
