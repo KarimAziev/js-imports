@@ -133,12 +133,12 @@
                  (const :tag "Single" "\\'")))
 
 (defcustom js-imports-helm-files-number-limit 30
-  "The limit for number of project files to display in `helm' sources."
+  "Limit for number of project files displayed in helm source."
   :group 'js-imports
   :type 'number)
 
 (defcustom js-imports-helm-dependencies-number-limit 400
-  "The limit for number of dependencies to display in `helm' sources."
+  "Limit for number of dependencies displayed."
   :group 'js-imports
   :type 'number)
 
@@ -162,7 +162,7 @@
 (defcustom js-imports-preffered-extensions
   '("ts" "tsx" "jsx" "es6" "es" "mjs" "js" "cjs" "ls" "sjs" "iced" "liticed"
     "json")
-  "Preferred suffixes for files with different extension."
+  "File extensions to resolve."
   :group 'js-imports
   :type '(repeat string))
 
@@ -230,13 +230,13 @@
 (defvar-local js-imports-cached-imports-in-buffer nil)
 
 (defvar js-imports-node-modules-source nil
-  "Variable keeps source files from node_modules.")
+  "Helm source of node_modules.")
 
 (defvar js-imports-project-files-source nil
-  "Variable for source of relative and aliased files without dependencies.")
+  "Helm source of the relative and aliased files without dependencies.")
 
 (defvar js-imports-buffer-files-source nil
-  "Variable for source of imported files in the current buffer.")
+  "Helm source of imported files in the current buffer.")
 
 (defvar js-imports-imported-symbols-source nil)
 
@@ -448,7 +448,7 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
         (goto-char end)))))
 
 (defun js-imports-syntax-propertize (start end)
-  "Propertize text between START and END."
+  "Propertize text between START and END with javascript syntax rules."
   (goto-char start)
   (js-imports-syntax-propertize-regexp end)
   (funcall
@@ -469,7 +469,7 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
    (point) end))
 
 (defmacro js-imports-with-temp-buffer (&rest body)
-  "Setup temp buffer and execute BODY."
+  "Evaluate BODY in temporarily buffer with javascript syntax."
   `(with-temp-buffer
      (erase-buffer)
      (progn
@@ -485,9 +485,9 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
        ,@body)))
 
 (defmacro js-imports-with-buffer-or-file-content (filename &rest body)
-  "Execute BODY in temp buffer with file or buffer content of FILENAME.
-Bind FILENAME to variables `buffer-file-name' and `current-path''.
-It is also bind `default-directory' into FILENAME's directory."
+  "Execute BODY in temporarily buffer with file or buffer content of FILENAME.
+Bind FILENAME to the variable `buffer-file-name', and FILENAME's directory
+as `default-directory'."
   (declare (indent 2))
   `(when (and ,filename (file-exists-p ,filename))
      (js-imports-with-temp-buffer
@@ -718,23 +718,25 @@ Value of allises is specified in variable `js-imports-project-aliases'."
   (with-current-buffer js-imports-current-buffer
     (let* ((current-file (buffer-file-name js-imports-current-buffer))
            (current-dir (js-imports-dirname current-file)))
-      (setq files (seq-remove (lambda (filename) (string= filename current-file))
-                              files))
+      (setq files (delete current-file files))
       (if js-imports-current-alias
           (js-imports-transform-files-to-alias js-imports-current-alias files)
         (js-imports-transform-files-to-relative current-dir files)))))
 
 (defun js-imports-get-file-variants (path directory)
   "Return list of transformations for PATH - relative to DIRECTORY and aliased."
-  (let* ((real-path (js-imports-path-to-real path directory))
-         (relative (js-imports-path-to-relative real-path
-                                                (or directory
-                                                    default-directory)))
-         (aliased (mapcar (lambda (it) (js-imports-transform-file-to-alias
-                                   real-path
-                                   it))
-                          (js-imports-get-aliases))))
-    (seq-uniq (delete nil (push relative aliased)))))
+  (let ((real-path (js-imports-path-to-real path directory)))
+    (let ((relative (js-imports-path-to-relative real-path
+                                                 (or directory
+                                                     default-directory)))
+          (aliased (mapcar (lambda (it)
+                             (js-imports-transform-file-to-alias
+                              real-path
+                              it))
+                           (js-imports-get-aliases)))
+          (files))
+      (setq files (seq-uniq (delete nil (push relative aliased))))
+      (append (mapcar #'js-imports-normalize-path files) files))))
 
 (defun js-imports-transform-file-to-alias (filename alias)
   "Convert FILENAME to version with ALIAS."
@@ -745,10 +747,10 @@ Value of allises is specified in variable `js-imports-project-aliases'."
                                        (concat "^" parent)
                                        filename))
                                     paths)))
-    (js-imports-normalize-path (replace-regexp-in-string
-                                alias-path
-                                (js-imports-slash alias)
-                                filename))))
+    (replace-regexp-in-string
+     alias-path
+     (js-imports-slash alias)
+     filename)))
 
 (defun js-imports-transform-files-to-alias (alias files)
   "Transform FILES to converted to version with ALIAS."
@@ -758,10 +760,9 @@ Value of allises is specified in variable `js-imports-project-aliases'."
 
 (defun js-imports-transform-files-to-relative (directory files)
   "Convert FILES to relative to DIRECTORY."
-  (mapcar (lambda (path) (js-imports-normalize-path
-                     (js-imports-path-to-relative
-                      path
-                      directory)))
+  (mapcar (lambda (path) (js-imports-path-to-relative
+                     path
+                     directory))
           files))
 
 (defun js-imports-find-project-root (&optional directory)
@@ -776,7 +777,7 @@ Value of allises is specified in variable `js-imports-project-aliases'."
         (js-imports-slash (js-imports-find-project-root parent))))))
 
 (defun js-imports-directory-files (dir &optional
-                                       recursive regexp include-dirs pred)
+                                       recursive regexp include-dirs)
   "Return files in DIR whose names match REGEXP.
 Default value of REGEXP is specified in a variable `js-imports-file-ext-regexp'.
 Optional argument RECURSIVE non-nil means to search recursive.
@@ -787,7 +788,7 @@ the name of each subdirectory, and should return non-nil if the
 subdirectory is to be descended into)."
   (unless regexp (setq regexp js-imports-file-ext-regexp))
   (if recursive
-      (directory-files-recursively dir regexp include-dirs pred)
+      (directory-files-recursively dir regexp include-dirs)
     (directory-files dir t regexp t)))
 
 (defun js-imports-join-file (&rest args)
@@ -3446,8 +3447,12 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
 
 ;;;###autoload
 (defun js-imports ()
-  "Read a filename to extract exports and add selected ones in current buffer.
-Addional actions to open or preview are configured for `helm' and `ivy'."
+  "Read a project file, extract exported symbols from it and ask which to import.
+
+During file completion you can cycle beetwen relative and aliased filenames:
+\\<js-imports-file-map>\
+`\\[js-imports-select-next-alias]' - select next alias,
+`\\[js-imports-select-prev-alias]' - select previous alias."
   (interactive)
   (js-imports-init-project)
   (pcase js-imports-completion-system
@@ -3487,8 +3492,9 @@ Add selected choices to existing or new import statement."
                    "Transform to\s"
                    (js-imports-get-file-variants path
                                                  default-directory)))))
-    (when-let ((display-path (or (js-imports-get-prop path :display-path)
-                                 path)))
+    (when-let ((display-path (js-imports-normalize-path
+                              (or (js-imports-get-prop path :display-path)
+                                  path))))
       (setq js-imports-current-export-path display-path)
       (setq js-imports-last-export-path display-path)))
   (js-imports-init-exports-candidates)
@@ -3533,7 +3539,7 @@ Add selected choices to existing or new import statement."
 
 ;;;###autoload
 (defun js-imports-jump-to-definition ()
-  "Deep jump to a definition of symbol at point through re-exports and renamings."
+  "Jump to a definition of symbol at point."
   (interactive)
   (js-imports-init-project)
   (if-let ((name (and
@@ -3611,15 +3617,15 @@ Add selected choices to existing or new import statement."
 
 ;;;###autoload
 (defun js-imports-symbols-menu ()
-  "Jump or refactor to exported, imported and definitions in current buffer."
+  "Jump to a identifier in current buffer."
   (interactive)
   (js-imports-init-project)
   (setq js-imports-current-export-path nil)
   (pcase js-imports-completion-system
     ('helm-comp-read (when (and (fboundp 'helm))
-                             (helm
-                              :preselect (js-imports-get-word-if-valid)
-                              :sources js-imports-helm-symbol-sources)))
+                       (helm
+                        :preselect (js-imports-get-word-if-valid)
+                        :sources js-imports-helm-symbol-sources)))
     ('ivy-completing-read
      (let ((choices (append
                      (js-imports-extract-es-imports buffer-file-name)
@@ -3659,8 +3665,7 @@ Add selected choices to existing or new import statement."
 
 ;;;###autoload
 (defun js-imports-change-completion ()
-  "Customize or temporarily set one of available completions systems:
-`helm' `ivy' or default."
+  "Customize or temporarily set one of the available completions systems."
   (interactive)
   (let* ((alist (mapcar #'cddr
                         (cdr
@@ -3702,10 +3707,10 @@ Inside import statement generates completions with available replacements, e.g:
 
 ;;;###autoload
 (defun js-imports-transform-relative-imports-to-aliases ()
-  "Replace relative paths in import statements to aliased ones.
-An exception is made for paths from current buffer directory.
+  "Replace relative paths from other directory than current to aliased ones.
+Only relative paths from current buffer directory.
 
-For example `import someExport from '../enums' transforms to
+For example, `import someExport from '../enums' transforms to
 `import someExport from '@/enums', but keeps `import someExport from './enums'."
   (interactive)
   (js-imports-init-project)
@@ -3763,7 +3768,7 @@ For example `import someExport from '../enums' transforms to
 ;;;###autoload
 (defun js-imports-version ()
   "Return `js-imports' version if `pkg-info' is installed.
-If called interactively also show the version in echo area."
+If called interactively, also show the version in the echo area."
   (interactive)
   (if (and (require 'pkg-info nil t)
            (fboundp 'pkg-info-version-info))
