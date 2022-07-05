@@ -1086,7 +1086,7 @@ If DIRECTION is a negative return previous or last element."
                                   (apply-partially #'delete ".")
                                   #'directory-files)
                                  path))))))
-    (append dirs (mapcan 'js-imports-extract-subpackages dirs))))
+    (append dirs (mapcan #'js-imports-extract-subpackages dirs))))
 
 (defun js-imports-find-node-modules-submodules (node-modules-path modules)
   "Extract nested packages from MODULES.
