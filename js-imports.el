@@ -8,8 +8,6 @@
 ;; Version: 0.1.1
 ;; Package-Requires: ((emacs "26.1"))
 
-;; URL: https://github.com:KarimAziev/js-imports.git
-
 ;; This file is NOT part of GNU Emacs.
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -24,53 +22,96 @@
 ;;
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 ;;; Commentary:
 
 ;; Provide importing and navigation for JavaScript files.
 
-;; Commands
+;;; Commands
 
 ;; M-x `js-imports'
-;;      Read a filename to extract exports and add selected ones in current buffer.
-;;      Addional actions to open or preview are configured for `helm' and `ivy'.
-
-;; M-x `js-imports-transform-relative-imports-to-aliases'
-;;      Replace relative paths in import statements to aliased ones.
-;;      An exception is made for paths from current buffer directory.
+;;      Read a project file, parse exports from it and ask which to import.
 ;;
-;;      For example `import someExport from '../enums' transforms to
-;;      `import someExport from '@/enums', but keeps `import someExport from './enums'.
-
-;; M-x `js-imports-transform-import-path-at-point'
-;;      Replace path of import statement at point to aliased one or relative.
-;;      Inside import statement generates completions with available replacements, e.g:
-;;      `import someExport from '../../enums' to `import someExport from '@/enums''.'
-
-;; M-x `js-imports-change-completion'
-;;      Customize or temporarily set one of available completions systems:
-;;      `helm' `ivy' or default.
-
-;; M-x `js-imports-symbols-menu'
-;;      Jump or refactor to exported, imported and definitions in current buffer.
-
-;; M-x `js-imports-find-file-at-point'
-;;      Find a file when cursor are placed under stringified path.
+;;      During file completion, you can cycle between relative and aliased filenames:
+;;      `C->' - select the next alias,
+;;      `C-<' - select the previous alias.
 
 ;; M-x `js-imports-jump-to-definition'
-;;      Deep jump to a definition of symbol at point through re-exports and renamings.
+;;      Jump to a definition of symbol at the point.
 
-;; M-x `js-imports-from-path' (&optional path)
-;;      Make completions with exports from PATH.
-;;      Add selected choices to existing or new import statement.
+;; M-x `js-imports-symbols-menu'
+;;      Jump to a identifier in current buffer.
+
+;; M-x `js-imports-find-file-at-point'
+;;      Find a file when cursor are placed inside string.
 
 ;; M-x `js-imports-mark-it'
-;;      Mark node at point.
+;;      Mark node at the point.
 
-;; M-x `js-imports-select-prev-alias'
-;;      Select previous alias and exit minibuffer.
+;; M-x `js-imports-transform-relative-imports-to-aliases'
+;;      Replace relative paths from other directory than current to aliased ones.
+;;      Only relative paths from current buffer directory.
+;;
+;;      For example, ‘import someExport from '../enums' transforms to
+;;      ‘import someExport from '@/enums', but keeps ‘import someExport from ’./enums’.
 
-;; M-x `js-imports-select-next-alias'
-;;      Select next alias and exit minibuffer.
+;; M-x `js-imports-transform-import-path-at-point'
+;;      Replace path of import statement at the point to aliased one or relative.
+;;      Inside import statement generates completions with available replacements, e.g:
+;;     import { a, b } from '../fileA' => import { a, b } from '@/fileA'
+
+;; M-x `js-imports-change-completion'
+;;      Customize or temporarily set one of the available completions systems.
+
+;;; Customization
+
+;; `js-imports-completion-system'
+;;      Which completion system to use.
+
+;; `js-imports-helm-symbol-sources'
+;;      Helm sources for symbols for command ‘js-imports-symbols-menu’.
+
+;; `js-imports-helm-files-source'
+;;      Helm sources for files for command ‘js-imports’.
+
+;; `js-imports-project-aliases'
+;;      An associated list of ((ALIAS_A . DIRECTORY_A) (ALIAS_B . DIR_B DIR_C)).
+
+;; `js-imports-tsconfig-filename'
+;;      Name of tsconfig or jsconfig.
+
+;; `js-imports-helm-file-actions'
+;;      Default actions for files.
+
+;; `js-imports-modules-default-names'
+;;      Alist mapping module path to default and namespace import name.
+
+;; `js-imports-root-ignored-directories'
+;;      A list of directories in project root to ignore.
+
+;; `js-imports-normalize-paths-functions'
+;;      List of functions to use in ‘js-imports-normalize-path’.
+
+;; `js-imports-preffered-extensions'
+;;      File extensions to resolve.
+
+;; `js-imports-node-modules-dir'
+;;      Relative to project root or absolute path to node_modules directory.
+
+;; `js-imports-node-modules-priority-section-to-read'
+;;      Package-json sections to retrieve candidates from node_modules.
+
+;; `js-imports-package-json-sections'
+;;      Package-json sections to retrieve candidates from node_modules.
+
+;; `js-imports-helm-dependencies-number-limit'
+;;      Limit for number of dependencies displayed.
+
+;; `js-imports-helm-files-number-limit'
+;;      Limit for number of project files displayed in helm source.
+
+;; `js-imports-quote'
+;;      Quote type to use in imports.
 
 ;;; Code:
 
@@ -275,13 +316,13 @@
   `(js-imports--pipe ,@(reverse functions)))
 
 (defmacro js-imports--or (&rest functions)
-  "Return an unary function which invoke FUNCTIONS until first non-nil result."
+  "Return an unary function that invoke FUNCTIONS until first non-nil result."
   (declare (debug t) (pure t) (side-effect-free t))
   `(lambda (it) (or
-                 ,@(mapcar (lambda (v) (if (symbolp v)
-                                           `(,v it)
-                                         `(funcall ,v it)))
-                           functions))))
+            ,@(mapcar (lambda (v) (if (symbolp v)
+                                 `(,v it)
+                               `(funcall ,v it)))
+                      functions))))
 
 (defmacro js-imports--and (&rest functions)
   "Return an unary function which invoke FUNCTIONS until first nil result."
@@ -317,9 +358,9 @@ at the values with which this function was called."
                    `(apply ,fn (append pre-args (list ,@args))))))))
 
 (defun js-imports-expand-alias-path (path &optional base-url)
-  "Convert PATH to absolute filename and append slash to PATH.
-Without BASE-URL resolve PATH as relative to project directory,
-otherwise firstly expand BASE-URL to project directory."
+  "Convert PATH to the absolute filename and append a slash to PATH.
+Without BASE-URL, resolve PATH as relative to the project directory.
+Otherwise, firstly expand BASE-URL to the project directory."
   (when-let ((filepath
               (when path (replace-regexp-in-string "\\*[^$]+" "" path))))
     (cond
@@ -474,11 +515,11 @@ Supposed to use as argument of `skip-chars-forward'.")
     "readonly" "return" "set" "static" "string" "super" "switch"
     "this" "throw" "true" "try" "type" "typeof" "unknown"
     "var" "void" "while" "yield")
-  "List of reserved words in javascript.")
+  "List of reserved words in JavaScript.")
 
 (defun js-imports-reserved-word-p (str)
   "Check if STR is a reserved keyword.
-Keywords specifiied in the variable `js-imports-reserved-js-words'."
+Keywords specified in the variable `js-imports-reserved-js-words'."
   (when (stringp str)
     (member str js-imports-reserved-js-words)))
 
@@ -511,7 +552,7 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
         (goto-char end)))))
 
 (defun js-imports-syntax-propertize (start end)
-  "Propertize text between START and END with javascript syntax rules."
+  "Propertize text between START and END with JavaScript syntax rules."
   (goto-char start)
   (js-imports-syntax-propertize-regexp end)
   (funcall
@@ -532,7 +573,7 @@ Keywords specifiied in the variable `js-imports-reserved-js-words'."
    (point) end))
 
 (defmacro js-imports-with-temp-buffer (&rest body)
-  "Evaluate BODY in temporarily buffer with javascript syntax."
+  "Evaluate BODY in temporarily buffer with JavaScript syntax."
   `(with-temp-buffer
      (erase-buffer)
      (progn
@@ -593,7 +634,7 @@ as `default-directory'."
 
 (defun js-imports-get-file-cache (cache-key)
   "Return value of CACHE-KEY from a variable `js-imports-files-cache'.
-CACHE-KEY should be a filename due to invalidation which uses modification time."
+CACHE-KEY should be a file name."
   (let* ((cache (gethash cache-key js-imports-files-cache))
          (cache-tick (and cache (plist-get cache :tick)))
          (tick (file-attribute-modification-time (file-attributes
@@ -764,8 +805,7 @@ Default section is `dependencies'"
     nil))
 
 (defun js-imports-get-aliases ()
-  "Return a sorted list of aliases.
-Value of allises is specified in variable `js-imports-project-aliases'."
+  "Return a sorted list of file aliases."
   (setq js-imports-project-aliases
         (seq-sort-by
          (js-imports--compose length car)
@@ -842,7 +882,7 @@ Value of allises is specified in variable `js-imports-project-aliases'."
                                        recursive regexp include-dirs)
   "Return files in DIR whose names match REGEXP.
 Default value of REGEXP is specified in a variable `js-imports-file-ext-regexp'.
-Optional argument RECURSIVE non-nil means to search recursive.
+Optional argument RECURSIVE non-nil means to search recursively,
 PRED can be either nil (which means that all subdirectories
 of DIR are descended into), t (which means that subdirectories that
 can't be read are ignored), or a function (which is called with
@@ -959,8 +999,7 @@ Optional argument DIR is used as default directory."
         nil))))
 
 (defun js-imports-sort-by-exts (files &optional extensions)
-  "Sort FILES by optional argument EXTENSIONS.
-Default value for EXTENSIONS keeps a variable `js-imports-preffered-extensions.'"
+  "Sort FILES by EXTENSIONS or `js-imports-preffered-extensions'."
   (setq extensions (or extensions js-imports-preffered-extensions))
   (seq-sort-by (lambda (a)
                  (if-let ((ext (and a (file-name-extension a))))
@@ -970,7 +1009,7 @@ Default value for EXTENSIONS keeps a variable `js-imports-preffered-extensions.'
                files))
 
 (defun js-imports-get-path-ext-candidates (path)
-  "Return files filtered by base name of PATH from parent directory of PATH.
+  "Return files filtered by base name of PATH from the parent directory of PATH.
 PATH should be an absolute filename without extension."
   (let ((parts (reverse (split-string path "/")))
         (module-re)
@@ -1021,10 +1060,9 @@ PATH should be an absolute filename without extension."
     (concat file "." extension)))
 
 (defun js-imports-try-ext (path &optional dir)
-  "Add to PATH extensions and return first existing result or nil otherwise.
+  "Add to PATH extensions and return the first existing result or nil otherwise.
 Extensions is stored in a variable `js-imports-preffered-extensions'.
-With optional argument DIR expand PATH to DIR.
-If PATH match `js-imports-file-ext-regexp' just expands PATH to DIR."
+With the optional argument DIR expand PATH to DIR."
   (let ((expanded-path (if dir (expand-file-name path dir) path)))
     (if (js-imports-string-match-p js-imports-file-ext-regexp path)
         expanded-path
@@ -1324,7 +1362,7 @@ NODE-MODULES-PATH is used to expand path of MODULES."
 
 (defun js-imports-get-next-char (&optional nth position)
   "Return concatenated string with NTH chars after POSITION.
-Default value for NTH is 1 and for POSITION - value of current point."
+Default value for NTH is 1 and for POSITION - value of current the point."
   (let* ((beg (or position (point)))
          (end (+ (or nth 1) beg)))
     (when (> (point-max) end)
@@ -1332,7 +1370,7 @@ Default value for NTH is 1 and for POSITION - value of current point."
 
 (defun js-imports-get-prev-char (&optional nth position)
   "Return concatenated string with NTH chars before POSITION.
-Default value for NTH is 1 and for POSITION - value of current point."
+Default value for NTH is 1 and for POSITION - value of current the point."
   (let* ((end (or position (point)))
          (beg (- end (or nth 1))))
     (when (>= beg (point-min))
@@ -1340,19 +1378,21 @@ Default value for NTH is 1 and for POSITION - value of current point."
        beg end))))
 
 (defun js-imports-get-next-char-or-word ()
-  "Return word or character after current point."
+  "Return word or character after current the point."
   (when-let ((char (js-imports-get-next-char)))
     (if (string-match-p "[_$A-Za-z0-9]" char)
         (js-imports-which-word)
       char)))
 
 (defun js-imports-init-exports-candidates ()
-  "Search exports in a file.
-File is specified in the variable `js-imports-current-export-path.'."
+  "Search for exported symbols in a file `js-imports-current-export-path'.
+If `js-imports-current-export-path' is nil, use current buffer file name."
   (with-current-buffer js-imports-current-buffer
     (setq js-imports-export-candidates-in-path
-          (js-imports-extract-all-exports (or js-imports-current-export-path
-                                              buffer-file-name)))
+          (when (or js-imports-current-export-path
+                    buffer-file-name)
+            (js-imports-extract-all-exports (or js-imports-current-export-path
+                                                buffer-file-name))))
     js-imports-export-candidates-in-path))
 
 (defun js-imports-extract-all-exports (&optional init-path)
@@ -1521,7 +1561,7 @@ File is specified in the variable `js-imports-current-export-path.'."
             :start (point))))))
 
 (defun js-imports-extract-cjs-exports (path)
-  "Parse node at point if it is defined in common JS syntax.
+  "Parse node at the point if it is defined in common JS syntax.
 Return propertized string where PATH is added as :display-path"
   (cond ((looking-at-p "=\\([\s\t\n]+?\\)require[ \t('\"]")
          (js-imports-re-search-forward "require" nil t 1)
@@ -1579,7 +1619,7 @@ Return propertized string where PATH is added as :display-path"
             :start (point))))))
 
 (defun js-imports-parse-object-keys ()
-  "Return object keys at point."
+  "Return object keys at the point."
   (when-let ((start (when (looking-at-p "{")
                       (1+ (point))))
              (end (save-excursion (forward-list) (1- (point))))
@@ -1660,7 +1700,7 @@ Return propertized string where PATH is added as :display-path"
           (delete nil children))))))
 
 (defun js-imports-skip-reserved-words (&optional separators)
-  "Skip reserved javascript keywords divided SEPARATORS.
+  "Skip reserved JavaScript keywords divided SEPARATORS.
 Default value for SEPARATORS is whitespaces and * char."
   (unless separators (setq separators "\s\t\\*"))
   (let* ((stack)
@@ -1782,9 +1822,9 @@ Default value for SEPARATORS is whitespaces and * char."
       (get-text-property 0 property str)))
 
 (defun js-imports-strip-text-props (item)
-  "If ITEM is string, return it without text properties.
-If ITEM is symbol, return it is `symbol-name.'
-Otherwise return nil."
+  "If ITEM is a string, return it without text properties.
+If ITEM is a symbol, return it is `symbol-name.'
+Otherwise, return nil."
   (cond ((stringp item)
          (let ((str (seq-copy item)))
            (set-text-properties 0 (length str) nil str)
@@ -1805,7 +1845,7 @@ Otherwise return nil."
    (t (format "%s" x))))
 
 (defun js-imports-looking-at-comment-p (&optional max)
-  "Return if point located at the start of comment.
+  "Return if the point located at the start of comment.
 Optional argument MAX defines a limit."
   (and (> (or max (1- (point-max))) (point))
        (car (member (buffer-substring-no-properties
@@ -1813,7 +1853,7 @@ Optional argument MAX defines a limit."
                      (+ 2 (point))) '("#!" "/*" "//")))))
 
 (defun js-imports-forward-whitespace (&optional skip-chars)
-  "Move point forward accross SKIP-CHARS and comments.
+  "Move the point forward accross SKIP-CHARS and comments.
 Returns the distance traveled, either zero or positive."
   (unless skip-chars (setq skip-chars "\s\t\n\r\f\v"))
   (let ((total (skip-chars-forward skip-chars))
@@ -1828,7 +1868,7 @@ Returns the distance traveled, either zero or positive."
     total))
 
 (defun js-imports-backward-whitespace (&optional skip-chars)
-  "Move point backward accross SKIP-CHARS and comments.
+  "Move the point backward accross SKIP-CHARS and comments.
 Returns the distance traveled, either zero or positive."
   (unless skip-chars (setq skip-chars "\s\t\n\r\f\v"))
   (let ((total (skip-chars-backward skip-chars))
@@ -1848,18 +1888,18 @@ Returns the distance traveled, either zero or positive."
     total))
 
 (defun js-imports-get-word-if-valid ()
-  "Return word at point if it is valid and not reserved, otherwise nil."
+  "Return word at the point if it is valid and not reserved, otherwise nil."
   (when-let ((word (js-imports-which-word)))
     (when (js-imports-valid-identifier-p word)
       word)))
 
-(defun js-imports-looking-at (str)
-  "Check current word at point equals STR."
+(defun js-imports-looking-at (name)
+  "Return t if the NAME and the word under the cursor have identical contents."
   (when-let ((word (js-imports-which-word)))
-    (string= word str)))
+    (string= word name)))
 
 (defun js-imports-get-rebounds-at-point (&optional rechars)
-  "Get bounds of thing at point depending on RECHARS."
+  "Get bounds of thing at the point depending on RECHARS."
   (save-excursion
     (let* ((a (save-excursion
                 (skip-chars-backward (or rechars "*_$A-Za-z0-9"))
@@ -1873,13 +1913,13 @@ Returns the distance traveled, either zero or positive."
         (cons a b)))))
 
 (defun js-imports-which-word (&optional regexp)
-  "Return string with a thing at point matched REGEXP or nil otherwise."
+  "Return string with a thing at the point matched REGEXP or nil otherwise."
   (when-let ((bounds (js-imports-get-rebounds-at-point regexp)))
     (buffer-substring-no-properties (car bounds)
                                     (cdr bounds))))
 
 (defun js-imports-get-path-at-point ()
-  "Return closest module path at point."
+  "Return closest module path at the point."
   (save-excursion
     (when-let* ((word (js-imports-which-word))
                 (meta-word (or (string= "import" word)
@@ -1907,7 +1947,7 @@ Returns the distance traveled, either zero or positive."
     t))
 
 (defun js-imports-inside-string-p (&optional position)
-  "Return non-nil if point POSITION inside string, else nil.
+  "Return non-nil if the point POSITION inside string, else nil.
 Result depends on syntax table's string quote character."
   (with-syntax-table js-imports-mode-syntax-table
     (nth 3 (syntax-ppss (or position (point))))))
@@ -1950,7 +1990,7 @@ Result depends on syntax table's string quote character."
    path))
 
 (defun js-imports-maybe-make-child-at-point (&optional parent)
-  "Parse argument at point of PARENT."
+  "Parse argument at the point of PARENT."
   (when-let ((valid-id (js-imports-get-word-if-valid)))
     (skip-chars-backward valid-id)
     (prog1 (js-imports-make-item valid-id
@@ -1966,7 +2006,7 @@ Result depends on syntax table's string quote character."
       (skip-chars-backward "\s\t\n\r\f\v"))))
 
 (defun js-imports-highlight-word (&optional start buffer)
-  "Jumps to START in BUFFER and highlight word at point."
+  "Jumps to START in the BUFFER and highlight word at the point."
   (unless buffer (setq buffer (current-buffer)))
   (setq buffer (get-buffer-create buffer))
   (unless start (setq start (point)))
@@ -2162,7 +2202,7 @@ Result depends on syntax table's string quote character."
                (char-equal c ?:))))))
 
 (defun js-imports-declaration-at-point ()
-  "Parse node if word at point is member of `js-imports-delcaration-keywords'."
+  "Parse node when the symbol under the point is a declaration keyword."
   (when (and (looking-at js-imports-delcaration-keywords--re)
              (not (js-imports-looking-at-function-expression)))
     (let ((var-type (js-imports-which-word)))
@@ -2217,7 +2257,7 @@ Result depends on syntax table's string quote character."
 (defun js-imports-extract-definitions (&optional path position)
   "Extract visible on POSITION declarations in PATH.
 By default PATH is taken from a variable `buffer-file-name'.
-Default value for POSITION also current point position."
+Default value for POSITION also current the point position."
   (unless path (setq path buffer-file-name))
   (unless position (setq position (if (equal path buffer-file-name)
                                       (point)
@@ -2305,14 +2345,14 @@ Default value for POSITION also current point position."
       current-item)))
 
 (defun js-imports-jump-to-item-in-buffer (item &optional buffer)
-  "Jumps to ITEM in BUFFER in current window.
+  "Jumps to ITEM in the BUFFER in current window.
 ITEM must be propertized with a keyword `pos'."
   (when-let ((pos (js-imports-get-prop item :start)))
     (js-imports-highlight-word pos buffer)
     item))
 
 (defun js-imports-jump-to-item-other-window (item)
-  "Jumps to ITEM in BUFFER in other window.
+  "Jumps to ITEM in the BUFFER in other window.
 ITEM must be propertized with a keyword `pos'."
   (unless (js-imports-get-prop item :start)
     (setq item (js-imports-display-to-real-exports item)))
@@ -2326,9 +2366,8 @@ ITEM must be propertized with a keyword `pos'."
     (js-imports-jump-to-item-in-buffer item)
     item))
 
-(defun js-imports-transform-symbol (item &optional margin)
-  "Annotate ITEM.
-With optional MARGIN adds indent."
+(defun js-imports-transform-symbol (item &optional len)
+  "Annotate ITEM and pad with spaces on the left to LEN."
   (let* ((display-path (js-imports-get-prop item :display-path))
          (export (and (js-imports-get-prop item :export)
                       (if display-path
@@ -2362,7 +2401,7 @@ With optional MARGIN adds indent."
                           (t "")))
          (result (string-join
                   (delete nil (list
-                               (and margin (make-string margin ?\s))
+                               (and len (make-string len ?\s))
                                (string-trim (or parts ""))
                                name
                                path-part))
@@ -2511,7 +2550,7 @@ Cache are invalidated when `buffer-modified-tick' is changed."
 
 (defun js-imports-re-search-forward-inner (regexp &optional bound count)
   "This function is helper for `js-imports-re-search-forward'.
-Search forward from point for regular expression REGEXP.
+Search forward from the point for regular expression REGEXP.
 The optional argument BOUND is a buffer position that bounds
   the search.  The match found must not end after that position.  A
   value of nil means search to the end of the accessible portion of
@@ -2540,8 +2579,8 @@ The optional argument COUNT is a number that indicates the
   (point))
 
 (defun js-imports-re-search-forward (regexp &optional bound noerror count)
-  "Search forward from point for REGEXP ignoring comments and strings.
-Optional arguments BOUND, NOERROR, COUNT has the same meaning
+  "Search forward from the point for REGEXP ignoring comments and strings.
+The optional arguments BOUND, NOERROR, COUNT has the same meaning
 as for `re-search-forward'."
   (let ((case-fold-search nil))
     (unless count (setq count 1))
@@ -2560,13 +2599,15 @@ as for `re-search-forward'."
 
 (defun js-imports-re-search-backward-inner (regexp &optional bound count)
   "This function is helper for `js-imports-re-search-backward'.
-Search backward from point for regular expression REGEXP.
+Search backward from the point for regular expression REGEXP.
 The optional argument BOUND is a buffer position that bounds
-  the search.  The match found must not end after that position.  A
-  value of nil means search to the end of the accessible portion of
-  the buffer.
+the search.  The match found must not end after that position.
+
+A value of nil means search to the end of the accessible portion of
+the buffer.
+
 The optional argument COUNT is a number that indicates the
-  search direction and the number of occurrences to search for."
+search direction and the number of occurrences to search for."
   (let ((parse))
     (while (> count 0)
       (with-syntax-table js-imports-mode-syntax-table
@@ -2585,8 +2626,8 @@ The optional argument COUNT is a number that indicates the
   (point))
 
 (defun js-imports-re-search-backward (re &optional bound noerror count)
-  "Search backward from point for RE ignoring strings and comments.
-Optional arguments BOUND, NOERROR, COUNT has the same meaning
+  "Search backward from the point for RE ignoring strings and comments.
+The optional arguments BOUND, NOERROR, COUNT has the same meaning
 as `re-search-backward'."
   (let ((case-fold-search nil))
     (js-imports-re-search-forward re bound noerror (if count (- count) -1))))
@@ -2984,14 +3025,14 @@ CANDIDATE should be propertizied with property `display-path'."
 
 ;;;###autoload
 (defun js-imports-select-next-alias ()
-  "Select next alias and exit minibuffer."
+  "Select the next alias and exit minibuffer."
   (interactive)
   (js-imports-next-or-prev-alias 1)
   (js-imports-switch-alias-hook))
 
 ;;;###autoload
 (defun js-imports-select-prev-alias ()
-  "Select previous alias and exit minibuffer."
+  "Select the previous alias and exit minibuffer."
   (interactive)
   (js-imports-next-or-prev-alias -1)
   (js-imports-switch-alias-hook))
@@ -3016,10 +3057,12 @@ CANDIDATE should be propertizied with property `display-path'."
      map)))
 
 (defun js-imports-read-project-files (&optional caller)
-  "Read a project file in the minibuffer, with completion.
-CALLER is a symbol to uniquely identify the caller to `ivy-read'.
-During completion such keybindings available:
-\\{js-imports-files-map}"
+  "Read a project file in the minibuffer with completion.
+
+CALLER is a symbol to identify the caller for ~ivy-read~.
+
+During completion, such keybindings are available:
+\\{js-imports-files-map}."
   (minibuffer-with-setup-hook 'js-imports-setup-minibuffer-files
     (when caller (setq this-command caller))
     (if (boundp 'js-imports-completion-system)
@@ -3040,8 +3083,8 @@ During completion such keybindings available:
                        t))))
 
 (defun js-imports-read-file (&optional caller)
-  "Read project file.
-CALLER is a symbol to uniquely identify the caller to `ivy-read'."
+  "Read a project file.
+CALLER is a symbol to identify the caller to `ivy-read` uniquely."
   (let ((file (js-imports-read-project-files caller)))
     (if (memq this-command '(js-imports-select-next-alias
                              js-imports-select-prev-alias))
@@ -3061,7 +3104,7 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
 
 ;;;###autoload
 (defun js-imports-ivy-preview-file-exports ()
-  "Show exported symbols in file during ivy completion."
+  "Show the exported symbols in popup during ivy completion."
   (interactive)
   (require 'ivy)
   (let ((cand (js-imports-path-to-real (when (fboundp 'ivy-state-current)
@@ -3376,8 +3419,8 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
     (goto-char p)
     p))
 
-(defun js-imports-goto-end-brackets ()
-  "Goto end brackets."
+(defun js-imports-goto-end-of-node ()
+  "Jump to the end of parent node."
   (let ((winner)
         (beg (point))
         (words))
@@ -3485,7 +3528,7 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
     beg))
 
 (defun js-imports-get-bounds-of-exp-at-point ()
-  "Return bounds of node at point."
+  "Return bounds of node at the point."
   (let ((beg)
         (end))
     (save-excursion
@@ -3497,13 +3540,13 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
                                                        nil t 1))
                     (js-imports-skip-semicolon)
                     (point))
-                   (t (js-imports-goto-end-brackets))))))
+                   (t (js-imports-goto-end-of-node))))))
     (when (and beg end)
       (cons beg end))))
 
 ;;;###autoload
 (defun js-imports-mark-it ()
-  "Mark node at point."
+  "Mark node at the point."
   (interactive)
   (when-let ((bounds (js-imports-get-bounds-of-exp-at-point)))
     (goto-char (car bounds))
@@ -3512,12 +3555,12 @@ CALLER is a symbol to uniquely identify the caller to `ivy-read'."
 
 ;;;###autoload
 (defun js-imports ()
-  "Read a project file, extract exported symbols from it and ask which to import.
+  "Read a project file, parse exports from it and ask which to import.
 
-During file completion you can cycle beetwen relative and aliased filenames:
+During file completion, you can cycle between relative and aliased filenames:
 \\<js-imports-file-map>\
-`\\[js-imports-select-next-alias]' - select next alias,
-`\\[js-imports-select-prev-alias]' - select previous alias."
+`\\[js-imports-select-next-alias]' - select the next alias,
+`\\[js-imports-select-prev-alias]' - select the previous alias."
   (interactive)
   (js-imports-init-project)
   (pcase js-imports-completion-system
@@ -3543,8 +3586,7 @@ During file completion you can cycle beetwen relative and aliased filenames:
 
 ;;;###autoload
 (defun js-imports-from-path (&optional path)
-  "Make completions with exports from PATH.
-Add selected choices to existing or new import statement."
+  "Parse exports in PATH and add them to the existing or new import statement."
   (interactive)
   (unless path
     (js-imports-init-project)
@@ -3604,7 +3646,7 @@ Add selected choices to existing or new import statement."
 
 ;;;###autoload
 (defun js-imports-jump-to-definition ()
-  "Jump to a definition of symbol at point."
+  "Jump to a definition of symbol at the point."
   (interactive)
   (js-imports-init-project)
   (if-let ((name (and
@@ -3670,7 +3712,7 @@ Add selected choices to existing or new import statement."
 
 ;;;###autoload
 (defun js-imports-find-file-at-point ()
-  "Find a file when cursor are placed under stringified path."
+  "Find a file when cursor are placed inside string."
   (interactive)
   (let (path)
     (save-excursion
@@ -3748,7 +3790,7 @@ Add selected choices to existing or new import statement."
 
 ;;;###autoload
 (defun js-imports-transform-import-path-at-point ()
-  "Replace path of import statement at point to aliased one or relative.
+  "Replace path of import statement at the point to aliased one or relative.
 Inside import statement generates completions with available replacements, e.g:
 `import someExport from '../../enums' to `import someExport from '@/enums''.'"
   (interactive)
@@ -3887,7 +3929,7 @@ If called interactively, also show the version in the echo area."
 
 ;;;###autoload
 (define-minor-mode js-imports-mode
-  "A minor mode for importing in javascript.
+  "A minor mode for importing in JavaScript.
 \\{js-imports-mode-map}"
   :lighter " js-imports"
   :group 'js-imports
