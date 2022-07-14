@@ -1769,7 +1769,7 @@ Default value for SEPARATORS is whitespaces and * char."
   (let ((pos (or position (point))))
     (seq-find
      (js-imports--and
-      (js-imports--pipe (js-imports--partial >= pos) car)
+      (js-imports--compose (js-imports--partial >= pos) car)
       (js-imports--compose (js-imports--partial <= pos) cdr))
      (js-imports-get-es-imports-bounds))))
 
