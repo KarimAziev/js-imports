@@ -48,7 +48,7 @@
   (should (equal (js-imports-relative-p "..ff/") nil)))
 
 (ert-deftest js-imports-test-is-index-file?()
-  "Test to check if file is index"
+  "Test to check if file is index."
   (should (equal (js-imports-is-index-file-p "/home/user/repos/index.js") t))
   (should (equal (js-imports-is-index-file-p "~/repos/index.js") t))
   (should (equal (js-imports-is-index-file-p "./index.js") t))
@@ -72,7 +72,6 @@
   (should (equal (js-imports-is-index-file-p "index.jsx") t))
   (should (equal (js-imports-is-index-file-p "@/index.jsx") t))
   (should (equal (js-imports-is-index-file-p "index") t))
-
   (should (equal (js-imports-is-index-file-p "iindex") nil))
   (should (equal (js-imports-is-index-file-p "~/repos/App.js") nil))
   (should (equal (js-imports-is-index-file-p "/pathIndex.js") nil))
@@ -86,7 +85,7 @@
   (should (equal (js-imports-is-index-file-p "/iindex.js") nil)))
 
 (ert-deftest js-imports-test-remove-ext ()
-  "Test to remove extension"
+  "Test to remove extension."
   (should (equal (js-imports-remove-ext "./index.jsx") "./index"))
   (should (equal (js-imports-remove-ext "index.d.tsx") "index"))
   (should (equal (js-imports-remove-ext "index.d.ts") "index"))
