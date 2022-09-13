@@ -2568,11 +2568,12 @@ The optional argument COUNT is a number that indicates the
                  (setq str-terminator ?/))
                (re-search-forward
                 (concat "\\([^\\]\\|^\\)" (string str-terminator))
-                (point-at-eol) t))
+                (line-end-position) t))
               ((nth 7 parse)
                (forward-line))
               ((or (nth 4 parse)
-                   (and (eq (char-before) ?\/) (eq (char-after) ?\*)))
+                   (and (eq (char-before) ?\/)
+                        (eq (char-after) ?\*)))
                (re-search-forward "\\*/"))
               (t
                (setq count (1- count)))))))
@@ -2679,7 +2680,7 @@ as `re-search-backward'."
                              (p2 (re-search-forward "\\(\\*/\\)" nil t 1)))
                         (push (cons p1 p2) comments)))
                   (let* ((p1 (1- (point)))
-                         (p2 (point-at-eol)))
+                         (p2 (line-end-position)))
                     (push (cons p1 p2) comments))))))
           comments)))))
 
