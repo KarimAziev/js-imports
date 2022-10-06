@@ -2667,21 +2667,24 @@ as `re-search-backward'."
       (with-syntax-table js-imports-mode-syntax-table
         (let (comments)
           (goto-char (point-min))
-          (while (re-search-forward "\\(/\\*\\)\\|\\(//\\)\\|[\"'`]" nil t 1)
-            (if (save-excursion
-                  (backward-char 1)
-                  (looking-at "[\"'`]"))
-                (js-imports-skip-string)
-              (save-excursion
-                (backward-char 1)
-                (if (looking-at-p "\\*")
-                    (progn
-                      (let* ((p1 (1- (point)))
-                             (p2 (re-search-forward "\\(\\*/\\)" nil t 1)))
-                        (push (cons p1 p2) comments)))
-                  (let* ((p1 (1- (point)))
-                         (p2 (line-end-position)))
-                    (push (cons p1 p2) comments))))))
+          (while (re-search-forward comment-start-skip nil t 1)
+            (let ((beg (match-beginning 0))
+                  (str (match-string-no-properties 0))
+                  (end)
+                  (stx))
+              (setq stx (syntax-ppss (point)))
+              (setq end
+                    (cond ((nth 4 stx)
+                           (pcase (string-trim str)
+                             ("/*" (while
+                                       (when (re-search-forward "[*]/" nil t 1)
+                                         (nth 4 (syntax-ppss (point)))))
+                              (point))
+                             ("//"
+                              (end-of-line)
+                              (point))))))
+              (when (and beg end)
+                (push (cons beg end) comments))))
           comments)))))
 
 (defun js-imports-rename-import (candidate)
