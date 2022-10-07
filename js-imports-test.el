@@ -1,5 +1,4 @@
-;;; -*- lexical-binding: t -*-
-;;; js-imports-test.el --- This is an Emacs Lisp file with Emacs Lisp code.
+;;; js-imports-test.el --- Tests for js-imports -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020 KarimAziev
 
@@ -20,7 +19,7 @@
 
 ;;; Commentary:
 
-;; Hello world!
+;; Test suite for js-imports.el
 
 ;;; Code:
 
@@ -96,4 +95,57 @@
   (should (equal (js-imports-remove-ext "app.ts/App.js") "app.ts/App"))
   (should (equal (js-imports-remove-ext "App") "App")))
 
+(ert-deftest js-imports-read-json-as-plist-test ()
+  "Test for reading json with comments as plist."
+  (should (equal
+           (js-imports-read-json (expand-file-name
+                                  "tests/tsconfig.json"
+                                  default-directory)
+                                 'plist)
+           '(:compilerOptions
+             (:target "es2018"
+                      :module "commonjs"
+                      :outDir "./dist"
+                      :rootDir "./"
+                      :strict t
+                      :baseUrl "./"
+                      :paths
+                      (:@/*
+                       ["src/*"]
+                       :UI/*
+                       ["src/components/UI/*"])
+                      :typeRoots
+                      ["node_modules/@types"]
+                      :types
+                      ["node" "mocha"]
+                      :esModuleInterop t
+                      :inlineSourceMap t)))))
+
+(ert-deftest js-imports-read-json-as-alist-test ()
+  "Test for reading json with comments as alist."
+  (should (equal
+           (js-imports-read-json (expand-file-name
+                                  "tests/tsconfig.json"
+                                  default-directory)
+                                 'alist)
+           '((compilerOptions
+              (target . "es2018")
+              (module . "commonjs")
+              (outDir . "./dist")
+              (rootDir . "./")
+              (strict . t)
+              (baseUrl . "./")
+              (paths
+               (@/* .
+                    ["src/*"])
+               (UI/* .
+                     ["src/components/UI/*"]))
+              (typeRoots .
+                         ["node_modules/@types"])
+              (types .
+                     ["node" "mocha"])
+              (esModuleInterop . t)
+              (inlineSourceMap . t))))))
+
 ;;; js-imports-test.el ends here
+

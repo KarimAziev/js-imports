@@ -19,7 +19,7 @@ test:
 	outfile=/tmp/.elisp-test-result ; \
 	for f in $$(find tests -type f -name "*.el"); do \
 	    test -f $$outfile && rm -f $$outfile ; \
-		${CASK} exec ${EMACS} $(BATCHFLAGS) -L . -l js-imports.el -l tests/js-imports-test.el \
+		${CASK} exec ${EMACS} $(BATCHFLAGS) -L . -l js-imports.el -l js-imports-test.el \
 		-f ert-run-tests-batch-and-exit || ret=1 ; \
 	    test -f $$outfile && cat $$outfile ; \
 	done ; \
