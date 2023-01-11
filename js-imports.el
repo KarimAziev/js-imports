@@ -782,6 +782,9 @@ Default section is `dependencies'"
                         ""
                         js-imports-current-project-root)))
         (push dir processed-dirs)
+        (dolist (top-dir js-imports-root-ignored-directories)
+          (push (expand-file-name top-dir proj-root)
+                processed-dirs))
         (while (string-match-p proj-root dir)
           (when (file-readable-p dir)
             (setq files (append files
@@ -791,13 +794,13 @@ Default section is `dependencies'"
                                   js-imports-file-ext-regexp
                                   nil
                                   (lambda (it)
-                                    (and (file-readable-p it)
-                                         (not
+                                    (and (not
                                           (or
                                            (member it processed-dirs)
                                            (string= it dir)
                                            (string=
-                                            (or node-modules "") it))))))))))
+                                            (or node-modules "") it)))
+                                         (file-readable-p it))))))))
           (setq dir (expand-file-name ".." dir))
           (push dir processed-dirs))
         files)
