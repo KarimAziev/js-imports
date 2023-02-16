@@ -3973,6 +3973,19 @@ If called interactively, also show the version in the echo area."
   "Keymap for `js-imports' mode.")
 
 ;;;###autoload
+(define-minor-mode js-imports-alias-fix-mode
+  "Transform relative imports to aliased on save when this mode is turned on."
+  :lighter " js alias"
+  :global nil
+  (if js-imports-alias-fix-mode
+      (add-hook
+       'before-save-hook 'js-imports-transform-relative-imports-to-aliases
+       nil 'local)
+    (remove-hook
+     'before-save-hook 'js-imports-transform-relative-imports-to-aliases
+     'local)))
+
+;;;###autoload
 (define-minor-mode js-imports-mode
   "A minor mode for importing in JavaScript.
 \\{js-imports-mode-map}"
