@@ -1268,12 +1268,17 @@ NODE-MODULES-PATH is used to expand path of MODULES."
   "Extract imported symbols in REAL-PATH."
   (goto-char 0)
   (let (symbols)
-    (while (js-imports-re-search-forward
-            js-imports-regexp-import-keyword nil t 1)
+    (while (js-imports-re-search-forward js-imports-regexp-import-keyword
+                                         nil
+                                         t
+                                         1)
       (js-imports-forward-whitespace)
-      (let (display-path imports)
+      (let (display-path
+            imports)
         (cond ((js-imports-looking-at "*")
-               (let (beg end renamed-name)
+               (let (beg
+                     end
+                     renamed-name)
                  (setq beg (point))
                  (forward-char)
                  (skip-chars-forward "\s\t")
@@ -1288,33 +1293,47 @@ NODE-MODULES-PATH is used to expand path of MODULES."
                      (skip-chars-forward js-imports-regexp-name)))
                  (setq end (point))
                  (push (js-imports-make-item
-                        (format "%s" (buffer-substring-no-properties beg end))
+                        (format "%s"
+                                (buffer-substring-no-properties
+                                 beg end))
                         :type 16
                         :real-name "*"
                         :as-name renamed-name
                         :start beg)
                        imports)))
+              ((looking-at "\\_<\\(type\\)\\_>")
+               (skip-chars-forward "type")
+               (js-imports-forward-whitespace)
+               (if (or (looking-at ",")
+                       (looking-at "from"))
+                   (push (js-imports-make-item "type"
+                                               :type 1
+                                               :real-name "type"
+                                               :as-name "type"
+                                               :start (point))
+                         imports)))
               ((js-imports-get-word-if-valid)
                (when-let ((name (js-imports-get-word-if-valid)))
-                 (push (js-imports-make-item
-                        name
-                        :type 1
-                        :real-name name
-                        :as-name name
-                        :start (point))
+                 (push (js-imports-make-item name
+                                             :type 1
+                                             :real-name name
+                                             :as-name name
+                                             :start (point))
                        imports)
                  (skip-chars-forward name)
                  (js-imports-forward-whitespace)
                  (skip-chars-forward ",")
                  (js-imports-forward-whitespace))))
         (when (looking-at-p "{")
-          (let ((map-func (lambda (item) (js-imports-propertize
-                                     item
-                                     :type 4
-                                     :start
-                                     (js-imports-get-prop item :start))))
-                (named-items (js-imports-extract-esm-braced-symbols
-                              js-imports-name-as--re)))
+          (let ((map-func
+                 (lambda (item)
+                   (js-imports-propertize item
+                                          :type 4
+                                          :start
+                                          (js-imports-get-prop item :start))))
+                (named-items
+                 (js-imports-extract-esm-braced-symbols
+                  js-imports-name-as--re)))
             (setq named-items (mapcar map-func named-items))
             (setq imports (append imports named-items))))
         (unless (looking-at-p "[\"']")
@@ -1324,14 +1343,14 @@ NODE-MODULES-PATH is used to expand path of MODULES."
             (save-excursion
               (forward-char 1)
               (setq display-path (js-imports-get-path-at-point)))
-            (setq imports (mapcar (lambda (it)
-                                    (js-imports-propertize it
-                                                           :display-path
-                                                           display-path
-                                                           :real-path
-                                                           real-path
-                                                           :import t))
-                                  imports))
+            (setq imports
+                  (mapcar
+                   (lambda (it)
+                     (js-imports-propertize it
+                                            :display-path display-path
+                                            :real-path real-path
+                                            :import t))
+                   imports))
             (setq symbols (append symbols imports))))))
     symbols))
 
@@ -1477,6 +1496,42 @@ If `js-imports-current-export-path' is nil, use current buffer file name."
              js-imports-propertize :export t)
             (reverse (delete nil (append esm-exports cjs-exports))))))
 
+(defun js-imports-parse-export-clause (&optional path)
+  "Return list of exports between braces at point.
+Propertize every item with :real-path using PATH as value, and
+:start, :end, :type, :display-path (optional)."
+  (when-let ((symbols
+              (js-imports-extract-esm-braced-symbols js-imports-name-as--re))
+             (map-func
+              (lambda (it)
+                (let ((type
+                       (if (equal "default" (js-imports-get-prop it :as-name))
+                           1
+                         4))
+                      (pos (js-imports-get-prop it :start)))
+                  (js-imports-propertize it
+                                         :type type
+                                         :real-path path
+                                         :start pos)))))
+    (let ((from-path
+           (progn
+             (forward-list)
+             (js-imports-forward-whitespace)
+             (when (js-imports-looking-at "from")
+               (skip-chars-forward "from")
+               (js-imports-forward-whitespace)
+               (forward-char 1)
+               (js-imports-get-path-at-point)))))
+      (setq symbols
+            (if from-path
+                (mapcar
+                 (lambda (it)
+                   (js-imports-propertize (funcall map-func it)
+                                          :display-path from-path))
+                 symbols)
+              (mapcar map-func symbols)))
+      symbols)))
+
 (defun js-imports-make-esm-export-at-point (&optional path)
   "Return exports in PATH defined with ES Module syntax."
   (cond ((looking-at-p "\\*")
@@ -1487,19 +1542,20 @@ If `js-imports-current-export-path' is nil, use current buffer file name."
            (forward-char 1)
            (js-imports-forward-whitespace)
            (pcase (js-imports-which-word)
-             ("as" (progn (re-search-forward "as" nil t 1)
-                          (js-imports-forward-whitespace)
-                          (setq as-name (js-imports-get-word-if-valid))
-                          (skip-chars-forward as-name)
-                          (setq end (point))
-                          (setq full-name (concat "* as" as-name))
-                          (js-imports-make-item full-name
-                                                :type 4
-                                                :as-name as-name
-                                                :real-name "*"
-                                                :real-path path
-                                                :end end
-                                                :start start)))
+             ("as" (progn
+                     (re-search-forward "as" nil t 1)
+                     (js-imports-forward-whitespace)
+                     (setq as-name (js-imports-get-word-if-valid))
+                     (skip-chars-forward as-name)
+                     (setq end (point))
+                     (setq full-name (concat "* as" as-name))
+                     (js-imports-make-item full-name
+                                           :type 4
+                                           :as-name as-name
+                                           :real-name "*"
+                                           :real-path path
+                                           :end end
+                                           :start start)))
              ("from" (when-let ((from (js-imports-get-path-at-point)))
                        (js-imports-make-item "*"
                                              :type 16
@@ -1509,59 +1565,37 @@ If `js-imports-current-export-path' is nil, use current buffer file name."
                                              :real-path path
                                              :start start))))))
         ((looking-at-p "{")
-         (let ((symbols (js-imports-extract-esm-braced-symbols
-                         js-imports-name-as--re))
-               (map-func
-                (lambda (it) (let ((type
-                               (if (equal "default"
-                                          (js-imports-get-prop it
-                                                               :as-name))
-                                   1 4))
-                              (pos (js-imports-get-prop it :start)))
-                          (js-imports-propertize it
-                                                 :type type
-                                                 :real-path path
-                                                 :start pos))))
-               (from-path (progn
-                            (forward-list)
-                            (js-imports-forward-whitespace)
-                            (when (js-imports-looking-at "from")
-                              (skip-chars-forward "from")
-                              (js-imports-forward-whitespace)
-                              (forward-char 1)
-                              (js-imports-get-path-at-point)))))
-           (setq symbols (if from-path
-                             (mapcar (lambda (it)
-                                       (js-imports-propertize (funcall
-                                                               map-func it)
-                                                              :display-path
-                                                              from-path))
-                                     symbols)
-                           (mapcar map-func symbols)))
-           symbols))
+         (js-imports-parse-export-clause path))
         ((looking-at js-imports-regexp-name-set)
          (let* ((stack (js-imports-skip-reserved-words "\s\t\\*"))
                 (default (car (assoc "default" stack)))
-                (real-name (or (car (seq-find (js-imports--compose
-                                               js-imports-valid-identifier-p
-                                               car)
-                                              stack))
-                               default))
-                (var-type (car
-                           (seq-find (lambda (it)
-                                       (member
-                                        (car it)
-                                        js-imports-delcaration-keywords))
-                                     stack)))
+                (real-name
+                 (or (car
+                      (seq-find
+                       (js-imports--compose
+                        js-imports-valid-identifier-p
+                        car)
+                       stack))
+                     default))
+                (var-type
+                 (car
+                  (seq-find
+                   (lambda (it)
+                     (member (car it) js-imports-delcaration-keywords))
+                   stack)))
                 (as-name (or real-name default)))
-           (js-imports-make-item
-            (or as-name real-name)
-            :type (if default 1 4)
-            :real-name (or real-name default as-name)
-            :real-path path
-            :as-name as-name
-            :var-type var-type
-            :start (point))))))
+           (if (looking-at "{")
+               (js-imports-parse-export-clause path)
+             (js-imports-make-item (or as-name real-name)
+                                   :type
+                                   (if default
+                                       1
+                                     4)
+                                   :real-name (or real-name default as-name)
+                                   :real-path path
+                                   :as-name as-name
+                                   :var-type var-type
+                                   :start (point)))))))
 
 (defun js-imports-extract-cjs-exports (path)
   "Parse node at the point if it is defined in common JS syntax.
@@ -1733,7 +1767,8 @@ Default value for SEPARATORS is whitespaces and * char."
                                                (replace-regexp-in-string
                                                 "}\\|{"
                                                 ""
-                                                names)) " }"))))
+                                                names))
+                                         " }"))))
              ", "))
 
 (defun js-imports-goto-last-import ()
@@ -1751,14 +1786,16 @@ Default value for SEPARATORS is whitespaces and * char."
     (let (alist)
       (while (js-imports-re-search-forward
               js-imports-regexp-import-keyword nil t)
-        (let ((beg (- (point) (length "import")))
+        (let ((beg (- (point)
+                      (length "import")))
               (end))
           (js-imports-forward-whitespace)
           (unless (looking-at-p "[\"']")
             (js-imports-re-search-forward js-imports-from-keyword--re nil t 1)
             (js-imports-forward-whitespace))
           (when (looking-at-p "[\"']")
-            (forward-sexp 1)
+            (forward-char 1)
+            (js-imports-skip-string)
             (setq end (point))
             (js-imports-forward-whitespace)
             (when (looking-at ";")
@@ -1850,10 +1887,12 @@ Otherwise, return nil."
 (defun js-imports-looking-at-comment-p (&optional max)
   "Return if the point located at the start of comment.
 Optional argument MAX defines a limit."
-  (and (> (or max (1- (point-max))) (point))
+  (and (> (or max (1- (point-max)))
+          (point))
        (car (member (buffer-substring-no-properties
                      (point)
-                     (+ 2 (point))) '("#!" "/*" "//")))))
+                     (+ 2 (point)))
+                    '("#!" "/*" "//")))))
 
 (defun js-imports-forward-whitespace (&optional skip-chars)
   "Move the point forward accross SKIP-CHARS and comments.
@@ -1958,9 +1997,8 @@ Result depends on syntax table's string quote character."
 (defun js-imports-skip-string ()
   "Jumps to the end of string."
   (with-syntax-table js-imports-mode-syntax-table
-    (when-let ((beg (nth 8 (syntax-ppss (point)))))
-      (goto-char beg)
-      (forward-sexp 1))))
+    (while (nth 8 (syntax-ppss (point)))
+      (forward-char 1))))
 
 (defun js-imports-inside-comment-p ()
   "Return value of comment character in syntax table's or nil otherwise."
