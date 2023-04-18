@@ -572,6 +572,8 @@ Keywords specified in the variable `js-imports-reserved-js-words'."
     ("\\`\\(#\\)!" (1 "< b")))
    (point) end))
 
+;; files
+
 (defmacro js-imports-with-temp-buffer (&rest body)
   "Evaluate BODY in temporarily buffer with JavaScript syntax."
   `(with-temp-buffer
@@ -765,47 +767,84 @@ Default section is `dependencies'"
           (js-imports-find-project-files
            js-imports-current-project-root))))
 
+(defun js-imports-call-process (command &rest args)
+  "Execute COMMAND with ARGS synchronously.
+
+Returns output if exit status is zero."
+  (let ((buff (generate-new-buffer command)))
+    (with-current-buffer buff
+      (let ((status (apply #'call-process command nil t nil
+                           args)))
+        (let ((result (string-trim (buffer-string))))
+          (if (= 0 status)
+              (prog1 result (kill-current-buffer))
+            (message "js-imports: %s" result) nil))))))
+
+(defun js-imports-list-gitignored-dirs ()
+  "Return list of directories to exclude."
+  (when-let* ((default-directory
+               (locate-dominating-file default-directory
+                                       (lambda (dir)
+                                         (seq-find
+                                          (lambda (it)
+                                            (file-exists-p (concat dir
+                                                                   it)))
+                                          '(".gitignore"
+                                            "node_modules"
+                                            "package.json"
+                                            ".git")))))
+              (dirs (ignore-errors
+                      (split-string
+                       (js-imports-call-process "git" "ls-files"
+                                                "--others"
+                                                "--ignored"
+                                                "--exclude-standard"
+                                                "--directory")
+                       "\n" t))))
+    (mapcar #'expand-file-name dirs)))
+
+
 (defun js-imports-find-project-files (&optional project-root)
   "Return files of PROJECT-ROOT without node_modules."
   (unless project-root
-    (setq project-root (or js-imports-current-project-root
-                           (js-imports-find-project-root))))
-  (if (and js-imports-current-project-root
-           (string-match-p js-imports-current-project-root
-                           default-directory))
-      (let ((files)
-            (processed-dirs)
-            (node-modules (js-imports-find-node-modules project-root))
-            (dir (replace-regexp-in-string "/$" "" default-directory))
-            (proj-root (replace-regexp-in-string
-                        "/$"
-                        ""
-                        js-imports-current-project-root)))
-        (push dir processed-dirs)
-        (dolist (top-dir js-imports-root-ignored-directories)
-          (push (expand-file-name top-dir proj-root)
-                processed-dirs))
-        (while (string-match-p proj-root dir)
-          (when (file-readable-p dir)
-            (setq files (append files
-                                (reverse
-                                 (directory-files-recursively
-                                  dir
-                                  js-imports-file-ext-regexp
-                                  nil
-                                  (lambda (it)
-                                    (and (not
-                                          (or
-                                           (member it processed-dirs)
-                                           (string= it dir)
-                                           (string=
-                                            (or node-modules "") it)))
-                                         (file-readable-p it))))))))
-          (setq dir (expand-file-name ".." dir))
-          (push dir processed-dirs))
-        files)
-    (message "Cannot find project files")
-    nil))
+    (setq project-root (js-imports-find-project-root)))
+  (let ((files)
+        (processed-dirs (append (seq-filter #'file-directory-p
+                                            (js-imports-list-gitignored-dirs))
+                                (mapcar (lambda (it)
+                                          (if (file-name-absolute-p it)
+                                              (expand-file-name it)
+                                            (expand-file-name it project-root)))
+                                        js-imports-root-ignored-directories)))
+        (node-modules (js-imports-find-node-modules project-root))
+        (dir (replace-regexp-in-string "/$" "" default-directory))
+        (proj-root (replace-regexp-in-string
+                    "/$"
+                    ""
+                    js-imports-current-project-root)))
+    (push dir processed-dirs)
+    (while (not (file-equal-p dir proj-root))
+      (when (file-readable-p dir)
+        (setq files (append files
+                            (reverse
+                             (directory-files-recursively
+                              dir
+                              js-imports-file-ext-regexp
+                              nil
+                              (lambda (it)
+                                (let ((result (and (not
+                                                    (or
+                                                     (string= it dir)
+                                                     (member it processed-dirs)
+                                                     (member (concat it "/")
+                                                             processed-dirs)
+                                                     (string=
+                                                      (or node-modules "") it)))
+                                                   (file-readable-p it))))
+                                  result)))))))
+      (setq dir (expand-file-name ".." dir))
+      (push dir processed-dirs))
+    files))
 
 (defun js-imports-get-aliases ()
   "Return a sorted list of file aliases."
@@ -1241,6 +1280,8 @@ NODE-MODULES-PATH is used to expand path of MODULES."
   (let ((joined-path (apply #'js-imports-join-file args)))
     (when (file-exists-p joined-path)
       joined-path)))
+
+;; parsing
 
 (defun js-imports-find-imported-files ()
   "Return list of with imported imported paths in current buffer."
