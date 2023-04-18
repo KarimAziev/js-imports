@@ -1,0 +1,11 @@
+* v1.1.0    UNRELEASED
+- exclude gitignore directories
+* v1.0.0    2022-02-16
+- Recognise import and export type statements
+- Update melpazoid
+- Use ignored root dirs
+- Add some tests
+- Improve removing comments
+- Rename deprecated line end functions
+
+
