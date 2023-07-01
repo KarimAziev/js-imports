@@ -7,6 +7,7 @@
 ;; Keywords: languages
 ;; Version: 1.1.0
 ;; Package-Requires: ((emacs "26.1"))
+;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
 
