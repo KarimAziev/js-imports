@@ -1,4 +1,4 @@
-;;; js-imports.el --- Import JavaScript files  -*- lexical-binding: t; -*-
+;;; js-imports.el --- Import JavaScript files -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2020 Karim Aziiev <karim.aziiev@gmail.com>
 
@@ -4020,10 +4020,10 @@ If called interactively, also show the version in the echo area."
   :global nil
   (if js-imports-alias-fix-mode
       (add-hook
-       'before-save-hook 'js-imports-transform-relative-imports-to-aliases
+       'before-save-hook #'js-imports-transform-relative-imports-to-aliases
        nil 'local)
     (remove-hook
-     'before-save-hook 'js-imports-transform-relative-imports-to-aliases
+     'before-save-hook #'js-imports-transform-relative-imports-to-aliases
      'local)))
 
 ;;;###autoload
