@@ -1816,10 +1816,10 @@ Default value for SEPARATORS is whitespaces and * char."
 (defun js-imports-goto-last-import ()
   "Jump to the end of last esm import."
   (goto-char (point-min))
-  (while (js-imports-re-search-forward js-imports-regexp-import-keyword nil t)
-    (re-search-forward "['\"]" nil t 2)
-    (forward-line 1))
-  (point))
+  (when-let
+      ((last-imp-pos (cdr (car (last (js-imports-get-es-imports-bounds))))))
+    (goto-char last-imp-pos)
+    (forward-line)))
 
 (defun js-imports-get-es-imports-bounds ()
   "Return a cons with bounds of import stament of PATH."
