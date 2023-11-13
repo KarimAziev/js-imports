@@ -190,9 +190,25 @@
   :group 'js-imports
   :type '(repeat string))
 
-(defcustom js-imports-node-modules-priority-section-to-read
-  '("jsnext:main" "module" "types" "typings")
-  "Package-json sections to retrieve candidates from node_modules."
+(defcustom js-imports-node-modules-priority-section-to-read '("jsnext:main"
+                                                              "module" "types"
+                                                              "typings")
+  "Specify the priority of package.json fields when resolving module paths.
+
+Specifies the order of fields to check in a package's `package.json' when
+determining the entry point for a module in a Node.js project.
+
+The value is a list of strings, each representing a field name in
+`package.json'. The fields are checked in the order they appear in the list.
+Common fields include \"main\", \"module\", and \"browser\".
+
+This customization is useful for projects that define alternative module
+resolutions or for working with libraries that specify different entry points
+for different environments.
+
+To change the priority, customize the list to match the desired order. For
+example, to prioritize the \"module\" field over \"main\", set the list to
+\\(\"module\" \"main\")."
   :group 'js-imports
   :type '(repeat string))
 
@@ -1822,7 +1838,7 @@ Default value for SEPARATORS is whitespaces and * char."
     (forward-line)))
 
 (defun js-imports-get-es-imports-bounds ()
-  "Return a cons with bounds of import stament of PATH."
+  "Find JavaScript ES6 import statement ranges."
   (save-excursion
     (goto-char (point-min))
     (let (alist)
@@ -3407,7 +3423,7 @@ CALLER is a symbol to identify the caller to `ivy-read` uniquely."
       (message "Couldn't find %s" path))))
 
 (defun js-imports-build-helm-exports-keymap ()
-  "Make keymap for helm symbols type."
+  "Create keymap for Helm export actions in JavaScript imports."
   (when-let ((h-map (and (boundp 'helm-map)
                          helm-map))
              (map (make-sparse-keymap)))
@@ -3432,8 +3448,9 @@ CALLER is a symbol to identify the caller to `ivy-read` uniquely."
                               'withprop)))))
     map))
 
+
 (defun js-imports-build-helm-imported-keymap ()
-  "Make keymap for helm symbols type."
+  "Create a Helm keymap for JavaScript imports management."
   (when-let ((h-map (and (boundp 'helm-map)
                          (fboundp 'helm-run-after-exit)
                          (fboundp 'helm-get-selection)
