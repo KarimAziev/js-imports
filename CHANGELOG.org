@@ -1,3 +1,7 @@
+* v1.2.0    2023-11-14
+- Add a transient keymap for post-import actions. Users can repeat the import from the last module by typing =z= immediately after the =js-imports= command. To change this key, see the variable =js-imports-post-import-map=.
+- Improve the documentation and function descriptions.
+
 * v1.1.0    2023-04-18
 - exclude gitignore directories
 * v1.0.0    2022-02-16
