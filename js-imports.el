@@ -3688,6 +3688,13 @@ During file completion, you can cycle between relative and aliased filenames:
              (exit-minibuffer))
            (funcall-interactively #'js-imports-from-path module))))))
 
+(defvar js-imports-post-import-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "z")
+                #'js-imports-from-path)
+    map))
+
+
 ;;;###autoload
 (defun js-imports-from-path (&optional path)
   "Parse exports in PATH and add them to the existing or new import statement."
@@ -3709,44 +3716,48 @@ During file completion, you can cycle between relative and aliased filenames:
       (setq js-imports-current-export-path display-path)
       (setq js-imports-last-export-path display-path)))
   (js-imports-init-exports-candidates)
-  (cond
-   ((and (eq js-imports-completion-system 'helm-comp-read)
-         (fboundp 'helm))
-    (helm
-     :preselect (js-imports-get-word-if-valid)
-     :sources '(js-imports-exports-source
-                js-imports-imported-symbols-source)))
-   ((and (eq js-imports-completion-system 'ivy-completing-read)
-         (fboundp 'ivy-read))
-    (let ((choices (js-imports-export-filtered-candidate-transformer
-                    (js-imports-exported-candidates-transformer
-                     js-imports-export-candidates-in-path)))
-          (imports (js-imports-filter-with-prop
-                    :display-path
-                    js-imports-current-export-path
-                    (js-imports-imported-candidates-in-buffer
-                     js-imports-current-buffer))))
-      (ivy-read
-       (if (null imports)
-           "Import\s"
-         (concat "Import" "\s" (mapconcat (lambda (it) (format "%s" it)) imports
-                                          ",\s")
-                 ",\s"))
-       choices
-       :require-match nil
-       :caller 'js-imports-from-path
-       :preselect (js-imports-get-word-if-valid)
-       :multi-action (lambda (marked)
-                       (dolist (it marked)
-                         (js-imports-insert-import it)))
-       :action 'js-imports-ivy-insert-or-view-export)))
-   (t (let ((choices (js-imports-export-filtered-candidate-transformer
-                      (js-imports-exported-candidates-transformer
-                       js-imports-export-candidates-in-path)))
-            (cand))
-        (setq cand (funcall js-imports-completion-system "Import\s" choices))
-        (js-imports-insert-import cand)
-        (setq this-command 'js-imports-from-path)))))
+  (cond ((and (eq js-imports-completion-system 'helm-comp-read)
+              (fboundp 'helm))
+         (helm
+          :preselect (js-imports-get-word-if-valid)
+          :sources '(js-imports-exports-source
+                     js-imports-imported-symbols-source)))
+        ((and (eq js-imports-completion-system 'ivy-completing-read)
+              (fboundp 'ivy-read))
+         (let ((choices (js-imports-export-filtered-candidate-transformer
+                         (js-imports-exported-candidates-transformer
+                          js-imports-export-candidates-in-path)))
+               (imports (js-imports-filter-with-prop
+                         :display-path
+                         js-imports-current-export-path
+                         (js-imports-imported-candidates-in-buffer
+                          js-imports-current-buffer))))
+           (ivy-read
+            (if (null imports)
+                "Import\s"
+              (concat "Import" "\s" (mapconcat (lambda (it)
+                                                 (format "%s" it))
+                                               imports
+                                               ",\s")
+                      ",\s"))
+            choices
+            :require-match nil
+            :caller 'js-imports-from-path
+            :preselect (js-imports-get-word-if-valid)
+            :multi-action (lambda (marked)
+                            (dolist (it marked)
+                              (js-imports-insert-import it)))
+            :action 'js-imports-ivy-insert-or-view-export)))
+        (t
+         (let ((choices (js-imports-export-filtered-candidate-transformer
+                         (js-imports-exported-candidates-transformer
+                          js-imports-export-candidates-in-path)))
+               (cand))
+           (setq cand (funcall js-imports-completion-system "Import\s" choices))
+           (js-imports-insert-import cand)
+           (setq this-command 'js-imports-from-path))))
+  (when (keymapp js-imports-post-import-map)
+    (set-transient-map js-imports-post-import-map)))
 
 ;;;###autoload
 (defun js-imports-jump-to-definition ()
