@@ -917,7 +917,7 @@ provided, it defaults to the result of `js-imports-find-project-root'."
         (proj-root (replace-regexp-in-string
                     "/$"
                     ""
-                    js-imports-current-project-root)))
+                    project-root)))
     (push dir processed-dirs)
     (while (not (file-equal-p dir proj-root))
       (when (file-readable-p dir)
