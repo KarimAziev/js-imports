@@ -163,10 +163,10 @@
   "Additional files keymap to compose with `js-imports-file-map'.")
 
 (defvar js-imports-helm-imported-symbols-map nil
-  "Keymap for symbol sources.")
+  "Keymap for helm sources with imported symbols.")
 
 (defvar js-imports-helm-export-symbols-map nil
-  "Keymap for symbol sources.")
+  "Keymap for helm sources with export statements.")
 
 (defcustom js-imports-quote "'"
   "Quote type to use in imports."
