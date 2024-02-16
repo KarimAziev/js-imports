@@ -3198,11 +3198,12 @@ values search backward."
               (setq end
                     (cond ((nth 4 stx)
                            (pcase (string-trim str)
-                             ("/*" (while
-                                       (when (re-search-forward "[*]/" nil t 1)
-                                         (nth 4 (syntax-ppss (point)))))
+                             ((pred (string-prefix-p "/*"))
+                              (while
+                                  (when (re-search-forward "[*]/" nil t 1)
+                                    (nth 4 (syntax-ppss (point)))))
                               (point))
-                             ("//"
+                             ((pred (string-prefix-p "/"))
                               (end-of-line)
                               (point))))))
               (when (and beg end)
