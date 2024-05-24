@@ -903,7 +903,8 @@ Remaining arguments ARGS are strings passed as COMMAND arguments to COMMAND."
 Optional argument PROJECT-ROOT is the root directory of the project. If not
 provided, it defaults to the result of `js-imports-find-project-root'."
   (unless project-root
-    (setq project-root (js-imports-find-project-root)))
+    (setq project-root (or (js-imports-find-project-root)
+                           default-directory)))
   (let ((files)
         (processed-dirs (append (seq-filter #'file-directory-p
                                             (js-imports-list-gitignored-dirs))
