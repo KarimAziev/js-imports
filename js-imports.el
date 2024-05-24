@@ -2333,16 +2333,12 @@ used to match the word at point."
           (search-forward-regexp "['\"]" nil t 1)
         (search-forward-regexp "[\s\t\n]+from[\s\t\n]+['\"]" nil t 1)))
     (when (js-imports-inside-string-p)
-      (let (p0 p1 p2 stops)
-        (setq stops "^ \t\n\"`'‘’“”|[]{}·")
-        (setq p0 (point))
-        (skip-chars-backward stops)
-        (setq p1 (point))
-        (goto-char p0)
-        (skip-chars-forward stops)
-        (setq p2 (point))
-        (goto-char p0)
-        (buffer-substring-no-properties p1 p2)))))
+      (when-let ((beg (with-syntax-table js-imports-mode-syntax-table
+                        (nth 8 (syntax-ppss (point)))))
+                 (end (progn (js-imports-skip-string)
+                             (point))))
+        (buffer-substring-no-properties (1+ beg)
+                                        (1- end))))))
 
 (defun js-imports-string-match-p (regexp str &optional start)
   "Check if a string matches a regex pattern.
