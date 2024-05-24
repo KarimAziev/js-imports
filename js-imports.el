@@ -6,7 +6,7 @@
 ;; URL: https://github.com/KarimAziev/js-imports
 ;; Keywords: languages
 ;; Version: 1.2.0
-;; Package-Requires: ((emacs "26.1"))
+;; Package-Requires: ((emacs "27.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
