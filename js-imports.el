@@ -920,27 +920,28 @@ provided, it defaults to the result of `js-imports-find-project-root'."
                     ""
                     project-root)))
     (push dir processed-dirs)
-    (while (not (file-equal-p dir proj-root))
-      (when (file-readable-p dir)
-        (setq files (append files
-                            (reverse
-                             (directory-files-recursively
-                              dir
-                              js-imports-file-ext-regexp
-                              nil
-                              (lambda (it)
-                                (let ((result (and (not
-                                                    (or
-                                                     (string= it dir)
-                                                     (member it processed-dirs)
-                                                     (member (concat it "/")
-                                                             processed-dirs)
-                                                     (string=
-                                                      (or node-modules "") it)))
-                                                   (file-readable-p it))))
-                                  result)))))))
-      (setq dir (expand-file-name ".." dir))
-      (push dir processed-dirs))
+    (dolist (odir
+             (directory-files proj-root t directory-files-no-dot-files-regexp))
+      (unless (or (not (file-directory-p odir))
+                  (or (member (concat odir "/") processed-dirs)
+                      (or (not node-modules)
+                          (string= node-modules odir))
+                      (member odir processed-dirs)))
+        (setq files (nconc files (directory-files-recursively
+                                  odir
+                                  js-imports-file-ext-regexp
+                                  nil
+                                  (lambda (it)
+                                    (let ((result (and (not
+                                                        (or
+                                                         (string= it dir)
+                                                         (member it processed-dirs)
+                                                         (member (concat it "/")
+                                                                 processed-dirs)
+                                                         (string=
+                                                          (or node-modules "") it)))
+                                                       (file-readable-p it))))
+                                      result)))))))
     files))
 
 (defun js-imports-get-aliases ()
@@ -3417,7 +3418,8 @@ Argument PATH is a string representing the path to the module from which to
 import the exports."
   (let ((names (if (stringp named-list)
                    named-list
-                 (when (and (listp named-list) (<= 1 (length named-list)))
+                 (when (and (listp named-list)
+                            (<= 1 (length named-list)))
                    (string-join named-list ", "))))
         (imports (reverse (js-imports-find-imported-files))))
     (save-excursion
@@ -3447,8 +3449,9 @@ import the exports."
                       (unless module
                         (when-let* ((relative (seq-find #'js-imports-relative-p
                                                         imports))
-                                    (bounds (js-imports-get-import-positions
-                                             module)))
+                                    (bounds (and module
+                                                 (js-imports-get-import-positions
+                                                  module))))
                           (goto-char (car bounds))))))))
           (when module
             (goto-char (cdr (js-imports-get-import-positions module)))
@@ -3633,14 +3636,16 @@ setup."
                  (append (js-imports-project-files-transformer
                           (or js-imports-project-files
                               (js-imports-find-project-files)))
-                         (js-imports-node-modules-candidates))
+                         (js-imports-node-modules-candidates)
+                         (js-imports-get-node-js-builtin-paths))
                  nil
                  t)
       (completing-read (js-imports-make-files-prompt)
                        (append (js-imports-project-files-transformer
                                 (or js-imports-project-files
                                     (js-imports-find-project-files)))
-                               (js-imports-node-modules-candidates))
+                               (js-imports-node-modules-candidates)
+                               (js-imports-get-node-js-builtin-paths))
                        nil
                        t))))
 
@@ -4172,7 +4177,18 @@ During file completion, you can cycle between relative and aliased filenames:
        (when (eq (current-buffer) js-imports-current-buffer)
          (when (active-minibuffer-window)
            (exit-minibuffer))
-         (funcall-interactively #'js-imports-from-path module))))))
+         (if (js-imports-get-prop module :node-builtin)
+             (js-imports-insert-exports (if (js-imports-valid-identifier-p
+                                             module)
+                                            module
+                                          (js-imports-read-default-import-name
+                                           (car (split-string module "/" t))
+                                           "Import default as"))
+                                        nil
+                                        (format
+                                         "node:%s"
+                                         module))
+           (funcall-interactively #'js-imports-from-path module)))))))
 
 (defvar js-imports-post-import-map
   (let ((map (make-sparse-keymap)))
@@ -4575,6 +4591,202 @@ imports with the provided key bindings and menu options."
   :lighter " js-imports"
   :group 'js-imports
   :keymap js-imports-mode-map)
+
+(declare-function json-read "json")
+
+(defun js-imports-json-read-buffer (&optional object-type array-type null-object
+                                              false-object)
+  "Parse json from the current buffer using specified object and array types.
+
+The argument OBJECT-TYPE specifies which Lisp type is used
+to represent objects; it can be `hash-table', `alist' or `plist'.  It
+defaults to `alist'.
+
+The argument ARRAY-TYPE specifies which Lisp type is used
+to represent arrays; `array'/`vector' and `list'.
+
+The argument NULL-OBJECT specifies which object to use
+to represent a JSON null value.  It defaults to `:null'.
+
+The argument FALSE-OBJECT specifies which object to use to
+represent a JSON false value.  It defaults to `:false'."
+  (if (and (fboundp 'json-parse-string)
+           (fboundp 'json-available-p)
+           (json-available-p))
+      (json-parse-buffer
+       :object-type (or object-type 'alist)
+       :array-type
+       (pcase array-type
+         ('list 'list)
+         ('vector 'array)
+         (_ 'array))
+       :null-object (or null-object :null)
+       :false-object (or false-object :false))
+    (let ((json-object-type (or object-type 'alist))
+          (json-array-type
+           (pcase array-type
+             ('list 'list)
+             ('array 'vector)
+             (_ 'vector)))
+          (json-null (or null-object :null))
+          (json-false (or false-object :false)))
+      (json-read))))
+
+(defun js-imports-node-builtins ()
+  "Extract Node.js built-in modules' structure."
+  (let ((process-environment (append '("NODE_NO_WARNINGS=1")
+                                     process-environment)))
+    (with-temp-buffer
+      (let ((status
+             (call-process "node" nil (current-buffer) nil "-p"
+                           "const decycle = (obj, seen = [], path = []) => {
+  const isObject = (v) => typeof v === 'object';
+  const isString = (v) => typeof v === 'string';
+  const isArray = (v) => Array.isArray(v);
+  const isNumber = (v) => typeof v === 'number';
+  const isBigint = (v) => typeof v === 'bigint';
+  const isBoolean = (v) => typeof v === 'boolean';
+
+  if (obj === null) {
+    return null;
+  }
+  if (obj === undefined) {
+    return undefined;
+  }
+  if (isNumber(obj) || isBoolean(obj)) {
+    return obj;
+  }
+  if (isString(obj) || isBigint(obj)) {
+    return obj.toString();
+  }
+
+  if (seen.includes(obj)) {
+    return { ':Circular': path };
+  }
+
+  if (isArray(obj)) {
+    return obj.map((item, idx) => decycle(item, seen, [...path, idx]));
+  }
+  if (isObject(obj)) {
+    return Object.keys(obj).reduce((acc, key) => {
+      const value = obj[key];
+      const objPath = [...path, key];
+      acc[key] = decycle(value, [...seen, obj], objPath);
+      return acc;
+    }, {});
+  } else {
+    return obj;
+  }
+};
+const annotateFunction = (str) => {
+  let parts = str.split('').reverse();
+  let processed = [];
+  let curr;
+  let bracketsOpen = 0;
+  let bracketsClosed = 0;
+  let openCount = 0;
+  let closedCount = 0;
+  let result;
+
+  while ((curr = !result && parts.pop())) {
+    if (curr === '(') {
+      openCount += 1;
+    } else if (curr === ')') {
+      closedCount += 1;
+    }
+    if (openCount > 0) {
+      processed.push(curr);
+      if (curr === '{') {
+        bracketsOpen += 1;
+      } else if (curr === '}') {
+        bracketsClosed += 1;
+      }
+    }
+    result =
+      result ||
+      (bracketsOpen === bracketsClosed &&
+        openCount === closedCount &&
+        openCount > 0)
+        ? processed.join('')
+        : undefined;
+  }
+
+  return result ? 'function'.concat(result).concat('{}') : result;
+};
+const mapNodeBuiltins = () => {
+  const mapper = (data, depth = 0) => {
+    return Object.keys(data)
+      .filter((k) => !/^_/g.test(k))
+      .reduce((obj, key) => {
+        const v = data[key];
+        const val =
+          v instanceof Function || typeof v === 'function'
+            ? JSON.stringify(
+                annotateFunction(
+                  v
+                    .toString()
+                    .replace(/\\/\\*[\s\\S]*?\\*\\/|\\/\\/.*/g, '')
+                    .replace(/\\r?\\n/gim, '')
+                    .trim(),
+                ),
+              )
+            : Array.isArray(v)
+              ? []
+              : typeof v === 'object' && depth < 3 && v
+                ? mapper(v, depth + 1)
+                : v;
+        obj[key] = val;
+        return obj;
+      }, {});
+  };
+  const obj = require('module')
+    .builtinModules.filter((k) => !/^_/g.test(k))
+    .reduce((acc, moduleName) => {
+      acc[moduleName] = mapper(require(moduleName));
+      return acc;
+    }, {});
+  return JSON.stringify(decycle(obj));
+};
+
+mapNodeBuiltins();
+")))
+        (when (zerop status)
+          (goto-char (point-min))
+          (js-imports-json-read-buffer))))))
+
+(defun js-imports-get-node-js-builtin-paths ()
+  "Get Node.js built-in modules' structure."
+  (mapcar (pcase-lambda (`(,module . ,_v))
+            (let ((str (format "%s" module)))
+              (js-imports-make-item str
+                                    :type 1
+                                    :as-name (substring-no-properties
+                                              str)
+                                    :real-name (substring-no-properties
+                                                str)
+                                    :node-builtin t
+                                    :display-path (format
+                                                   "node:%s"
+                                                   module)
+                                    :real-path
+                                    (format "node:%s" module))))
+          (js-imports-node-builtins)))
+
+(defun js-imports-import-node-js-builtin ()
+  "Read Node.js built-in modules' structure."
+  (interactive)
+  (let* ((modules (js-imports-get-node-js-builtin-paths))
+         (module (completing-read "Module: "
+                                  modules)))
+    (js-imports-insert-exports (if (js-imports-valid-identifier-p module)
+                                   module
+                                 (js-imports-read-default-import-name
+                                  (car (split-string module "/" t))
+                                  "Import default as"))
+                               nil
+                               (format
+                                "node:%s"
+                                module))))
 
 (provide 'js-imports)
 ;;; js-imports.el ends here
