@@ -217,9 +217,8 @@ example, to prioritize the \"module\" field over \"main\", set the list to
   :group 'js-imports
  :type 'string)
 
-(defcustom js-imports-preffered-extensions
-  '("ts" "tsx" "jsx" "es6" "es" "mjs" "js" "cjs" "ls" "sjs" "iced" "liticed"
-    "json")
+(defcustom js-imports-preffered-extensions '("ts" "tsx" "jsx" "es6" "es" "mjs" "js" "cjs" "ls" "sjs" "iced" "liticed"
+                                             "json" "vue")
   "File extensions to resolve."
   :group 'js-imports
   :type '(repeat string))
@@ -456,7 +455,7 @@ regular expression."
            '("\\(d\\.\\)?tsx?"
              "jsx" "es6" "es"
              "mjs" "js" "cjs" "ls"
-             "sjs" "iced" "liticed" "json")
+             "sjs" "iced" "liticed" "json" "vue")
            "\\|")
           "\\)\\'")
   "Regexp matching js, jsx and ts extensions files.")
@@ -905,44 +904,15 @@ provided, it defaults to the result of `js-imports-find-project-root'."
   (unless project-root
     (setq project-root (or (js-imports-find-project-root)
                            default-directory)))
-  (let ((files)
-        (processed-dirs (append (seq-filter #'file-directory-p
-                                            (js-imports-list-gitignored-dirs))
-                                (mapcar (lambda (it)
-                                          (if (file-name-absolute-p it)
-                                              (expand-file-name it)
-                                            (expand-file-name it project-root)))
-                                        js-imports-root-ignored-directories)))
-        (node-modules (js-imports-find-node-modules project-root))
-        (dir (replace-regexp-in-string "/$" "" default-directory))
-        (proj-root (replace-regexp-in-string
-                    "/$"
-                    ""
-                    project-root)))
-    (push dir processed-dirs)
-    (dolist (odir
-             (directory-files proj-root t directory-files-no-dot-files-regexp))
-      (unless (or (not (file-directory-p odir))
-                  (or (member (concat odir "/") processed-dirs)
-                      (or (not node-modules)
-                          (string= node-modules odir))
-                      (member odir processed-dirs)))
-        (setq files (nconc files (directory-files-recursively
-                                  odir
-                                  js-imports-file-ext-regexp
-                                  nil
-                                  (lambda (it)
-                                    (let ((result (and (not
-                                                        (or
-                                                         (string= it dir)
-                                                         (member it processed-dirs)
-                                                         (member (concat it "/")
-                                                                 processed-dirs)
-                                                         (string=
-                                                          (or node-modules "") it)))
-                                                       (file-readable-p it))))
-                                      result)))))))
-    files))
+  (sort (directory-files-recursively
+         js-imports-current-project-root
+         js-imports-file-ext-regexp
+         nil
+         (lambda (it)
+           (not (string-match-p "/node_modules\\'"
+                                it))))
+        (lambda (a b)
+          (file-newer-than-file-p a b))))
 
 (defun js-imports-get-aliases ()
   "Retrieve and sort JavaScript import aliases."
@@ -2149,9 +2119,10 @@ bounds of the import statement. If nil, the function calculates the bounds."
       (when (looking-back "[\"']" 1)
         (let ((p2 (1- (point)))
               (p1))
-          (backward-sexp 1)
-          (setq p1 (1+ (point)))
-          (cons p1 p2))))))
+          (with-syntax-table js-imports-mode-syntax-table
+            (backward-sexp 1)
+            (setq p1 (1+ (point)))
+            (cons p1 p2)))))))
 
 (defun js-imports-get-import-positions (path)
   "Find import positions for a given path.
@@ -3405,8 +3376,23 @@ namespace import name is read."
            (or js-imports-last-export-path "")
            "Import * as")))))
 
+
 (defun js-imports-insert-exports (default-name named-list path)
   "Insert JavaScript exports into code.
+
+Argument DEFAULT-NAME is a string representing the default export name to be
+imported.
+
+Argument NAMED-LIST is either a string representing named exports or a list of
+strings representing multiple named exports.
+
+Argument PATH is a string representing the path to the module from which to
+import the exports."
+  (js-imports--maybe-narrow-to-script
+   #'js-imports--insert-exports default-name named-list path))
+
+(defun js-imports--insert-exports (default-name named-list path)
+  "Insert exports into code.
 
 Argument DEFAULT-NAME is a string representing the default export name to be
 imported.
@@ -3492,25 +3478,34 @@ exports to import."
                       " from " js-imports-quote path js-imports-quote ";"))
           (when default-name
             (when-let ((default-bounds (js-imports-get-rebounds-at-point)))
-              (delete-region (car default-bounds) (cdr default-bounds)))
+              (delete-region (car default-bounds)
+                             (cdr default-bounds)))
             (insert default-name))
           (when (or (looking-at-p js-imports-regexp-name-set)
                     default-name)
-            (skip-chars-forward js-imports-regexp-name)
-            (js-imports-forward-whitespace)
-            (unless (looking-at-p ",")
-              (js-imports-re-search-backward js-imports-regexp-name-set nil t 1)
-              (forward-char 1)
-              (insert ", "))
-            (skip-chars-forward ",")
-            (js-imports-forward-whitespace))
+            (let ((word (js-imports-which-word)))
+              (skip-chars-forward js-imports-regexp-name)
+              (js-imports-forward-whitespace)
+              (unless (or (equal word "type")
+                          (looking-at-p ",")
+                          (and (not names)
+                               (not
+                                (save-excursion
+                                  (js-imports-re-search-forward "{" nil t 1)))))
+                (js-imports-re-search-backward js-imports-regexp-name-set nil t
+                                               1)
+                (forward-char 1)
+                (insert ", "))
+              (skip-chars-forward ",")
+              (js-imports-forward-whitespace)))
           (when names
             (if (looking-at-p "{")
                 (progn (js-imports-re-search-forward "}" nil t 1)
                        (backward-char 1)
                        (js-imports-backward-whitespace)
-                       (let ((separator (if (save-excursion (backward-char 1)
-                                                            (looking-at-p ","))
+                       (let ((separator (if (save-excursion
+                                              (backward-char 1)
+                                              (looking-at-p ","))
                                             " "
                                           ", ")))
                          (insert separator names)))
@@ -4197,6 +4192,92 @@ During file completion, you can cycle between relative and aliased filenames:
     map)
   "Keymap for post-import actions in JavaScript imports.")
 
+(defun js-imports--forward-tag ()
+  "Move the cursor to the end of the current HTML-like tag."
+  (when (looking-at "[<]\\(\\([a-z0-9_$-]+\\)\\([^>]*\\(/?>\\)\\)\\)")
+    (let ((el (match-string-no-properties 2))
+          (closed-tag (match-string-no-properties 4))
+          (end (match-end 4)))
+      (goto-char end)
+      (unless (equal closed-tag "/>")
+        (let ((el-re (concat "[<]\\(\\(" (regexp-quote el)
+                             "\\)\\([^>]*\\(/?>\\)\\)\\)"))
+              (end-re (concat "</" (regexp-quote el) ">"))
+              (end-tag-start)
+              (beg-tag-start))
+          (while
+              (progn (setq end-tag-start (save-excursion
+                                           (re-search-forward end-re nil t 1)))
+                     (setq beg-tag-start nil)
+                     (save-excursion
+                       (while
+                           (when (re-search-forward el-re nil t 1)
+                             (let ((closed-tag (match-string-no-properties
+                                                4))
+                                   (start (match-beginning 0)))
+                               (or (equal closed-tag "/>")
+                                   (progn (setq beg-tag-start start)
+                                          nil))))))
+                     (when (and beg-tag-start
+                                end-tag-start
+                                (< beg-tag-start end-tag-start))
+                       (goto-char beg-tag-start)
+                       (js-imports--forward-tag)
+                       t)))
+          (cond (end-tag-start
+                 (goto-char end-tag-start))))))))
+
+
+(defun js-imports--script-bounds ()
+  "Return the bounds of a script tag if the cursor is at its opening tag."
+  (when (and
+         (looking-at "[<]\\(\\(script\\)\\([^>]*\\(/?>\\)\\)\\)")
+         (equal (match-string-no-properties 4) ">"))
+    (when-let* ((beg (match-end 4))
+                (end (progn (js-imports--forward-tag)
+                            (when (re-search-backward
+                                   "[<]/script>"
+                                   nil t 1)
+                              (point)))))
+      (cons beg end))))
+
+
+
+(defun js-imports--get-script-bounds ()
+  "Return the bounds of the nearest enclosing script tag."
+  (save-excursion
+    (or
+     (when (re-search-backward
+            "[<]\\(\\([a-z0-9_$-]+\\)\\([^>]*\\(/?>\\)\\)\\)" nil t 1)
+       (js-imports--script-bounds))
+     (progn
+       (goto-char (point-max))
+       (catch 'bounds (while
+                          (re-search-backward
+                           "[<]\\(\\(script\\)\\([^>]*\\(/?>\\)\\)\\)" nil t
+                           1)
+                        (when-let ((bounds (js-imports--script-bounds)))
+                          (throw 'bounds bounds))))))))
+
+(defun js-imports--maybe-narrow-to-script (fn &rest args)
+  "Narrow the buffer to the script region if the file is a Vue or HTML file.
+
+Argument FN is the function to be applied within the narrowed region.
+
+Remaining arguments ARGS are the arguments to be passed to the function FN."
+  (pcase-let ((`(,beg . ,end)
+               (when (member
+                      (if buffer-file-name
+                          (file-name-extension buffer-file-name)
+                        (file-name-extension (buffer-name)))
+                      '("vue" "html"))
+                 (js-imports--get-script-bounds))))
+    (if (and beg end)
+        (save-restriction
+          (narrow-to-region beg end)
+          (apply fn args))
+      (apply fn args))))
+
 
 ;;;###autoload
 (defun js-imports-from-path (&optional path)
@@ -4221,49 +4302,59 @@ it prompts the user to select a file."
                                   path))))
       (setq js-imports-current-export-path display-path)
       (setq js-imports-last-export-path display-path)))
-  (js-imports-init-exports-candidates)
-  (cond ((and (eq js-imports-completion-system 'helm-comp-read)
-              (fboundp 'helm))
-         (helm
-          :preselect (js-imports-get-word-if-valid)
-          :sources '(js-imports-exports-source
-                     js-imports-imported-symbols-source)))
-        ((and (eq js-imports-completion-system 'ivy-completing-read)
-              (fboundp 'ivy-read))
-         (let ((choices (js-imports-export-filtered-candidate-transformer
-                         (js-imports-exported-candidates-transformer
-                          js-imports-export-candidates-in-path)))
-               (imports (js-imports-filter-with-prop
-                         :display-path
-                         js-imports-current-export-path
-                         (js-imports-imported-candidates-in-buffer
-                          js-imports-current-buffer))))
-           (ivy-read
-            (if (null imports)
-                "Import\s"
-              (concat "Import" "\s" (mapconcat (lambda (it)
-                                                 (format "%s" it))
-                                               imports
-                                               ",\s")
-                      ",\s"))
-            choices
-            :require-match nil
-            :caller 'js-imports-from-path
-            :preselect (js-imports-get-word-if-valid)
-            :multi-action (lambda (marked)
-                            (dolist (it marked)
-                              (js-imports-insert-import it)))
-            :action 'js-imports-ivy-insert-or-view-export)))
+  (cond ((member (file-name-extension js-imports-current-export-path)
+                 '("vue"
+                   "html"))
+         (js-imports-insert-exports
+          (file-name-base
+           js-imports-current-export-path)
+          nil
+          js-imports-current-export-path))
         (t
-         (let ((choices (js-imports-export-filtered-candidate-transformer
-                         (js-imports-exported-candidates-transformer
-                          js-imports-export-candidates-in-path)))
-               (cand))
-           (setq cand (funcall js-imports-completion-system "Import\s" choices))
-           (js-imports-insert-import cand)
-           (setq this-command 'js-imports-from-path))))
-  (when (keymapp js-imports-post-import-map)
-    (set-transient-map js-imports-post-import-map)))
+         (js-imports-init-exports-candidates)
+         (cond ((and (eq js-imports-completion-system 'helm-comp-read)
+                     (fboundp 'helm))
+                (helm
+                 :preselect (js-imports-get-word-if-valid)
+                 :sources '(js-imports-exports-source
+                            js-imports-imported-symbols-source)))
+               ((and
+                 (eq js-imports-completion-system 'ivy-completing-read)
+                 (fboundp 'ivy-read))
+                (let ((choices (js-imports-export-filtered-candidate-transformer
+                                (js-imports-exported-candidates-transformer
+                                 js-imports-export-candidates-in-path)))
+                      (imports (js-imports-filter-with-prop
+                                :display-path
+                                js-imports-current-export-path
+                                (js-imports-imported-candidates-in-buffer
+                                 js-imports-current-buffer))))
+                  (ivy-read
+                   (if (null imports)
+                       "Import\s"
+                     (concat "Import" "\s" (mapconcat (lambda (it)
+                                                        (format "%s" it))
+                                                      imports
+                                                      ",\s")
+                             ",\s"))
+                   choices
+                   :require-match nil
+                   :caller 'js-imports-from-path
+                   :preselect (js-imports-get-word-if-valid)
+                   :multi-action (lambda (marked)
+                                   (dolist (it marked)
+                                     (js-imports-insert-import it)))
+                   :action 'js-imports-ivy-insert-or-view-export)))
+               (t
+                (let ((choices (js-imports-export-filtered-candidate-transformer
+                                (js-imports-exported-candidates-transformer
+                                 js-imports-export-candidates-in-path)))
+                      (cand))
+                  (setq cand (funcall js-imports-completion-system "Import\s" choices))
+                  (js-imports-insert-import cand)
+                  (setq this-command 'js-imports-from-path))))
+         (when (keymapp js-imports-post-import-map)
+           (set-transient-map js-imports-post-import-map)))))
 
 ;;;###autoload
 (defun js-imports-jump-to-definition ()
@@ -4757,13 +4848,12 @@ mapNodeBuiltins();
 (defun js-imports-get-node-js-builtin-paths ()
   "Get Node.js built-in modules' structure."
   (mapcar (pcase-lambda (`(,module . ,_v))
-            (let ((str (format "%s" module)))
+            (let ((str (substring-no-properties
+                        (format "%s" module))))
               (js-imports-make-item str
                                     :type 1
-                                    :as-name (substring-no-properties
-                                              str)
-                                    :real-name (substring-no-properties
-                                                str)
+                                    :as-name (substring-no-properties str)
+                                    :real-name (substring-no-properties str)
                                     :node-builtin t
                                     :display-path (format
                                                    "node:%s"
