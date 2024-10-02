@@ -778,7 +778,11 @@ Optional argument PROJECT-ROOT is the root directory of the project.
 Optional argument TSCONFIG-NAME is the name of the TypeScript configuration
 file."
   (unless project-root (setq project-root (js-imports-find-project-root)))
-  (unless tsconfig-name (setq tsconfig-name js-imports-tsconfig-filename))
+  (unless tsconfig-name (setq tsconfig-name (if (or (not js-imports-tsconfig-filename)
+                                                    (file-name-absolute-p js-imports-tsconfig-filename))
+                                                js-imports-tsconfig-filename
+                                              (expand-file-name js-imports-tsconfig-filename
+                                                                (or project-root default-directory)))))
   (let ((config)
         (compiler-options)
         (found)
