@@ -3162,7 +3162,9 @@ values search backward."
       (with-syntax-table js-imports-mode-syntax-table
         (let (comments)
           (goto-char (point-min))
-          (while (re-search-forward comment-start-skip nil t 1)
+          (while (re-search-forward (or comment-start-skip
+                                        "\\(?://+\\|/\\*+\\)\\s-*")
+                                    nil t 1)
             (let ((beg (match-beginning 0))
                   (str (match-string-no-properties 0))
                   (end)
