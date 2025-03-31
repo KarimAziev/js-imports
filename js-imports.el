@@ -4729,52 +4729,36 @@ represent a JSON false value.  It defaults to `:false'."
           (json-false (or false-object :false)))
       (json-read))))
 
-(defun js-imports-node-builtins ()
-  "Extract Node.js built-in modules' structure."
-  (let ((process-environment (append '("NODE_NO_WARNINGS=1")
-                                     process-environment)))
-    (with-temp-buffer
-      (let ((status
-             (call-process "node" nil (current-buffer) nil "-p"
-                           "const decycle = (obj, seen = [], path = []) => {
-  const isObject = (v) => typeof v === 'object';
-  const isString = (v) => typeof v === 'string';
-  const isArray = (v) => Array.isArray(v);
-  const isNumber = (v) => typeof v === 'number';
-  const isBigint = (v) => typeof v === 'bigint';
-  const isBoolean = (v) => typeof v === 'boolean';
-
-  if (obj === null) {
-    return null;
-  }
-  if (obj === undefined) {
-    return undefined;
-  }
-  if (isNumber(obj) || isBoolean(obj)) {
-    return obj;
-  }
-  if (isString(obj) || isBigint(obj)) {
-    return obj.toString();
-  }
-
-  if (seen.includes(obj)) {
-    return { ':Circular': path };
-  }
-
-  if (isArray(obj)) {
-    return obj.map((item, idx) => decycle(item, seen, [...path, idx]));
-  }
-  if (isObject(obj)) {
-    return Object.keys(obj).reduce((acc, key) => {
-      const value = obj[key];
-      const objPath = [...path, key];
-      acc[key] = decycle(value, [...seen, obj], objPath);
-      return acc;
-    }, {});
-  } else {
-    return obj;
-  }
+(defvar js-imports--node-builtins-code-block "
+const decycle = (obj) => {
+  const seen = new WeakSet();
+  const helper = (value, path = []) => {
+    if (
+      value === null ||
+      value === undefined ||
+      /^(boolean|number|string|bigint)$/.test(typeof value)
+    ) {
+      return value;
+    }
+    if (typeof value === 'object') {
+      if (seen.has(value)) {
+        return { ':Circular': path };
+      }
+      seen.add(value);
+      if (Array.isArray(value)) {
+        return value.map((item, idx) => helper(item, [...path, idx]));
+      } else {
+        return Object.keys(value).reduce((acc, key) => {
+          acc[key] = helper(value[key], [...path, key]);
+          return acc;
+        }, {});
+      }
+    }
+    return value;
+  };
+  return helper(obj);
 };
+
 const annotateFunction = (str) => {
   let parts = str.split('').reverse();
   let processed = [];
@@ -4844,12 +4828,28 @@ const mapNodeBuiltins = () => {
     }, {});
   return JSON.stringify(decycle(obj));
 };
+require('util').inspect.defaultOptions.maxArrayLength = null;
+require('util').inspect.defaultOptions.maxStringLength = null;
+process.stdout.write(mapNodeBuiltins());
+"
+  "JavaScript code block for mapping Node.js built-in modules.")
 
-mapNodeBuiltins();
-")))
-        (when (zerop status)
+
+(defun js-imports-node-builtins ()
+  "Extract Node.js built-in modules' structure."
+  (with-temp-buffer
+    (insert js-imports--node-builtins-code-block "\n")
+    (let ((process-environment
+           (append
+            '("NODE_NO_WARNINGS=1")
+            process-environment)))
+      (let ((status (call-process-region nil
+                                         nil "node" t t nil)))
+        (when (and (numberp status)
+                   (zerop status))
           (goto-char (point-min))
-          (js-imports-json-read-buffer))))))
+          (ignore-errors
+            (js-imports-json-read-buffer)))))))
 
 (defun js-imports-get-node-js-builtin-paths ()
   "Get Node.js built-in modules' structure."
@@ -4868,6 +4868,7 @@ mapNodeBuiltins();
                                     (format "node:%s" module))))
           (js-imports-node-builtins)))
 
+;;;###autoload
 (defun js-imports-import-node-js-builtin ()
   "Read Node.js built-in modules' structure."
   (interactive)
