@@ -4279,9 +4279,12 @@ Remaining arguments ARGS are the arguments to be passed to the function FN."
                       '("vue" "html"))
                  (js-imports--get-script-bounds))))
     (if (and beg end)
-        (save-restriction
-          (narrow-to-region beg end)
-          (apply fn args))
+        (save-excursion
+          (when (> end beg)
+            (setq beg (1+ beg)))
+          (save-restriction
+            (narrow-to-region beg end)
+            (apply fn args)))
       (apply fn args))))
 
 
