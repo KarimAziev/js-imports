@@ -915,8 +915,7 @@ provided, it defaults to the result of `js-imports-find-project-root'."
          (lambda (it)
            (not (string-match-p "/node_modules\\'"
                                 it))))
-        (lambda (a b)
-          (file-newer-than-file-p a b))))
+        #'file-newer-than-file-p))
 
 (defun js-imports-get-aliases ()
   "Retrieve and sort JavaScript import aliases."
