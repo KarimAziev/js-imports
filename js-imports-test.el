@@ -27,61 +27,61 @@
 (require 'js-imports)
 
 (ert-deftest js-imports-test-relative-p ()
-  (should (equal (js-imports-relative-p ".") t))
-  (should (equal (js-imports-relative-p "./") t))
-  (should (equal (js-imports-relative-p "./index") t))
-  (should (equal (js-imports-relative-p "./..") t))
-  (should (equal (js-imports-relative-p "./../file") t))
-  (should (equal (js-imports-relative-p "..") t))
-  (should (equal (js-imports-relative-p "../") t))
-  (should (equal (js-imports-relative-p "../index") t))
-  (should (equal (js-imports-relative-p "../..") t))
-  (should (equal (js-imports-relative-p "../../") t))
-  (should (equal (js-imports-relative-p "../../file") t))
-  (should (equal (js-imports-relative-p ".index") nil))
-  (should (equal (js-imports-relative-p "/") nil))
-  (should (equal (js-imports-relative-p ".../") nil))
-  (should (equal (js-imports-relative-p "...") nil))
-  (should (equal (js-imports-relative-p "..ff") nil))
-  (should (equal (js-imports-relative-p "..ff/") nil))
-  (should (equal (js-imports-relative-p "..ff/") nil)))
+  (should (equal (js-imports--relative-p ".") t))
+  (should (equal (js-imports--relative-p "./") t))
+  (should (equal (js-imports--relative-p "./index") t))
+  (should (equal (js-imports--relative-p "./..") t))
+  (should (equal (js-imports--relative-p "./../file") t))
+  (should (equal (js-imports--relative-p "..") t))
+  (should (equal (js-imports--relative-p "../") t))
+  (should (equal (js-imports--relative-p "../index") t))
+  (should (equal (js-imports--relative-p "../..") t))
+  (should (equal (js-imports--relative-p "../../") t))
+  (should (equal (js-imports--relative-p "../../file") t))
+  (should (equal (js-imports--relative-p ".index") nil))
+  (should (equal (js-imports--relative-p "/") nil))
+  (should (equal (js-imports--relative-p ".../") nil))
+  (should (equal (js-imports--relative-p "...") nil))
+  (should (equal (js-imports--relative-p "..ff") nil))
+  (should (equal (js-imports--relative-p "..ff/") nil))
+  (should (equal (js-imports--relative-p "..ff/") nil)))
 
 (ert-deftest js-imports-test-is-index-file?()
   "Test to check if file is index."
-  (should (equal (js-imports-is-index-file-p "/home/user/repos/index.js") t))
-  (should (equal (js-imports-is-index-file-p "~/repos/index.js") t))
-  (should (equal (js-imports-is-index-file-p "./index.js") t))
-  (should (equal (js-imports-is-index-file-p "./index") t))
-  (should (equal (js-imports-is-index-file-p "../index") t))
-  (should (equal (js-imports-is-index-file-p "index.js") t))
-  (should (equal (js-imports-is-index-file-p "@/index.js") t))
-  (should (equal (js-imports-is-index-file-p "/home/user/repos/index.ts") t))
-  (should (equal (js-imports-is-index-file-p "~/repos/index.ts") t))
-  (should (equal (js-imports-is-index-file-p "./index.ts") t))
-  (should (equal (js-imports-is-index-file-p "index.ts") t))
-  (should (equal (js-imports-is-index-file-p "@/index.ts") t))
-  (should (equal (js-imports-is-index-file-p "/home/user/repos/index.d.ts") t))
-  (should (equal (js-imports-is-index-file-p "~/repos/index.d.ts") t))
-  (should (equal (js-imports-is-index-file-p "./index.d.ts") t))
-  (should (equal (js-imports-is-index-file-p "index.d.ts") t))
-  (should (equal (js-imports-is-index-file-p "@/index.d.ts") t))
-  (should (equal (js-imports-is-index-file-p "/home/user/repos/index.jsx") t))
-  (should (equal (js-imports-is-index-file-p "~/repos/index.jsx") t))
-  (should (equal (js-imports-is-index-file-p "./index.jsx") t))
-  (should (equal (js-imports-is-index-file-p "index.jsx") t))
-  (should (equal (js-imports-is-index-file-p "@/index.jsx") t))
-  (should (equal (js-imports-is-index-file-p "index") t))
-  (should (equal (js-imports-is-index-file-p "iindex") nil))
-  (should (equal (js-imports-is-index-file-p "~/repos/App.js") nil))
-  (should (equal (js-imports-is-index-file-p "/pathIndex.js") nil))
-  (should (equal (js-imports-is-index-file-p "pathIndex.js") nil))
-  (should (equal (js-imports-is-index-file-p "-index.js") nil))
-  (should (equal (js-imports-is-index-file-p "/-index.js") nil))
-  (should (equal (js-imports-is-index-file-p "/index-index.js") nil))
-  (should (equal (js-imports-is-index-file-p "/") nil))
-  (should (equal (js-imports-is-index-file-p "/iindex.js") nil))
-  (should (equal (js-imports-is-index-file-p "/index$") nil))
-  (should (equal (js-imports-is-index-file-p "/iindex.js") nil)))
+  (should (equal (js-imports--index-file-p "/home/user/repos/index.js") t))
+  (should (equal (js-imports--index-file-p "~/repos/index.js") t))
+  (should (equal (js-imports--index-file-p "./index.js") t))
+  (should (equal (js-imports--index-file-p "./index") t))
+  (should (equal (js-imports--index-file-p "../index") t))
+  (should (equal (js-imports--index-file-p "index.js") t))
+  (should (equal (js-imports--index-file-p "@/index.js") t))
+  (should (equal (js-imports--index-file-p "/home/user/repos/index.ts") t))
+  (should (equal (js-imports--index-file-p "~/repos/index.ts") t))
+  (should (equal (js-imports--index-file-p "./index.ts") t))
+  (should (equal (js-imports--index-file-p "index.ts") t))
+  (should (equal (js-imports--index-file-p "@/index.ts") t))
+  (should (equal (js-imports--index-file-p "/home/user/repos/index.d.ts") t))
+  (should (equal (js-imports--index-file-p "~/repos/index.d.ts") t))
+  (should (equal (js-imports--index-file-p "./index.d.ts") t))
+  (should (equal (js-imports--index-file-p "index.d.ts") t))
+  (should (equal (js-imports--index-file-p "@/index.d.ts") t))
+  (should (equal (js-imports--index-file-p "/home/user/repos/index.jsx") t))
+  (should (equal (js-imports--index-file-p "~/repos/index.jsx") t))
+  (should (equal (js-imports--index-file-p "./index.jsx") t))
+  (should (equal (js-imports--index-file-p "index.jsx") t))
+  (should (equal (js-imports--index-file-p "@/index.jsx") t))
+  (should (equal (js-imports--index-file-p "index") t))
+  (should (equal (js-imports--index-file-p "iindex") nil))
+  (should (equal (js-imports--index-file-p "~/repos/App.js") nil))
+  (should (equal (js-imports--index-file-p "/pathIndex.js") nil))
+  (should (equal (js-imports--index-file-p "pathIndex.js") nil))
+  (should (equal (js-imports--index-file-p "-index.js") nil))
+  (should (equal (js-imports--index-file-p "/-index.js") nil))
+  (should (equal (js-imports--index-file-p "/index-index.js") nil))
+  (should (equal (js-imports--index-file-p "/") nil))
+  (should (equal (js-imports--index-file-p "/iindex.js") nil))
+  (should (equal (js-imports--index-file-p "/index$") nil))
+  (should (equal (js-imports--index-file-p "/iindex.js") nil)))
 
 (ert-deftest js-imports-test-remove-ext ()
   "Test to remove extension."
@@ -98,36 +98,38 @@
 (ert-deftest js-imports-read-json-as-plist-test ()
   "Test for reading json with comments as plist."
   (should (equal
-           (js-imports-read-json (expand-file-name
-                                  "tests/tsconfig.json"
-                                  default-directory)
-                                 'plist)
+           (js-imports--read-json-file (expand-file-name
+                                        "tests/tsconfig.json"
+                                        default-directory)
+                                       'plist
+                                       t)
            '(:compilerOptions
              (:target "es2018"
-                      :module "commonjs"
-                      :outDir "./dist"
-                      :rootDir "./"
-                      :strict t
-                      :baseUrl "./"
-                      :paths
-                      (:@/*
-                       ["src/*"]
-                       :UI/*
-                       ["src/components/UI/*"])
-                      :typeRoots
-                      ["node_modules/@types"]
-                      :types
-                      ["node" "mocha"]
-                      :esModuleInterop t
-                      :inlineSourceMap t)))))
+              :module "commonjs"
+              :outDir "./dist"
+              :rootDir "./"
+              :strict t
+              :baseUrl "./"
+              :paths
+              (:@/*
+               ["src/*"]
+               :UI/*
+               ["src/components/UI/*"])
+              :typeRoots
+              ["node_modules/@types"]
+              :types
+              ["node" "mocha"]
+              :esModuleInterop t
+              :inlineSourceMap t)))))
 
 (ert-deftest js-imports-read-json-as-alist-test ()
   "Test for reading json with comments as alist."
   (should (equal
-           (js-imports-read-json (expand-file-name
-                                  "tests/tsconfig.json"
-                                  default-directory)
-                                 'alist)
+           (js-imports--read-json-file (expand-file-name
+                                        "tests/tsconfig.json"
+                                        default-directory)
+                                       'alist
+                                       t)
            '((compilerOptions
               (target . "es2018")
               (module . "commonjs")
@@ -136,16 +138,11 @@
               (strict . t)
               (baseUrl . "./")
               (paths
-               (@/* .
-                    ["src/*"])
-               (UI/* .
-                     ["src/components/UI/*"]))
-              (typeRoots .
-                         ["node_modules/@types"])
-              (types .
-                     ["node" "mocha"])
+               (@/* . ["src/*"])
+               (UI/* . ["src/components/UI/*"]))
+              (typeRoots . ["node_modules/@types"])
+              (types . ["node" "mocha"])
               (esModuleInterop . t)
               (inlineSourceMap . t))))))
 
 ;;; js-imports-test.el ends here
-
