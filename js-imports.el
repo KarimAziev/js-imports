@@ -1412,9 +1412,9 @@ candidates."
         (parent-dir))
     (setq module-re (concat "\\(/\\|^\\)" (pop parts)
                             js-imports-file-ext-regexp))
-    (setq parent-dir (concat (or (string-join
-                                  (reverse parts) "/") "") "/"))
-    (directory-files parent-dir t module-re)))
+    (setq parent-dir (concat (string-join (reverse parts) "/") "/"))
+    (when (file-directory-p parent-dir)
+      (directory-files parent-dir t module-re))))
 
 (defun js-imports--resolve-paths (path &optional dir)
   "Resolve and sort JavaScript import file paths.
@@ -1662,7 +1662,7 @@ Argument SECTIONS is a list of strings representing the sections to try reading
 from the JSON file."
   (when sections
     (let ((data (js-imports--read-json-file json-file 'hash-table)))
-      (seq-find (lambda (sect)
+      (seq-some (lambda (sect)
                   (gethash sect data))
                 sections))))
 
