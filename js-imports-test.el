@@ -106,6 +106,146 @@
   (should (equal (js-imports-remove-ext "app.ts/App.js") "app.ts/App"))
   (should (equal (js-imports-remove-ext "App") "App")))
 
+(ert-deftest js-imports-path-to-real-relative-and-absolute-test ()
+  "Resolve relative, absolute, directory, and aliased import paths."
+  (let ((root (make-temp-file "js-imports-paths-" t)))
+    (unwind-protect
+        (let* ((source (js-imports-test--write-file
+                        root "src/features/settings/bug-demo.ts"
+                        "import '../shared';"))
+               (shared (js-imports-test--write-file
+                        root "src/features/shared.js" "export {};"))
+               (index (js-imports-test--write-file
+                       root "src/components/index.vue" "<template />"))
+               (alias-target (js-imports-test--write-file
+                              root "src/utils/helpers.ts" "export {};"))
+               (source-dir (file-name-directory source))
+               (js-imports-project-aliases
+                (list (cons "@/"
+                            (list (file-name-as-directory
+                                   (expand-file-name "src" root)))))))
+          (let ((default-directory source-dir))
+            (should (equal (js-imports--path-to-real "../shared" source-dir)
+                           shared))
+            (should (equal (js-imports--path-to-real
+                            (file-name-sans-extension shared))
+                           shared))
+            (should (equal (js-imports--path-to-real
+                            (expand-file-name "src/components" root))
+                           index))
+            (should (equal (js-imports--path-to-real "@/utils/helpers")
+                           alias-target))
+            (should-not (js-imports--path-to-real "./does-not-exist" source-dir))
+            (should-not
+             (js-imports--path-to-real "./missing/does-not-exist" source-dir))
+            (should-not (js-imports--path-to-real "@/does-not-exist"))))
+      (delete-directory root t))))
+
+(ert-deftest js-imports-path-to-real-node-modules-package-test ()
+  "Resolve a package entry point using package.json field priorities."
+  (let ((root (make-temp-file "js-imports-node-modules-" t)))
+    (unwind-protect
+        (let* ((source (js-imports-test--write-file
+                        root "src/features/settings/bug-demo.ts"
+                        "import { value } from 'lodash-es';"))
+               (jsnext-main (js-imports-test--write-file
+                             root "node_modules/lodash-es/lodash.js"
+                             "export const value = 1;"))
+               (module-main (js-imports-test--write-file
+                             root "node_modules/lodash-es/module.js"
+                             "export const value = 2;"))
+               (main (js-imports-test--write-file
+                      root "node_modules/lodash-es/main.js"
+                      "module.exports = {};")))
+          (js-imports-test--write-file
+           root "package.json"
+           "{\"dependencies\":{\"lodash-es\":\"^1.0.0\"}}")
+          (js-imports-test--write-file
+           root "node_modules/lodash-es/package.json"
+           (concat "{\"jsnext:main\":\"lodash.js\","
+                   "\"module\":\"module.js\","
+                   "\"main\":\"main.js\"}"))
+          (let ((default-directory (file-name-directory source)))
+            (should (equal
+                     (js-imports--try-json-sections
+                      (expand-file-name
+                       "node_modules/lodash-es/package.json" root)
+                     '("missing" "module" "main"))
+                     "module.js"))
+            (should-not
+             (js-imports--try-json-sections
+              (expand-file-name
+               "node_modules/lodash-es/package.json" root)
+              '("missing")))
+            (should (equal (js-imports--path-to-real "lodash-es") jsnext-main)))
+          (let ((default-directory (file-name-directory source))
+                (js-imports-node-modules-priority-section-to-read
+                 '("module" "main")))
+            (should (equal (js-imports--path-to-real "lodash-es") module-main)))
+          (let ((default-directory (file-name-directory source))
+                (js-imports-node-modules-priority-section-to-read '("main")))
+            (should (equal (js-imports--path-to-real "lodash-es") main))))
+      (delete-directory root t))))
+
+(ert-deftest js-imports-path-to-real-node-modules-subpath-test ()
+  "Resolve scoped packages, extensionless entries, and package subpaths."
+  (let ((root (make-temp-file "js-imports-node-modules-" t)))
+    (unwind-protect
+        (let* ((source (js-imports-test--write-file
+                        root "src/app.ts" "import '@scope/pkg';"))
+               (package-entry (js-imports-test--write-file
+                               root "node_modules/@scope/pkg/dist/index.ts"
+                               "export {};"))
+               (subpath (js-imports-test--write-file
+                         root "node_modules/@scope/pkg/features/feature.jsx"
+                         "export {};"))
+               (nested-index (js-imports-test--write-file
+                              root "node_modules/@scope/pkg/widgets/index.js"
+                              "export {};")))
+          (js-imports-test--write-file
+           root "package.json"
+           "{\"dependencies\":{\"@scope/pkg\":\"^1.0.0\"}}")
+          (js-imports-test--write-file
+           root "node_modules/@scope/pkg/package.json"
+           "{\"module\":\"dist/index\"}")
+          (let ((default-directory (file-name-directory source)))
+            (should (equal (js-imports--path-to-real "@scope/pkg") package-entry))
+            (should (equal (js-imports--path-to-real
+                            "@scope/pkg/features/feature")
+                           subpath))
+            (should (equal (js-imports--path-to-real
+                            "@scope/pkg/widgets")
+                           nested-index)))
+          (should (js-imports--dependency-p "@scope/pkg" root)))
+      (delete-directory root t))))
+
+(ert-deftest js-imports-path-to-real-package-resolution-fallbacks-test ()
+  "Resolve package source, direct files, index files, and missing paths."
+  (let ((root (make-temp-file "js-imports-node-modules-" t)))
+    (unwind-protect
+        (let* ((source (js-imports-test--write-file
+                        root "src/app.js" "import 'source-only';"))
+               (main-entry (js-imports-test--write-file
+                            root "node_modules/main-only/lib/entry.js"
+                            "module.exports = {};")))
+          (js-imports-test--write-file
+           root "package.json"
+           "{\"dependencies\":{\"source-only\":\"^1.0.0\",\"main-only\":\"^1.0.0\"}}")
+          (js-imports-test--write-file
+           root "node_modules/source-only/src/only.ts"
+           "export {};")
+          (js-imports-test--write-file
+           root "node_modules/main-only/package.json"
+           "{\"main\":\"lib/entry\"}")
+          (let ((default-directory (file-name-directory source)))
+            (should (equal (js-imports--path-to-real "source-only")
+                           (expand-file-name
+                            "node_modules/source-only/src/only.ts" root)))
+            (should (equal (js-imports--path-to-real "main-only")
+                           main-entry))
+            (should-not (js-imports--path-to-real "missing-package"))))
+      (delete-directory root t))))
+
 (ert-deftest js-imports-read-json-as-plist-test ()
   "Test for reading json with comments as plist."
   (should (equal
