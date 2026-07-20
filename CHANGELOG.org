@@ -1,3 +1,7 @@
+* v1.3.0    2026-07-20
+- Improve retrieval of path aliases from multiple tsconfig files: previously, only =extends= sections were handled; now it also traverses =references=.
+- Internals: privatize =js-imports= internals. They are now prefixed with =js-imports--*=.
+
 * v1.2.0    2023-11-14
 - Add a transient keymap for post-import actions. Users can repeat the import from the last module by typing =z= immediately after the =js-imports= command. To change this key, see the variable =js-imports-post-import-map=.
 - Improve the documentation and function descriptions.
@@ -11,5 +15,3 @@
 - Add some tests
 - Improve removing comments
 - Rename deprecated line end functions
-
-

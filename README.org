@@ -13,20 +13,19 @@ Download the source code and put it wherever you like, and add the
 directory to the load path:
 
 #+begin_src elisp :eval no
-
 (add-to-list 'load-path "/path/to/js-imports/")
-
 (require 'js-imports)
-
 #+end_src
 
 ** [[https://github.com/raxod502/straight.el][straight.el]] or [[https://github.com/jwiegley/use-package][use-package]]
 
 If you are using [[https://github.com/raxod502/straight.el][straight.el]], then you can use a normal recipe to install:
 #+begin_src emacs-lisp :eval never-export
-
 (straight-use-package
- '(js-imports :type git :host github :repo "KarimAziev/js-imports"))
+ '(js-imports
+   :type git
+   :host github
+   :repo "KarimAziev/js-imports"))
 #+end_src
 
 You might be using [[https://github.com/jwiegley/use-package][use-package]] with [[https://github.com/raxod502/straight.el][straight.el]], then you can install and enable at the same time:
@@ -43,43 +42,39 @@ You might be using [[https://github.com/jwiegley/use-package][use-package]] with
 An example of configuration with [[https://github.com/raxod502/straight.el][straight]] and [[https://github.com/jwiegley/use-package][use-package]].
 
 #+BEGIN_SRC elisp :eval never-export
-
 (use-package js-imports
-  :init
-  (setq-default js-imports-completion-system 'ivy-completing-read)
-  (setq-default js-imports-modules-default-names '(("ramda" . "R")
-                                                   ("react" . "React")))
   :straight (js-imports
              :type git
              :host github
              :repo "KarimAziev/js-imports")
-  :hook ((js-mode . js-imports-mode)
-         (js2-mode . js-imports-mode)
-         (typescript-mode . js-imports-mode)
-         (web-mode . js-imports-mode)
-         (js-imports-mode .
-                          (lambda ()
-                            (add-hook
-                             'before-save-hook
-                             'js-imports-transform-relative-imports-to-aliases
-                             nil t))))
+  :hook (((typescript-mode
+           tsx-ts-mode
+           typescript-ts-mode
+           js-mode
+           js-ts-mode
+           js2-mode
+           vue-ts-mode
+           vue-mode)
+          . js-imports-mode))
   :bind ((:map js-imports-mode-map
-               ("C-c C-i" . js-imports)
-               ("C-c C-j" . js-imports-jump-to-definition)
-               ("C-c C-f" . js-imports-find-file-at-point)
-               ("C-c C-." . js-imports-symbols-menu)
-               ("C->" . js-imports-transform-import-path-at-point))
+          ("C-c C-i" . js-imports)
+          ("C-c C-j" . js-imports-jump-to-definition)
+          ("C-c C-f" . js-imports-find-file-at-point)
+          ("C-c C-." . js-imports-symbols-menu)
+          ("C->" . js-imports-transform-import-path-at-point))
          (:map js-imports-file-map
-               ("C->" . js-imports-select-next-alias)
-               ("C-<" . js-imports-select-prev-alias))))
-
+          ("C->" . js-imports-select-next-alias)
+          ("C-<" . js-imports-select-prev-alias)))
+  :config
+  (setq-default js-imports-completion-system 'ivy-completing-read)
+  (setq-default js-imports-modules-default-names '(("ramda" . "R")
+                                                   ("react" . "React"))))
 #+END_SRC
 
 *** [[https://github.com/quelpa/quelpa][Quelpa]]
 You can also install it with quelpa.
 
 #+BEGIN_SRC elisp :eval never-export
-
 (quelpa '(js-imports
           :repo "KarimAziev/js-imports"
           :fetcher git
@@ -107,8 +102,8 @@ To change keybindings modify ~js-imports-file-map~, e.g:
 #+begin_src emacs-lisp
 
 (require 'js-imports)
-(define-key js-imports-file-map (kbd "C-]") 'js-imports-select-next-alias)
-(define-key js-imports-file-map (kbd "C-[") 'js-imports-select-prev-alias)
+(define-key js-imports-file-map (kbd "C-]") #'js-imports-select-next-alias)
+(define-key js-imports-file-map (kbd "C-[") #'js-imports-select-prev-alias)
 #+end_src
 
 
@@ -177,14 +172,14 @@ import { c, d } from './fileB';
 There are two ways to configure file aliases:
 - automatically with [[https://www.typescriptlang.org/tsconfig#paths][TSConfig file]] (tsconfig.json or jsconfig.json):
 
-No setup is needed if a project root directory contains either tsconfig.json or jsconfig.json with configured paths and ~baseUrl~ in the ~compilerOptions.~
+No setup is needed if a project root directory contains either tsconfig.json or jsconfig.json with ~paths~ in ~compilerOptions~.  A configured ~baseUrl~ is still honored, but it is optional: without it, path targets are resolved relative to the config file that declares ~paths~.
+
+Compiler options inherited through ~extends~ are supported, including multiple and package-based base configs.  For solution-style configs, aliases are also discovered recursively from project ~references~; each referenced config is resolved using its own compiler options and config directory.
 
 For example, with such config two aliases will be used: ~@~ for all files in ~./src~ directory and ~UI~ for ~./src/components/UI~,
 
-#+BEGIN_SRC json :eval never-export
-{
+#+BEGIN_SRC json :eval never-export {
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
       "UI/*": ["src/components/UI/*", "src/components/Layout/*"]
