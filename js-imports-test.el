@@ -26,6 +26,17 @@
 (require 'ert)
 (require 'js-imports)
 
+(defun js-imports-test--write-file (root name contents)
+  "Write CONTENTS to NAME below ROOT and return its absolute path."
+  (let ((file (expand-file-name name root)))
+    (make-directory (file-name-directory file) t)
+    (with-temp-file file (insert contents))
+    file))
+
+(defun js-imports-test--alias (alias root)
+  "Build one expected ALIAS entry pointing at ROOT."
+  (list (cons alias (list (file-name-as-directory root)))))
+
 (ert-deftest js-imports-test-relative-p ()
   (should (equal (js-imports--relative-p ".") t))
   (should (equal (js-imports--relative-p "./") t))
@@ -144,5 +155,159 @@
               (types . ["node" "mocha"])
               (esModuleInterop . t)
               (inlineSourceMap . t))))))
+
+(ert-deftest js-imports-read-json-invalidates-stale-cache-test ()
+  "Test that JSON cache entries are refreshed after a file changes."
+  (let ((root (make-temp-file "js-imports-json-cache-" t)))
+    (unwind-protect
+        (let ((file (js-imports-test--write-file root "config.json"
+                                                 "{\"value\": 1}")))
+          (should (equal (js-imports--read-json-file file 'alist)
+                         '((value . 1))))
+          (js-imports-test--write-file root "config.json" "{\"value\": 2}")
+          (set-file-times file (time-add (current-time) 1))
+          (should (equal (js-imports--read-json-file file 'alist)
+                         '((value . 2)))))
+      (delete-directory root t))))
+
+(ert-deftest js-imports-read-tsconfig-paths-without-base-url-test ()
+  "Test that paths without baseUrl are relative to their config."
+  (let ((root (make-temp-file "js-imports-tsconfig-" t)))
+    (unwind-protect
+        (progn
+          (js-imports-test--write-file
+           root "tsconfig.json"
+           "{\"compilerOptions\":{\"paths\":{\"@/*\":[\"src/*\"]}}}")
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases root "tsconfig.json")
+            (js-imports-test--alias "@/" (expand-file-name "src" root)))))
+      (delete-directory root t))))
+
+(ert-deftest js-imports-read-tsconfig-inherited-path-origins-test ()
+  "Test paths and baseUrl origins across an extends chain."
+  (let ((root (make-temp-file "js-imports-tsconfig-" t)))
+    (unwind-protect
+        (progn
+          (js-imports-test--write-file
+           root "configs/paths.json"
+           "{\"compilerOptions\":{\"paths\":{\"@/*\":[\"src/*\"]}}}")
+          (js-imports-test--write-file
+           root "tsconfig.json" "{\"extends\":\"./configs/paths\"}")
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases root "tsconfig.json")
+            (js-imports-test--alias
+             "@/" (expand-file-name "configs/src" root))))
+          (js-imports-test--write-file
+           root "with-base-url.json"
+           (concat "{\"extends\":\"./configs/paths\","
+                   "\"compilerOptions\":{\"baseUrl\":\"./app\"}}"))
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases
+             root "with-base-url.json")
+            (js-imports-test--alias
+             "@/" (expand-file-name "app/src" root))))
+          (js-imports-test--write-file
+           root "configs/base-url.json"
+           "{\"compilerOptions\":{\"baseUrl\":\"../shared\"}}")
+          (js-imports-test--write-file
+           root "child-paths.json"
+           (concat "{\"extends\":\"./configs/base-url\","
+                   "\"compilerOptions\":{\"paths\":"
+                   "{\"lib/*\":[\"feature/*\"]}}}"))
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases root "child-paths.json")
+            (js-imports-test--alias
+             "lib/" (expand-file-name "shared/feature" root)))))
+      (delete-directory root t))))
+
+(ert-deftest js-imports-read-tsconfig-multiple-extends-and-overrides-test ()
+  "Test multiple extends precedence and an explicitly empty paths map."
+  (let ((root (make-temp-file "js-imports-tsconfig-" t)))
+    (unwind-protect
+        (progn
+          (js-imports-test--write-file
+           root "base-a.json"
+           (concat "{\"compilerOptions\":{\"baseUrl\":\"./source\","
+                   "\"paths\":{\"a/*\":[\"a/*\"]}}}"))
+          (js-imports-test--write-file
+           root "base-b.json"
+           "{\"compilerOptions\":{\"paths\":{\"b/*\":[\"b/*\"]}}}")
+          (js-imports-test--write-file
+           root "tsconfig.json"
+           "{\"extends\":[\"./base-a\",\"./base-b\"]}")
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases root "tsconfig.json")
+            (js-imports-test--alias
+             "b/" (expand-file-name "source/b" root))))
+          (js-imports-test--write-file
+           root "empty.json"
+           (concat "{\"extends\":\"./tsconfig\","
+                   "\"compilerOptions\":{\"paths\":{}}}"))
+          (should-not
+           (js-imports--read-tsconfig-paths-aliases root "empty.json")))
+      (delete-directory root t))))
+
+(ert-deftest js-imports-read-tsconfig-package-extends-config-dir-test ()
+  "Test package extends resolution and `${configDir}' substitution."
+  (let ((root (make-temp-file "js-imports-tsconfig-" t)))
+    (unwind-protect
+        (progn
+          (js-imports-test--write-file
+           root "node_modules/@example/config/package.json"
+           "{\"exports\":\"./base.json\"}")
+          (js-imports-test--write-file
+           root "node_modules/@example/config/base.json"
+           (concat "{\"compilerOptions\":{\"paths\":"
+                   "{\"@/*\":[\"${configDir}/src/*\"]}}}"))
+          (js-imports-test--write-file
+           root "tsconfig.json" "{\"extends\":\"@example/config\"}")
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases root "tsconfig.json")
+            (js-imports-test--alias "@/" (expand-file-name "src" root)))))
+      (delete-directory root t))))
+
+(ert-deftest js-imports-read-tsconfig-cycle-and-references-test ()
+  "Test that extends cycles terminate and references contribute aliases."
+  (let ((root (make-temp-file "js-imports-tsconfig-" t)))
+    (unwind-protect
+        (progn
+          (js-imports-test--write-file
+           root "a.json"
+           (concat "{\"extends\":\"./b\",\"compilerOptions\":{\"paths\":"
+                   "{\"a/*\":[\"src/*\"]}}}"))
+          (js-imports-test--write-file root "b.json" "{\"extends\":\"./a\"}")
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases root "a.json")
+            (js-imports-test--alias "a/" (expand-file-name "src" root))))
+          (js-imports-test--write-file
+           root "missing-parent.json"
+           (concat "{\"extends\":\"./does-not-exist.json\","
+                   "\"compilerOptions\":{\"paths\":"
+                   "{\"local/*\":[\"local/*\"]}}}"))
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases
+             root "missing-parent.json")
+            (js-imports-test--alias
+             "local/" (expand-file-name "local" root))))
+          (js-imports-test--write-file
+           root "referenced/tsconfig.json"
+           "{\"compilerOptions\":{\"paths\":{\"ref/*\":[\"src/*\"]}}}")
+          (js-imports-test--write-file
+           root "references.json"
+           "{\"references\":[{\"path\":\"./referenced\"}]}")
+          (should
+           (equal
+            (js-imports--read-tsconfig-paths-aliases root "references.json")
+            (js-imports-test--alias
+             "ref/" (expand-file-name "referenced/src" root)))))
+      (delete-directory root t))))
 
 ;;; js-imports-test.el ends here

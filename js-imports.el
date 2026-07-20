@@ -6,7 +6,7 @@
 ;; URL: https://github.com/KarimAziev/js-imports
 ;; Keywords: languages
 ;; Version: 1.2.0
-;; Package-Requires: ((emacs "27.1"))
+;; Package-Requires: ((emacs "28.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; This file is NOT part of GNU Emacs.
@@ -406,12 +406,14 @@ Otherwise, firstly expand BASE-URL to the project directory."
           (t
            (if-let* ((root (or js-imports-current-project-root
                                (js-imports--find-project-root)))
-                     (file (expand-file-name filepath
-                                             (if base-url
-                                                 (expand-file-name base-url root)
-                                               root))))
+                     (base (or (and base-url
+                                    (expand-file-name base-url root))
+                               root))
+                     (file (expand-file-name filepath base)))
                (js-imports--slash file)
-             filepath)))))
+             (if (and base-url (file-name-absolute-p base-url))
+                 (js-imports--slash (expand-file-name filepath base-url))
+               filepath))))))
 
 (defun js-imports--normalize-aliases (paths &optional base-url)
   "Convert and sort alist of PATHS to absolute filenames.
@@ -844,52 +846,240 @@ comments before parsing, defaulting to nil."
     (error (message "Cannot read %s" file)
            nil)))
 
+(defun js-imports--tsconfig-expand-config-dir (path config-dir)
+  "Expand `${configDir}' in PATH to CONFIG-DIR."
+  (when (stringp path)
+    (replace-regexp-in-string (regexp-quote "${configDir}")
+                              (directory-file-name config-dir)
+                              path t t)))
+
+(defun js-imports--tsconfig-existing-file (path)
+  "Return an existing TypeScript configuration for PATH."
+  (when (stringp path)
+    (seq-find #'file-regular-p
+              (delete nil
+                      (delete-dups
+                       (list path
+                             (unless (string-suffix-p ".json" path t)
+                               (concat path ".json"))))))))
+
+(defun js-imports--tsconfig-package-export (exports subpath)
+  "Find SUBPATH in a package.json EXPORTS value."
+  (cond
+   ((stringp exports) (unless subpath exports))
+   ((vectorp exports)
+    (seq-some (lambda (value)
+                (js-imports--tsconfig-package-export value subpath))
+              exports))
+   ((listp exports)
+    (let* ((key (intern (if subpath (concat "./" subpath) ".")))
+           (entry (or (cdr (assq key exports))
+                      (and (not subpath) exports))))
+      (or (and (not (eq entry exports))
+               (js-imports--tsconfig-package-export entry nil))
+          (seq-some
+           (lambda (condition)
+             (when-let* ((value (cdr (assq condition entry))))
+               (js-imports--tsconfig-package-export value nil)))
+           '(node import require default types)))))))
+
+(defun js-imports--resolve-tsconfig-package (specifier directory)
+  "Resolve an extended config package SPECIFIER from DIRECTORY."
+  (let* ((parts (split-string specifier "/" t))
+         (scoped (string-prefix-p "@" specifier))
+         (package-parts (if scoped (seq-take parts 2) (seq-take parts 1)))
+         (package-name (string-join package-parts "/"))
+         (subpath (string-join (nthcdr (length package-parts) parts) "/"))
+         (current (file-name-as-directory (expand-file-name directory)))
+         package-dir)
+    (unless (string-empty-p package-name)
+      (while (and current (not package-dir))
+        (let ((candidate (expand-file-name
+                          (concat "node_modules/" package-name) current))
+              (parent (file-name-directory
+                       (directory-file-name current))))
+          (when (file-directory-p candidate)
+            (setq package-dir candidate))
+          (setq current (unless (equal current parent) parent))))
+      (when package-dir
+        (let* ((package-json-file (expand-file-name "package.json"
+                                                   package-dir))
+               (package-json (and (file-regular-p package-json-file)
+                                  (js-imports--read-json-file
+                                   package-json-file 'alist)))
+               (exports (cdr (assq 'exports package-json)))
+               (export (js-imports--tsconfig-package-export
+                        exports
+                        (unless (string-empty-p subpath) subpath)))
+               (field (and (string-empty-p subpath)
+                           (or (cdr (assq 'tsconfig package-json))
+                               (cdr (assq 'main package-json)))))
+               (candidates
+                (delete nil
+                        (list
+                         (and export (expand-file-name export package-dir))
+                         (unless (string-empty-p subpath)
+                           (expand-file-name subpath package-dir))
+                         (and field (expand-file-name field package-dir))
+                         (expand-file-name "tsconfig.json" package-dir)))))
+          (seq-some #'js-imports--tsconfig-existing-file candidates))))))
+
+(defun js-imports--resolve-tsconfig-extends (specifier directory config-dir)
+  "Resolve a TypeScript config SPECIFIER from DIRECTORY.
+CONFIG-DIR is the directory of the final, derived configuration."
+  (when-let* ((expanded (js-imports--tsconfig-expand-config-dir
+                         specifier config-dir)))
+    (if (or (file-name-absolute-p expanded)
+            (string-prefix-p "." expanded))
+        (js-imports--tsconfig-existing-file
+         (expand-file-name expanded directory))
+      (js-imports--resolve-tsconfig-package expanded directory))))
+
+(defun js-imports--tsconfig-merge-options (options overrides)
+  "Merge relevant TypeScript OPTIONS with OVERRIDES."
+  (let ((result (copy-tree options)))
+    (dolist (key '(base-url paths paths-base))
+      (when-let* ((entry (assq key overrides)))
+        (setf (alist-get key result) (cdr entry))))
+    result))
+
+(defun js-imports--read-tsconfig-options (file config-dir &optional visiting)
+  "Read relevant compiler options from FILE and its extended configs.
+CONFIG-DIR is the directory of the final, derived configuration.
+VISITING contains configs already being resolved and prevents cycles."
+  (let ((canonical-file (and file (file-truename file))))
+    (unless (member canonical-file visiting)
+      (let* ((config (js-imports--read-json-file file 'alist t))
+             (directory (file-name-directory file))
+             (extends-value (cdr (assq 'extends config)))
+             (extends (cond ((stringp extends-value) (list extends-value))
+                            ((vectorp extends-value)
+                             (append extends-value nil))
+                            ((listp extends-value) extends-value)))
+             options)
+        (dolist (specifier extends)
+          (when-let* ((parent-file
+                       (js-imports--resolve-tsconfig-extends
+                        specifier directory config-dir))
+                      (parent-options
+                       (js-imports--read-tsconfig-options
+                        parent-file config-dir
+                        (cons canonical-file visiting))))
+            (setq options (js-imports--tsconfig-merge-options
+                           options parent-options))))
+        (let* ((compiler-options (cdr (assq 'compilerOptions config)))
+               (base-url (assq 'baseUrl compiler-options))
+               (paths (assq 'paths compiler-options)))
+          (when (and base-url (stringp (cdr base-url)))
+            (setf (alist-get 'base-url options)
+                  (expand-file-name
+                   (js-imports--tsconfig-expand-config-dir
+                    (cdr base-url) config-dir)
+                   directory)))
+          (when paths
+            (setf (alist-get 'paths options) (cdr paths)
+                  (alist-get 'paths-base options) directory)))
+        options))))
+
+(defun js-imports--tsconfig-paths (paths config-dir)
+  "Replace `${configDir}' in PATHS target values with CONFIG-DIR."
+  (when (listp paths)
+    (delq nil
+          (mapcar
+           (lambda (entry)
+             (let* ((value (cdr entry))
+                    (values (cond ((vectorp value) (append value nil))
+                                  ((listp value) value)
+                                  ((stringp value) (list value))))
+                    (expanded
+                     (delq nil
+                           (mapcar
+                            (lambda (path)
+                              (js-imports--tsconfig-expand-config-dir
+                               path config-dir))
+                            values))))
+               (when expanded (cons (car entry) expanded))))
+           paths))))
+
+(defun js-imports--resolve-tsconfig-reference (reference file)
+  "Resolve a TypeScript project REFERENCE declared in FILE."
+  (when-let* ((path (and (listp reference) (cdr (assq 'path reference))))
+              (directory (file-name-directory file))
+              (expanded (js-imports--tsconfig-expand-config-dir
+                         path directory))
+              (target (expand-file-name expanded directory)))
+    (if (file-directory-p target)
+        (js-imports--tsconfig-existing-file
+         (expand-file-name "tsconfig.json" target))
+      (js-imports--tsconfig-existing-file target))))
+
+(defun js-imports--merge-tsconfig-aliases (aliases)
+  "Combine duplicate alias keys in ALIASES and sort the result."
+  (let (result)
+    (dolist (entry aliases)
+      (if-let* ((existing (assoc (car entry) result)))
+          (setcdr existing (delete-dups
+                            (append (cdr existing) (cdr entry))))
+        (push (copy-tree entry) result)))
+    (seq-sort-by (js-imports--compose length car) #'> result)))
+
+(defun js-imports--read-tsconfig-aliases (file &optional visiting)
+  "Read aliases from FILE and its project references.
+VISITING contains configs already being resolved and prevents cycles."
+  (let ((canonical-file (and file (file-truename file))))
+    (unless (member canonical-file visiting)
+      (let* ((config-dir (file-name-directory file))
+             (options (js-imports--read-tsconfig-options file config-dir))
+             (paths (cdr (assq 'paths options)))
+             (base (or (cdr (assq 'base-url options))
+                       (cdr (assq 'paths-base options))))
+             (aliases
+              (js-imports--normalize-aliases
+               (js-imports--tsconfig-paths paths config-dir) base))
+             (config (js-imports--read-json-file file 'alist t))
+             (references-value (cdr (assq 'references config)))
+             (references (cond ((vectorp references-value)
+                                (append references-value nil))
+                               ((listp references-value) references-value))))
+        (dolist (reference references)
+          (when-let* ((reference-file
+                       (js-imports--resolve-tsconfig-reference reference file)))
+            (setq aliases
+                  (append
+                   aliases
+                   (js-imports--read-tsconfig-aliases
+                    reference-file (cons canonical-file visiting))))))
+        (js-imports--merge-tsconfig-aliases aliases)))))
+
+(defun js-imports--find-tsconfig-file (project-root tsconfig-name)
+  "Find TSCONFIG-NAME under PROJECT-ROOT, with standard fallbacks."
+  (let ((directory (or project-root default-directory)))
+    (seq-find
+     #'file-regular-p
+     (delete nil
+             (mapcar
+              (lambda (name)
+                (when name
+                  (if (file-name-absolute-p name)
+                      name
+                    (expand-file-name name directory))))
+              (list tsconfig-name "tsconfig.json" "jsconfig.json"))))))
+
 (defun js-imports--read-tsconfig-paths-aliases (&optional project-root
                                                           tsconfig-name)
-  "Read and parse TypeScript configuration.
+  "Read TypeScript path aliases from a project configuration.
 
 Optional argument PROJECT-ROOT is the root directory of the project.
 
 Optional argument TSCONFIG-NAME is the name of the TypeScript configuration
-file."
+file.  Compiler options are inherited through `extends'.  A `paths' target is
+resolved from the effective `baseUrl', or from the config that declared
+`paths' when `baseUrl' is absent.  Aliases from project `references' are
+resolved in their own config context and included in the result."
   (unless project-root (setq project-root (js-imports--find-project-root)))
-  (unless tsconfig-name
-    (setq tsconfig-name (if (or (not js-imports-tsconfig-filename)
-                                (file-name-absolute-p js-imports-tsconfig-filename))
-                            js-imports-tsconfig-filename
-                          (expand-file-name js-imports-tsconfig-filename
-                                            (or project-root default-directory)))))
-  (let ((config)
-        (compiler-options)
-        (found)
-        (base-url)
-        (extends (seq-find #'file-exists-p
-                           (and project-root
-                                (delete nil
-                                        (list
-                                         tsconfig-name
-                                         (expand-file-name "tsconfig.json"
-                                                           project-root)
-                                         (expand-file-name "jsconfig.json"
-                                                           project-root)))))))
-    (while (and (not found)
-                extends
-                (file-exists-p extends))
-      (setq config (js-imports--read-json-file extends 'alist
-                                               t))
-      (setq compiler-options (cdr-safe (assoc 'compilerOptions config)))
-      (setq base-url (cdr (assoc 'baseUrl compiler-options)))
-      (setq found (cdr (assoc 'paths (cdr-safe compiler-options))))
-      (unless found
-        (setq extends
-              (and extends (assoc 'extends config)
-                   (expand-file-name (cdr (assoc 'extends config))
-                                     (js-imports--dirname extends))))))
-    (setq base-url (and base-url extends
-                        (expand-file-name
-                         base-url
-                         (js-imports--dirname extends))))
-    (js-imports--normalize-aliases found base-url)))
+  (let* ((name (or tsconfig-name js-imports-tsconfig-filename))
+         (file (js-imports--find-tsconfig-file project-root name)))
+    (and file (js-imports--read-tsconfig-aliases file))))
 
 
 (defun js-imports--init-project ()
