@@ -1,3 +1,6 @@
+* v1.3.1    2026-07-20
+- Fixed dependency resolution from =node_modules=.
+
 * v1.3.0    2026-07-20
 - Improve retrieval of path aliases from multiple tsconfig files: previously, only =extends= sections were handled; now it also traverses =references=.
 - Internals: privatize =js-imports= internals. They are now prefixed with =js-imports--*=.
